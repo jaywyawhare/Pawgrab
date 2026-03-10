@@ -19,18 +19,24 @@
 - Proxy rotation with health checking
 - Docker Compose deployment (API + worker + Redis)
 
+## Install
+
+```bash
+pip install pawgrab
+playwright install chromium
+```
+
 ## Quickstart
 
 ```bash
-pip install -e ".[dev]"
-playwright install chromium
-
-# Redis (needed for /crawl)
+# Start Redis (needed for /crawl)
 docker run -d -p 6379:6379 redis:7-alpine
 
+# Configure
 cp .env.example .env
 # Set PAWGRAB_OPENAI_API_KEY if you need /extract
 
+# Run
 pawgrab serve
 ```
 
