@@ -1,0 +1,51 @@
+site_name: Pawgrab
+site_url: https://jaywyawhare.github.io/Pawgrab/
+repo_url: https://github.com/jaywyawhare/Pawgrab
+repo_name: jaywyawhare/Pawgrab
+site_description: Web scraping API — clean Markdown, HTML, text, or structured JSON from any URL.
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+
+nav:
+  - Home: index.md
+  - API Reference: api.md
+  - CLI: cli.md
+  - Configuration: configuration.md
+  - Architecture: architecture.md
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
