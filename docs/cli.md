@@ -13,7 +13,7 @@ pawgrab scrape https://example.com --format text
 pawgrab scrape https://example.com --js
 ```
 
-`--format` — `markdown` (default), `html`, `text`. `--js` / `--no-js` — force or skip browser rendering (auto by default).
+`--format` - `markdown` (default), `html`, `text`. `--js` / `--no-js` - force or skip browser rendering (auto by default).
 
 ## extract
 

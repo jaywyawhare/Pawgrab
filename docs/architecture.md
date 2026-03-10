@@ -6,7 +6,7 @@
 
 1. robots.txt check (1h cache, 5min on failure)
 2. Per-domain rate limit
-3. Fetch with curl_cffi — random Safari/Chrome/Edge TLS fingerprint
+3. Fetch with curl_cffi - random Safari/Chrome/Edge TLS fingerprint
 4. If challenged → retry with different browser family
 5. If JS needed (auto-detected or `wait_for_js=true`) → Playwright with stealth
 6. Readability extraction
@@ -52,18 +52,18 @@ Configured via env vars or the `/v1/proxy` API at runtime. Rotation policies: ro
 
 ## Dependencies
 
-- **fastapi, uvicorn** — HTTP server
-- **pydantic-settings** — config
-- **curl_cffi** — TLS impersonation
-- **playwright, playwright-stealth** — browser rendering
-- **readabilipy** — content extraction
-- **html2text** — HTML → Markdown
-- **beautifulsoup4, lxml** — HTML parsing
-- **openai** — LLM calls
-- **arq, redis** — job queue
-- **protego** — robots.txt
-- **aiolimiter** — rate limiting
-- **typer** — CLI
-- **structlog** — logging
-- **duckduckgo-search** — web search
-- **pymupdf** — PDF text
+- **fastapi, uvicorn** - HTTP server
+- **pydantic-settings** - config
+- **curl_cffi** - TLS impersonation
+- **playwright, playwright-stealth** - browser rendering
+- **readabilipy** - content extraction
+- **html2text** - HTML → Markdown
+- **beautifulsoup4, lxml** - HTML parsing
+- **openai** - LLM calls
+- **arq, redis** - job queue
+- **protego** - robots.txt
+- **aiolimiter** - rate limiting
+- **typer** - CLI
+- **structlog** - logging
+- **duckduckgo-search** - web search
+- **pymupdf** - PDF text
