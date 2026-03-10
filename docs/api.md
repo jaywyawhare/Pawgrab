@@ -20,7 +20,7 @@ Set `PAWGRAB_API_KEY` to require Bearer token auth. Health and status endpoints 
 ## GET /status
 
 ```json
-{ "status": "ok", "version": "0.0.2", "service": "pawgrab" }
+{ "status": "ok", "version": "0.0.3", "service": "pawgrab" }
 ```
 
 ---
