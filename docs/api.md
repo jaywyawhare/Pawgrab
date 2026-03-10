@@ -35,7 +35,7 @@ curl -X POST http://localhost:8000/v1/scrape \
 
 **Required:** `url`.
 
-**Options:** `formats` (default `["markdown"]` — supports `markdown`, `html`, `text`, `json`, `csv`, `xml`), `wait_for_js` (`true`/`false`/`null` for auto), `timeout` (ms, default 30000), `include_metadata` (default true), `headers`, `cookies`.
+**Options:** `formats` (default `["markdown"]` - supports `markdown`, `html`, `text`, `json`, `csv`, `xml`), `wait_for_js` (`true`/`false`/`null` for auto), `timeout` (ms, default 30000), `include_metadata` (default true), `headers`, `cookies`.
 
 **Content filtering:** `excluded_tags` (e.g. `["nav", "footer"]`), `excluded_selector`, `css_selector` (scope extraction), `word_count_threshold`, `content_filter` (`"pruning"` or `"bm25"`), `content_filter_query`, `citations` (links → footnotes), `fit_markdown_query` + `fit_markdown_top_k` (BM25 section relevance).
 
@@ -49,13 +49,13 @@ curl -X POST http://localhost:8000/v1/scrape \
 
 Array of sequential browser actions before extraction. Each has a `type`:
 
-- `CLICK` — `selector`
-- `TYPE` — `selector`, `text`
-- `SCROLL` — `direction` (`up`/`down`), `amount` (px)
-- `WAIT` — `amount` (ms)
-- `WAIT_FOR` — `selector`
-- `SCREENSHOT` — mid-action screenshot
-- `EXECUTE_JS` — `text` (JS code)
+- `CLICK` - `selector`
+- `TYPE` - `selector`, `text`
+- `SCROLL` - `direction` (`up`/`down`), `amount` (px)
+- `WAIT` - `amount` (ms)
+- `WAIT_FOR` - `selector`
+- `SCREENSHOT` - mid-action screenshot
+- `EXECUTE_JS` - `text` (JS code)
 
 ### Response
 
@@ -71,7 +71,7 @@ Array of sequential browser actions before extraction. Each has a `type`:
 }
 ```
 
-Only requested formats/captures are populated. Also includes `json_data`, `csv_data`, `xml_data`, `screenshot_base64`, `pdf_base64`, `diff`, `network_requests`, `console_logs`, `mhtml_base64`, `media`, `ssl_certificate` — all null unless requested.
+Only requested formats/captures are populated. Also includes `json_data`, `csv_data`, `xml_data`, `screenshot_base64`, `pdf_base64`, `diff`, `network_requests`, `console_logs`, `mhtml_base64`, `media`, `ssl_certificate` - all null unless requested.
 
 **Errors:** 403 (robots.txt), 502 (fetch failed), 503 (browser pool unavailable).
 
@@ -87,7 +87,7 @@ curl -X POST http://localhost:8000/v1/extract \
 
 **Required:** `url`. `prompt` is required when `strategy` is `llm`.
 
-**Options:** `strategy` (default `"llm"` — also `"css"`, `"xpath"`, `"regex"`), `schema_hint`, `json_schema` (strict structured output), `timeout`, `auto_schema`.
+**Options:** `strategy` (default `"llm"` - also `"css"`, `"xpath"`, `"regex"`), `schema_hint`, `json_schema` (strict structured output), `timeout`, `auto_schema`.
 
 **LLM chunking:** `chunk_strategy` (`"fixed"`, `"sliding"`, `"semantic"`), `chunk_size`, `chunk_overlap`.
 
@@ -105,7 +105,7 @@ curl -X POST http://localhost:8000/v1/extract \
 
 ## POST /v1/crawl
 
-Async — returns 202 with a job ID.
+Async - returns 202 with a job ID.
 
 ```bash
 curl -X POST http://localhost:8000/v1/crawl \
@@ -142,7 +142,7 @@ SSE stream. Events: `queued`, `in_progress`, `completed`, `failed`.
 
 ## POST /v1/batch/scrape
 
-Async — returns 202 with a job ID.
+Async - returns 202 with a job ID.
 
 **Required:** `urls` (1–100).
 
@@ -180,7 +180,7 @@ Returns `urls`, `total`, `source` (`"sitemap"` or `"crawl"`).
 
 ## Proxy Pool
 
-- **POST /v1/proxy/pool** — Add proxy. Body: `{"url": "http://user:pass@host:port"}`.
-- **DELETE /v1/proxy/pool/{proxy_url}** — Remove (URL-encode the path).
-- **GET /v1/proxy/pool** — List all.
-- **GET /v1/proxy/pool/stats** — Pool stats.
+- **POST /v1/proxy/pool** - Add proxy. Body: `{"url": "http://user:pass@host:port"}`.
+- **DELETE /v1/proxy/pool/{proxy_url}** - Remove (URL-encode the path).
+- **GET /v1/proxy/pool** - List all.
+- **GET /v1/proxy/pool/stats** - Pool stats.
