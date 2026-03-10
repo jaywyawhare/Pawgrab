@@ -24,7 +24,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "pydantic-settings>=2.6",
     "curl_cffi>=0.7",
-    "playwright>=1.49",
+    "patchright>=1.49",
     "playwright-stealth>=1.0.6",
     "readabilipy>=0.2",
     "html2text>=2024.2",
@@ -39,6 +39,7 @@ dependencies = [
     "structlog>=24.4",
     "duckduckgo-search>=7.0",
     "pymupdf>=1.24",
+    "orjson>=3.10",
 ]
 
 [project.optional-dependencies]
