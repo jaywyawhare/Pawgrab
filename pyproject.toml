@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pawgrab"
+version = "0.0.1"
+description = "Web scraping API — clean output from any URL"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+authors = [{ name = "jaywyawhare" }]
+keywords = ["scraping", "web", "api", "markdown"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: Other/Proprietary License",
+]
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic-settings>=2.6",
+    "curl_cffi>=0.7",
+    "playwright>=1.49",
+    "playwright-stealth>=1.0.6",
+    "readabilipy>=0.2",
+    "html2text>=2024.2",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.3",
+    "openai>=1.57",
+    "arq>=0.26",
+    "redis>=5.2",
+    "protego>=0.3",
+    "aiolimiter>=1.2",
+    "typer[all]>=0.15",
+    "structlog>=24.4",
+    "duckduckgo-search>=7.0",
+    "pymupdf>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx",
+    "ruff>=0.8",
+]
+
+[project.scripts]
+pawgrab = "cli.main:app"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
