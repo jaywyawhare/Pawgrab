@@ -6,26 +6,41 @@ site_description: Web scraping API - clean Markdown, HTML, text, or structured J
 
 theme:
   name: material
+  logo: assets/logo.png
+  favicon: assets/logo.png
+  icon:
+    repo: fontawesome/brands/github
   palette:
     - scheme: default
-      primary: deep purple
-      accent: purple
+      primary: indigo
+      accent: cyan
       toggle:
-        icon: material/brightness-7
+        icon: material/weather-night
         name: Switch to dark mode
     - scheme: slate
-      primary: deep purple
-      accent: purple
+      primary: indigo
+      accent: cyan
       toggle:
-        icon: material/brightness-4
+        icon: material/weather-sunny
         name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
   features:
     - content.code.copy
+    - content.code.select
     - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.top
+    - navigation.footer
     - search.highlight
     - search.suggest
+    - search.share
+    - toc.follow
 
 nav:
   - Home: index.md
@@ -41,11 +56,28 @@ plugins:
 
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.mark
+  - pymdownx.keys
   - tables
   - toc:
       permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/jaywyawhare/Pawgrab
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
