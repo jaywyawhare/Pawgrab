@@ -6,11 +6,13 @@ import pytest
 
 from pawgrab.engine.fetcher import (
     FetchResult,
+    _CF_MIN_TIMEOUT,
     _backoff,
     _check_challenge,
     _parse_retry_after,
     _sanitize_headers,
     fetch_page,
+    is_proxy_error,
 )
 
 
@@ -209,3 +211,31 @@ def test_parse_retry_after_missing():
     r = FetchResult(html="", status_code=429, url="https://x.com")
     r.resp_headers = {}
     assert _parse_retry_after(r) is None
+
+
+def test_is_proxy_error_detects_net_err_proxy():
+    exc = Exception("net::ERR_PROXY_CONNECTION_FAILED")
+    assert is_proxy_error(exc) is True
+
+
+def test_is_proxy_error_detects_connection_refused():
+    exc = Exception("Connection refused by proxy")
+    assert is_proxy_error(exc) is True
+
+
+def test_is_proxy_error_detects_tunnel_error():
+    exc = Exception("net::ERR_TUNNEL_CONNECTION_FAILED")
+    assert is_proxy_error(exc) is True
+
+
+def test_is_proxy_error_false_for_normal_timeout():
+    exc = Exception("Timeout 30000ms exceeded")
+    assert is_proxy_error(exc) is False
+
+
+def test_is_proxy_error_false_for_generic_error():
+    exc = Exception("Page crashed")
+    assert is_proxy_error(exc) is False
+
+def test_cf_min_timeout_value():
+    assert _CF_MIN_TIMEOUT == 60_000
