@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     stealth_mode: bool = True
     max_challenge_retries: int = 2
     impersonate: str = ""  # curl_cffi target, e.g. "chrome124". Empty = random
+    solve_cloudflare: bool = True  # attempt to solve Cloudflare Turnstile challenges
 
     # Proxy (single URL or comma-separated list for rotation)
     proxy_url: str = ""  # e.g. http://user:pass@host:port or socks5://host:port
@@ -51,6 +52,9 @@ class Settings(BaseSettings):
 
     # Change tracking / monitoring
     monitor_ttl: int = 86400  # seconds to keep previous content for diff
+
+    # HTTP/3 (QUIC) — opt-in, not all servers support it
+    http3: bool = False
 
     # Browser
     browser_type: str = "chromium"  # chromium, firefox, webkit
