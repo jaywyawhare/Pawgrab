@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
+
+import orjson
 
 import structlog
 from openai import APIError, AsyncOpenAI
@@ -15,10 +16,17 @@ logger = structlog.get_logger()
 
 
 class OpenAIProvider:
+    __slots__ = ("_api_key", "_model", "_client")
+
     def __init__(self, api_key: str | None = None, model: str | None = None):
         self._api_key = api_key or settings.openai_api_key
         self._model = model or settings.openai_model
-        self._client = AsyncOpenAI(api_key=self._api_key)
+        self._client = None  # lazy
+
+    def _get_client(self):
+        if self._client is None:
+            self._client = AsyncOpenAI(api_key=self._api_key)
+        return self._client
 
     async def extract(
         self,
@@ -52,7 +60,7 @@ class OpenAIProvider:
             response_format = {"type": "json_object"}
 
         try:
-            response = await self._client.chat.completions.create(
+            response = await self._get_client().chat.completions.create(
                 model=self._model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -68,7 +76,7 @@ class OpenAIProvider:
 
         raw = response.choices[0].message.content or "{}"
         try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
+            return orjson.loads(raw)
+        except orjson.JSONDecodeError:
             logger.warning("llm_json_parse_failed", raw=raw[:200])
             return {"raw_response": raw}
