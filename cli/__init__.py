@@ -1,0 +1,1 @@
+"""Pawgrab CLI."""
