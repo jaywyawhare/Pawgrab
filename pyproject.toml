@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pawgrab"
-version = "0.0.1"
+version = "0.0.2"
 description = "Web scraping API — clean output from any URL"
 readme = "README.md"
 license = {file = "LICENSE"}
