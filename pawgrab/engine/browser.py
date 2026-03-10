@@ -1,26 +1,21 @@
-"""Playwright browser pool with reusable contexts and stealth evasions.
-
-Applies deep fingerprint spoofing to make Chromium look like Safari:
-  - WebGL: spoofs UNMASKED_VENDOR/RENDERER to Apple GPU strings
-  - Canvas: injects sub-pixel noise to randomize fingerprint hash
-  - navigator: vendor, deviceMemory, hardwareConcurrency, maxTouchPoints
-  - Timezone and locale randomized per context
-"""
+"""Patchright browser pool with reusable persistent contexts and stealth evasions."""
 
 from __future__ import annotations
 
 import asyncio
 import random
+import re
+import shutil
+import tempfile
 
 import structlog
-from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from patchright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from pawgrab.config import settings
 from pawgrab.engine.antibot import random_user_agent, stealth_headers
 
 logger = structlog.get_logger()
 
-# Viewport sizes to randomize fingerprints
 _VIEWPORTS = [
     {"width": 1920, "height": 1080},
     {"width": 1440, "height": 900},
@@ -29,7 +24,6 @@ _VIEWPORTS = [
     {"width": 2560, "height": 1440},
 ]
 
-# Timezones weighted towards common US/EU zones
 _TIMEZONES = [
     "America/New_York",
     "America/Chicago",
@@ -42,10 +36,8 @@ _TIMEZONES = [
 
 _LOCALES = ["en-US", "en-GB", "en-CA", "en-AU"]
 
-# Apple GPU renderer strings weighted by 2025-2026 market share.
-# Each entry: (renderer, typical_hw_concurrency, weight)
 _APPLE_GPU_PROFILES = [
-    ("Apple M1", 8, 30),           # Still dominant in Safari traffic
+    ("Apple M1", 8, 30),
     ("Apple M1 Pro", 10, 15),
     ("Apple M1 Max", 10, 5),
     ("Apple M2", 8, 20),
@@ -57,12 +49,120 @@ _APPLE_GPU_PROFILES = [
     ("Intel(R) Iris(TM) Plus Graphics", 4, 2),
 ]
 
-# Flat list for backward-compatible access in tests
 _APPLE_RENDERERS = [p[0] for p in _APPLE_GPU_PROFILES]
 
-# JavaScript to inject BEFORE any page script runs.
-# This overrides browser fingerprint APIs to match a Safari/macOS profile.
-# Each __PLACEHOLDER__ is replaced at runtime with randomized values.
+_HARMFUL_DEFAULT_ARGS = frozenset({
+    "--enable-automation",
+    "--disable-popup-blocking",
+    "--disable-component-update",
+    "--disable-default-apps",
+    "--disable-extensions",
+})
+
+_STEALTH_CHROMIUM_ARGS = (
+    "--disable-blink-features=AutomationControlled",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--no-service-autorun",
+    "--no-pings",
+    "--test-type",
+    "--hide-scrollbars",
+    "--mute-audio",
+    "--password-store=basic",
+    "--use-mock-keychain",
+    "--disable-infobars",
+    "--disable-breakpad",
+    "--disable-component-extensions-with-background-pages",
+    "--disable-ipc-flooding-protection",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--homepage=about:blank",
+
+    "--fingerprinting-canvas-image-data-noise",
+    "--fingerprinting-canvas-measuretext-noise",
+    "--fingerprinting-client-rects-noise",
+
+    "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+    "--force-webrtc-ip-handling-policy",
+    "--enforce-webrtc-ip-permission-check",
+
+    "--blink-settings=primaryHoverType=2,availableHoverTypes=2,"
+    "primaryPointerType=4,availablePointerTypes=4",
+
+    "--disable-gpu-sandbox",
+    "--disable-partial-raster",
+    "--disable-skia-runtime-opts",
+    "--disable-2d-canvas-clip-aa",
+    "--disable-lcd-text",
+    "--force-color-profile=srgb",
+    "--font-render-hinting=none",
+    "--disable-font-subpixel-positioning",
+
+    "--disable-domain-reliability",
+    "--disable-client-side-phishing-detection",
+    "--disable-sync",
+    "--disable-translate",
+    "--disable-voice-input",
+    "--disable-hang-monitor",
+    "--disable-prompt-on-repost",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--metrics-recording-only",
+    "--safebrowsing-disable-auto-update",
+    "--no-proxy-server",
+    "--disable-cookie-encryption",
+
+    "--disable-crash-reporter",
+    "--crash-dumps-dir=/tmp",
+    "--enable-features=NetworkService,NetworkServiceInProcess,"
+    "TrustTokens,TrustTokensAlwaysAllowIssuance",
+
+    "--disable-dev-shm-usage",
+    "--disable-session-crashed-bubble",
+    "--disable-search-engine-choice-screen",
+    "--suppress-message-center-popups",
+    "--noerrdialogs",
+    "--disable-notifications",
+    "--disable-logging",
+    "--log-level=3",
+
+    "--enable-async-dns",
+    "--enable-tcp-fast-open",
+    "--enable-web-bluetooth",
+    "--enable-simple-cache-backend",
+    "--enable-surface-synchronization",
+    "--aggressive-cache-discard",
+    "--ignore-gpu-blocklist",
+
+    "--disable-threaded-animation",
+    "--disable-threaded-scrolling",
+    "--disable-checker-imaging",
+    "--disable-image-animation-resync",
+    "--disable-new-content-rendering-timeout",
+    "--run-all-compositor-stages-before-draw",
+    "--disable-layer-tree-host-memory-pressure",
+    "--disable-background-timer-throttling",
+    "--prerender-from-omnibox=disabled",
+
+    "--autoplay-policy=user-gesture-required",
+    "--disable-offer-upload-credit-cards",
+    "--disable-offer-store-unmasked-wallet-cards",
+    "--disable-cloud-import",
+    "--disable-print-preview",
+    "--disable-gesture-typing",
+    "--disable-wake-on-wifi",
+
+    "--window-size=1920,1080",
+    "--window-position=0,0",
+    "--start-maximized",
+    "--disable-popup-blocking",
+
+    "--lang=en-US,en",
+    "--accept-lang=en-US,en;q=0.9",
+    "--disable-features=IsolateOrigins,site-per-process,TranslateUI,"
+    "AutofillServerCommunication,AudioServiceOutOfProcess,BlinkGenPropertyTrees",
+)
+
 _FINGERPRINT_EVASION_JS = """
 (function() {
     const VENDOR = "Apple Inc.";
@@ -83,6 +183,7 @@ _FINGERPRINT_EVASION_JS = """
     }
 })();
 
+// __BEGIN_CANVAS_NOISE__
 (function() {
     const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
     const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
@@ -121,6 +222,7 @@ _FINGERPRINT_EVASION_JS = """
         return origToDataURL.apply(this, arguments);
     };
 })();
+// __END_CANVAS_NOISE__
 
 (function() {
     if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') return;
@@ -202,6 +304,7 @@ Object.defineProperty(navigator, 'maxTouchPoints', {
     });
 })();
 
+// __BEGIN_WEBRTC_BLOCK__
 (function() {
     // Disable WebRTC data channels and peer connections to prevent real IP leak
     if (typeof RTCPeerConnection !== 'undefined') {
@@ -220,6 +323,7 @@ Object.defineProperty(navigator, 'maxTouchPoints', {
         window.webkitRTCPeerConnection = window.RTCPeerConnection;
     }
 })();
+// __END_WEBRTC_BLOCK__
 
 if (navigator.permissions) {
     const origQuery = navigator.permissions.query;
@@ -298,7 +402,6 @@ def _pick_gpu_profile() -> tuple[str, int, int]:
     renderer = random.choices(renderers, weights=weights, k=1)[0]
     idx = renderers.index(renderer)
     hw = concurrencies[idx]
-    # Device memory correlates with chip: M1/M2/M3 base = 8GB, Pro/Max = 16-32GB
     if "Pro" in renderer or "Max" in renderer:
         dev_mem = random.choice([16, 32])
     elif "Intel" in renderer:
@@ -308,12 +411,29 @@ def _pick_gpu_profile() -> tuple[str, int, int]:
     return renderer, hw, dev_mem
 
 
-def _build_evasion_script() -> str:
-    """Build fingerprint evasion JS with randomized values matching a consistent profile."""
+def _strip_section(script: str, tag: str) -> str:
+    """Remove content between ``// __BEGIN_{tag}__`` and ``// __END_{tag}__`` markers."""
+    pattern = re.compile(
+        rf"// __BEGIN_{re.escape(tag)}__.*?// __END_{re.escape(tag)}__\n?",
+        re.DOTALL,
+    )
+    return pattern.sub("", script)
+
+
+def _build_evasion_script(browser_type: str = "chromium") -> str:
+    """Build fingerprint evasion JS with randomized values matching a consistent profile.
+
+    On Chromium, native flags handle canvas noise and WebRTC blocking, so the
+    JS versions are stripped to avoid detectable ``Function.prototype.toString``
+    leaks.  Firefox/WebKit keep the full script.
+    """
     renderer, hw_concurrency, dev_memory = _pick_gpu_profile()
     script = _FINGERPRINT_EVASION_JS.replace("__RENDERER__", renderer)
     script = script.replace("__HARDWARE_CONCURRENCY__", str(hw_concurrency))
     script = script.replace("__DEVICE_MEMORY__", str(dev_memory))
+    if browser_type == "chromium":
+        script = _strip_section(script, "CANVAS_NOISE")
+        script = _strip_section(script, "WEBRTC_BLOCK")
     return script
 
 
@@ -427,6 +547,149 @@ async function scrollToBottom() {
 await scrollToBottom();
 """
 
+_CF_CHALLENGE_RE = re.compile(
+    r"^https?://challenges\.cloudflare\.com/cdn-cgi/challenge-platform/.*"
+)
+
+
+def _detect_cloudflare(html: str) -> str | None:
+    """Detect Cloudflare challenge type from page HTML.
+
+    Returns one of ``"non-interactive"``, ``"managed"``, ``"interactive"``,
+    ``"embedded_turnstile"``, or ``None`` if no CF challenge is detected.
+    """
+    if not html:
+        return None
+    for ctype in ("non-interactive", "managed", "interactive"):
+        if f"cType: '{ctype}'" in html or f'cType: "{ctype}"' in html:
+            return ctype
+    if "challenges.cloudflare.com/turnstile" in html:
+        return "embedded_turnstile"
+    return None
+
+
+_CF_BOX_SELECTOR = "#cf_turnstile div, #cf-turnstile div, .turnstile>div>div"
+_CF_INTERSTITIAL_BOX_SELECTOR = ".main-content p+div>div>div"
+
+
+async def _cf_page_content(page) -> str:
+    """Get page content, handling errors gracefully."""
+    try:
+        return await page.content()
+    except Exception:
+        return ""
+
+
+async def _cf_is_solved(page) -> bool:
+    """Check whether the CF challenge has disappeared."""
+    return "<title>Just a moment...</title>" not in await _cf_page_content(page)
+
+
+async def solve_cloudflare(page, *, max_retries: int = 2) -> bool:
+    """Attempt to solve a Cloudflare Turnstile challenge on *page*.
+
+    Returns ``True`` if the challenge was solved and the page navigated to
+    the real content, ``False`` otherwise.
+    """
+    try:
+        await page.wait_for_load_state("networkidle", timeout=5_000)
+    except Exception:
+        pass
+
+    html = await _cf_page_content(page)
+    cf_type = _detect_cloudflare(html)
+    if cf_type is None:
+        return False
+
+    logger.info("cf_challenge_detected", cf_type=cf_type)
+
+    for attempt in range(max_retries + 1):
+        if cf_type == "non-interactive":
+            while "<title>Just a moment...</title>" in await _cf_page_content(page):
+                try:
+                    await page.wait_for_timeout(1_000)
+                    await page.wait_for_load_state("load", timeout=5_000)
+                except Exception:
+                    break
+            if await _cf_is_solved(page):
+                return True
+            if attempt == max_retries:
+                return False
+            await asyncio.sleep(2)
+            continue
+
+        try:
+            if cf_type != "embedded_turnstile":
+                while "Verifying you are human." in await _cf_page_content(page):
+                    await page.wait_for_timeout(500)
+
+            outer_box = None
+            cf_frame = None
+            for frame in page.frames:
+                if _CF_CHALLENGE_RE.match(frame.url or ""):
+                    cf_frame = frame
+                    break
+
+            if cf_frame is not None:
+                await page.wait_for_load_state("load", timeout=5_000)
+
+                if cf_type != "embedded_turnstile":
+                    frame_el = await cf_frame.frame_element()
+                    for _ in range(20):
+                        if await frame_el.is_visible():
+                            break
+                        await page.wait_for_timeout(500)
+
+                frame_el = await cf_frame.frame_element()
+                outer_box = await frame_el.bounding_box()
+
+            if not cf_frame or not outer_box:
+                if await _cf_is_solved(page):
+                    return True
+                box_sel = (
+                    _CF_BOX_SELECTOR if cf_type == "embedded_turnstile"
+                    else _CF_INTERSTITIAL_BOX_SELECTOR
+                )
+                try:
+                    outer_box = await page.locator(box_sel).last.bounding_box()
+                except Exception:
+                    pass
+
+            if not outer_box:
+                if attempt == max_retries:
+                    return False
+                await asyncio.sleep(2)
+                continue
+
+            x = outer_box["x"] + random.randint(26, 28)
+            y = outer_box["y"] + random.randint(25, 27)
+            await page.mouse.click(x, y, delay=random.randint(100, 200), button="left")
+
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10_000)
+            except Exception:
+                pass
+
+            if cf_type != "embedded_turnstile":
+                for _ in range(100):
+                    if await _cf_is_solved(page):
+                        break
+                    await page.wait_for_timeout(100)
+
+            await page.wait_for_load_state("load", timeout=5_000)
+
+            if await _cf_is_solved(page):
+                return True
+
+            logger.debug("cf_still_present_retrying", attempt=attempt)
+        except Exception:
+            logger.debug("cf_solve_attempt_failed", attempt=attempt)
+
+        if attempt < max_retries:
+            await asyncio.sleep(2)
+
+    return False
+
 
 class BrowserPool:
     def __init__(self, pool_size: int | None = None, browser_type: str | None = None):
@@ -437,21 +700,17 @@ class BrowserPool:
         self._playwright = None
         self._started = False
         self._degraded = False
-        # Persistent context pool for session reuse
         self._persistent_contexts: dict[str, BrowserContext] = {}
+        self._user_data_dir: str | None = None
+        self._persistent_ctx: BrowserContext | None = None
+        self._proxy_browser: Browser | None = None
 
-    async def _new_stealth_page(
+    def _context_kwargs(
         self,
         proxy_url: str | None = None,
         geolocation: dict[str, float] | None = None,
-    ) -> Page:
-        """Create a new page with stealth evasions and a Safari fingerprint.
-
-        When proxy_url is set, the browser context routes all traffic through
-        that proxy. Playwright sets proxy at context creation time, so a new
-        context is required for each distinct proxy.
-        """
-        assert self._browser is not None
+    ) -> dict:
+        """Build common context/launch kwargs for stealth sessions."""
         ua = random_user_agent()
         viewport = random.choice(_VIEWPORTS)
         timezone = random.choice(_TIMEZONES)
@@ -461,30 +720,69 @@ class BrowserPool:
             k: v for k, v in headers.items()
             if k not in ("User-Agent", "Accept-Encoding")
         }
-        ctx_kwargs: dict = dict(
+        kwargs: dict = dict(
             user_agent=ua,
             locale=locale,
             timezone_id=timezone,
             viewport=viewport,
+            screen={"width": viewport["width"], "height": viewport["height"]},
             extra_http_headers=extra,
+            color_scheme="dark",
+            device_scale_factor=2,
+            is_mobile=False,
+            has_touch=False,
+            service_workers="allow",
+            ignore_https_errors=True,
+            permissions=["geolocation", "notifications"],
         )
         if proxy_url:
-            ctx_kwargs["proxy"] = {"server": proxy_url}
+            kwargs["proxy"] = {"server": proxy_url}
         if geolocation:
-            ctx_kwargs["geolocation"] = {
+            kwargs["geolocation"] = {
                 "latitude": geolocation.get("latitude", 0),
                 "longitude": geolocation.get("longitude", 0),
                 "accuracy": geolocation.get("accuracy", 100),
             }
-            ctx_kwargs["permissions"] = ["geolocation"]
+        return kwargs
+
+    async def _new_stealth_page(
+        self,
+        proxy_url: str | None = None,
+        geolocation: dict[str, float] | None = None,
+    ) -> Page:
+        """Create a new page with stealth evasions.
+
+        For Chromium without a proxy, reuses the persistent context (shared
+        cookies/localStorage make the browser look like a returning visitor).
+        When proxy_url is set, a separate browser context is created.
+        """
+        if not proxy_url and self._persistent_ctx is not None:
+            return await self._persistent_ctx.new_page()
+
+        if proxy_url:
+            if self._proxy_browser is None:
+                launcher = await self._get_browser_launcher()
+                is_chromium = self._browser_type == "chromium"
+                self._proxy_browser = await launcher.launch(
+                    headless=True,
+                    args=list(_STEALTH_CHROMIUM_ARGS) if is_chromium else None,
+                    ignore_default_args=list(_HARMFUL_DEFAULT_ARGS) if is_chromium else None,
+                )
+            ctx_kwargs = self._context_kwargs(proxy_url=proxy_url, geolocation=geolocation)
+            ctx = await self._proxy_browser.new_context(**ctx_kwargs)
+            if settings.stealth_mode:
+                await _apply_stealth(ctx)
+                evasion_js = _build_evasion_script(browser_type=self._browser_type)
+                await ctx.add_init_script(evasion_js)
+            return await ctx.new_page()
+
+        assert self._browser is not None
+        ctx_kwargs = self._context_kwargs(geolocation=geolocation)
         ctx = await self._browser.new_context(**ctx_kwargs)
         if settings.stealth_mode:
             await _apply_stealth(ctx)
-
-            # Inject deep fingerprint evasion script before any page JS runs
-            evasion_js = _build_evasion_script()
+            evasion_js = _build_evasion_script(browser_type=self._browser_type)
             await ctx.add_init_script(evasion_js)
-
         return await ctx.new_page()
 
     async def _get_browser_launcher(self):
@@ -502,26 +800,39 @@ class BrowserPool:
             return
         self._playwright = await async_playwright().start()
         launcher = await self._get_browser_launcher()
+        is_chromium = self._browser_type == "chromium"
 
-        launch_args = []
-        if self._browser_type == "chromium":
-            launch_args = [
-                "--disable-blink-features=AutomationControlled",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-component-update",
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--hide-scrollbars",
-                "--mute-audio",
-            ]
+        if is_chromium:
+            self._user_data_dir = tempfile.mkdtemp(prefix="pawgrab_chrome_")
+            ctx_kwargs = self._context_kwargs()
+            ctx_kwargs.pop("permissions", None)
+            self._persistent_ctx = await launcher.launch_persistent_context(
+                self._user_data_dir,
+                headless=True,
+                args=list(_STEALTH_CHROMIUM_ARGS),
+                ignore_default_args=list(_HARMFUL_DEFAULT_ARGS),
+                **ctx_kwargs,
+            )
+            if settings.stealth_mode:
+                await _apply_stealth(self._persistent_ctx)
+                evasion_js = _build_evasion_script(browser_type="chromium")
+                await self._persistent_ctx.add_init_script(evasion_js)
+            try:
+                await self._persistent_ctx.grant_permissions(
+                    ["geolocation", "notifications"],
+                )
+            except Exception:
+                pass
+            self._browser = None
+            for _ in range(self._pool_size):
+                page = await self._persistent_ctx.new_page()
+                await self._pages.put(page)
+        else:
+            self._browser = await launcher.launch(headless=True)
+            for _ in range(self._pool_size):
+                page = await self._new_stealth_page()
+                await self._pages.put(page)
 
-        self._browser = await launcher.launch(
-            headless=True,
-            args=launch_args if launch_args else None,
-        )
-        for _ in range(self._pool_size):
-            page = await self._new_stealth_page()
-            await self._pages.put(page)
         self._started = True
         logger.info(
             "browser_pool_started",
@@ -536,9 +847,16 @@ class BrowserPool:
         proxy_url: str,
         geolocation: dict[str, float] | None = None,
     ) -> Page:
-        """Close old_page's context and create a new stealth page with proxy."""
+        """Close old_page and create a new stealth page with proxy."""
+        is_persistent_page = (
+            self._persistent_ctx is not None
+            and old_page.context == self._persistent_ctx
+        )
         try:
-            await old_page.context.close()
+            if is_persistent_page:
+                await old_page.close()
+            else:
+                await old_page.context.close()
         except Exception:
             pass
         return await self._new_stealth_page(proxy_url=proxy_url, geolocation=geolocation)
@@ -547,14 +865,25 @@ class BrowserPool:
         return await self._pages.get()
 
     async def release(self, page: Page):
-        # Always close the old context
-        try:
-            await page.context.close()
-        except Exception:
-            logger.debug("context_close_failed_during_release")
+        is_persistent_page = (
+            self._persistent_ctx is not None
+            and page.context == self._persistent_ctx
+        )
 
-        # Always return a page to the queue to prevent starvation
-        if not self._browser or self._degraded:
+        if is_persistent_page:
+            try:
+                await page.close()
+            except Exception:
+                logger.debug("page_close_failed_during_release")
+        else:
+            try:
+                await page.context.close()
+            except Exception:
+                logger.debug("context_close_failed_during_release")
+
+        if self._degraded:
+            return
+        if not self._persistent_ctx and not self._browser:
             return
 
         new_page = None
@@ -563,8 +892,11 @@ class BrowserPool:
         except Exception:
             logger.warning("stealth_page_creation_failed")
             try:
-                ctx = await self._browser.new_context()
-                new_page = await ctx.new_page()
+                if self._persistent_ctx is not None:
+                    new_page = await self._persistent_ctx.new_page()
+                elif self._browser is not None:
+                    ctx = await self._browser.new_context()
+                    new_page = await ctx.new_page()
             except Exception:
                 logger.error("page_creation_failed_pool_degraded")
                 self._degraded = True
@@ -575,7 +907,6 @@ class BrowserPool:
     async def stop(self):
         if not self._started:
             return
-        # Close persistent contexts
         for ctx in self._persistent_contexts.values():
             try:
                 await ctx.close()
@@ -586,12 +917,36 @@ class BrowserPool:
         while not self._pages.empty():
             page = self._pages.get_nowait()
             try:
-                await page.context.close()
+                await page.close()
             except Exception:
                 pass
+
+        if self._persistent_ctx:
+            try:
+                await self._persistent_ctx.close()
+            except Exception:
+                pass
+            self._persistent_ctx = None
+
+        if self._proxy_browser:
+            try:
+                await self._proxy_browser.close()
+            except Exception:
+                pass
+            self._proxy_browser = None
+
         if self._browser:
             await self._browser.close()
+            self._browser = None
+
         if self._playwright:
             await self._playwright.stop()
+            self._playwright = None
+
+        # Clean up user data directory
+        if self._user_data_dir:
+            shutil.rmtree(self._user_data_dir, ignore_errors=True)
+            self._user_data_dir = None
+
         self._started = False
         logger.info("browser_pool_stopped")
