@@ -2,7 +2,8 @@
 
 import structlog
 from fastapi import APIRouter
-from starlette.responses import JSONResponse
+
+from pawgrab import __version__
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -29,6 +30,6 @@ async def health():
 async def status():
     return {
         "status": "ok",
-        "version": "0.0.1",
+        "version": __version__,
         "service": "pawgrab",
     }
