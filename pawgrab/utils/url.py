@@ -1,5 +1,6 @@
 """URL normalization and utility functions."""
 
+from functools import lru_cache
 from urllib.parse import urljoin, urlparse
 
 
@@ -11,11 +12,13 @@ def normalize_url(url: str) -> str:
     return normalized.geturl()
 
 
+@lru_cache(maxsize=512)
 def get_domain(url: str) -> str:
     """Extract domain from URL."""
     return urlparse(url).netloc
 
 
+@lru_cache(maxsize=512)
 def get_base_url(url: str) -> str:
     """Get scheme + host (e.g., https://example.com)."""
     parsed = urlparse(url)
