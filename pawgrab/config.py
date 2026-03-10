@@ -21,7 +21,6 @@ class Settings(BaseSettings):
 
     # Browser
     browser_pool_size: int = 3
-    browser_timeout: int = 30000
 
     # Rate limiting (requests per minute per domain)
     rate_limit_rpm: int = 60
@@ -53,9 +52,6 @@ class Settings(BaseSettings):
     # Change tracking / monitoring
     monitor_ttl: int = 86400  # seconds to keep previous content for diff
 
-    # Content processing defaults
-    word_count_threshold: int = 0  # 0 = disabled; min words per text block
-
     # Browser
     browser_type: str = "chromium"  # chromium, firefox, webkit
 
@@ -66,8 +62,6 @@ class Settings(BaseSettings):
 
     # Safety limits
     max_timeout: int = 120000
-    max_crawl_pages: int = 500
-    max_crawl_depth: int = 10
 
 
 settings = Settings()

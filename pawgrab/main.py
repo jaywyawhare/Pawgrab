@@ -19,7 +19,7 @@ from pawgrab.engine.fetcher import close_sessions
 from pawgrab.models.common import ErrorResponse
 from pawgrab.queue.manager import close_redis
 
-_VERSION = "0.0.1"
+from pawgrab import __version__
 
 _is_production = settings.log_level.lower() not in ("debug",)
 
@@ -46,7 +46,7 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("pawgrab_starting", version=_VERSION)
+    logger.info("pawgrab_starting", version=__version__)
     yield
     logger.info("pawgrab_shutting_down")
     await shutdown_proxy_pool()
@@ -64,7 +64,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.bind_contextvars(request_id=request_id)
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
-        response.headers["X-API-Version"] = _VERSION
+        response.headers["X-API-Version"] = __version__
         return response
 
 
@@ -95,8 +95,8 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Pawgrab",
-        description="Web scraping API — clean output from any URL",
-        version=_VERSION,
+        description="Web scraping API",
+        version=__version__,
         lifespan=lifespan,
     )
 
