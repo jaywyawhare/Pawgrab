@@ -15,7 +15,7 @@ COPY pyproject.toml README.md LICENSE ./
 # Install deps (without source — uses only pyproject.toml metadata)
 RUN pip install --no-cache-dir hatchling && \
     pip install --no-cache-dir $(python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); print(' '.join(d['project']['dependencies']))") && \
-    playwright install --with-deps chromium
+    patchright install --with-deps chromium
 
 # Copy source
 COPY pawgrab/ pawgrab/
