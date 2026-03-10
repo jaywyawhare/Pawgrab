@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+from collections import OrderedDict
 
 import structlog
 
@@ -73,7 +74,8 @@ def compare_content(url: str, current_text: str) -> ContentDiff:
 
 
 # In-memory cache + Redis persistence for content snapshots
-_content_cache: dict[str, dict] = {}
+_MAX_CONTENT_CACHE = 1000
+_content_cache: OrderedDict[str, dict] = OrderedDict()
 
 
 async def store_content(url: str, text: str, *, ttl: int | None = None) -> None:
@@ -81,24 +83,27 @@ async def store_content(url: str, text: str, *, ttl: int | None = None) -> None:
     content_hash = _content_hash(text)
     wc = word_count(text)
 
-    # Store in memory
+    # Store in memory with LRU eviction
     _content_cache[url] = {
         "hash": content_hash,
         "word_count": wc,
         "text": text,
     }
+    _content_cache.move_to_end(url)
+    if len(_content_cache) > _MAX_CONTENT_CACHE:
+        _content_cache.popitem(last=False)
 
     # Also persist to Redis for cross-process durability
     try:
         from pawgrab.queue.manager import get_redis
 
         redis = await get_redis()
-        import json
+        import orjson
 
         key = f"pawgrab:monitor:{hashlib.sha256(url.encode()).hexdigest()[:16]}"
         await redis.set(
             key,
-            json.dumps({"hash": content_hash, "word_count": wc, "text": text}),
+            orjson.dumps({"hash": content_hash, "word_count": wc, "text": text}).decode(),
             ex=ttl or settings.monitor_ttl,
         )
     except Exception as exc:
@@ -108,18 +113,19 @@ async def store_content(url: str, text: str, *, ttl: int | None = None) -> None:
 async def load_content(url: str) -> dict | None:
     """Load previously stored content from Redis (populates cache)."""
     if url in _content_cache:
+        _content_cache.move_to_end(url)
         return _content_cache[url]
 
     try:
         from pawgrab.queue.manager import get_redis
 
         redis = await get_redis()
-        import json
+        import orjson
 
         key = f"pawgrab:monitor:{hashlib.sha256(url.encode()).hexdigest()[:16]}"
         raw = await redis.get(key)
         if raw:
-            data = json.loads(raw)
+            data = orjson.loads(raw)
             _content_cache[url] = data
             return data
     except Exception as exc:
