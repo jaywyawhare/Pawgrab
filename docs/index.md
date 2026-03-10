@@ -1,18 +1,65 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
+<div class="hero" markdown>
+
 # Pawgrab
 
-Web scraping API. Returns clean Markdown, HTML, text, or structured JSON from any URL.
+### Web scraping API. Returns clean Markdown, HTML, text, or structured JSON from any URL.
+
+[Get Started](#install){ .md-button .md-button--primary }
+[API Reference](api.md){ .md-button }
+
+</div>
+
+---
 
 ## Features
 
-- Single URL scraping with multiple output formats
-- Async site crawling (BFS, depth/page limits, Redis job queue)
-- Structured extraction via OpenAI, CSS selectors, XPath, or regex
-- Auto JS detection - curl_cffi first, Playwright fallback for JS-heavy pages
-- Anti-bot evasion - TLS fingerprint impersonation, stealth browser profiles
-- Robots.txt compliance
-- Per-domain rate limiting
-- Proxy rotation with health checking
-- Docker Compose deployment (API + worker + Redis)
+<div class="grid cards" markdown>
+
+-   **Multiple Output Formats**
+
+    ---
+
+    Get results as Markdown, HTML, plain text, JSON, CSV, or XML
+
+-   **Async Crawling**
+
+    ---
+
+    BFS/DFS/BestFirst strategies with depth and page limits via Redis job queue
+
+-   **AI Extraction**
+
+    ---
+
+    Structured data extraction via OpenAI, CSS selectors, XPath, or regex
+
+-   **Smart JS Detection**
+
+    ---
+
+    curl_cffi first, automatic Playwright fallback for JS-heavy pages
+
+-   **Anti-Bot Evasion**
+
+    ---
+
+    TLS fingerprint impersonation and stealth browser profiles
+
+-   **Production Ready**
+
+    ---
+
+    Proxy rotation, rate limiting, robots.txt compliance, Docker Compose deployment
+
+</div>
+
+---
 
 ## Install
 
@@ -23,82 +70,51 @@ playwright install chromium
 
 ## Quickstart
 
-```bash
-# Start Redis (needed for /crawl)
-docker run -d -p 6379:6379 redis:7-alpine
+=== "CLI"
 
-# Configure
-cp .env.example .env
-# Set PAWGRAB_OPENAI_API_KEY if you need /extract
+    ```bash
+    # Start Redis (needed for /crawl)
+    docker run -d -p 6379:6379 redis:7-alpine
 
-# Run
-pawgrab serve
-```
+    # Configure
+    cp .env.example .env
 
-Or with Docker:
+    # Run
+    pawgrab serve
+    ```
 
-```bash
-cp .env.example .env
-docker compose up
-```
+=== "Docker"
 
-## API
+    ```bash
+    cp .env.example .env
+    docker compose up
+    ```
 
-All endpoints under `/v1`.
+=== "curl"
 
-### POST /v1/scrape
+    ```bash
+    curl -X POST http://localhost:8000/v1/scrape \
+      -H 'Content-Type: application/json' \
+      -d '{"url": "https://example.com"}'
+    ```
 
-```bash
-curl -X POST http://localhost:8000/v1/scrape \
-  -H 'Content-Type: application/json' \
-  -d '{"url": "https://example.com"}'
-```
+---
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `url` | string | required | URL to scrape |
-| `formats` | array | `["markdown"]` | `markdown`, `html`, `text`, `json` |
-| `wait_for_js` | bool/null | `null` | Force JS (`true`), skip (`false`), auto (`null`) |
-| `timeout` | int | `30000` | Timeout in ms |
+## Quick API Overview
 
-### POST /v1/crawl
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/scrape` | POST | Scrape a single URL |
+| `/v1/crawl` | POST | Async site crawl (returns job ID) |
+| `/v1/extract` | POST | Structured data extraction |
+| `/v1/batch/scrape` | POST | Batch scrape multiple URLs |
+| `/v1/search` | POST | Search the web and scrape results |
+| `/v1/map` | POST | Discover URLs from sitemap |
+| `/health` | GET | Health check |
 
-Returns job ID (HTTP 202). Poll with `GET /v1/crawl/{job_id}`.
+[Full API Reference](api.md){ .md-button }
 
-```bash
-curl -X POST http://localhost:8000/v1/crawl \
-  -H 'Content-Type: application/json' \
-  -d '{"url": "https://example.com", "max_pages": 5}'
-```
-
-### POST /v1/extract
-
-Requires `PAWGRAB_OPENAI_API_KEY`.
-
-```bash
-curl -X POST http://localhost:8000/v1/extract \
-  -H 'Content-Type: application/json' \
-  -d '{"url": "https://example.com", "prompt": "Extract the main heading"}'
-```
-
-### GET /health
-
-```bash
-curl http://localhost:8000/health
-```
-
-## CLI
-
-```bash
-pawgrab scrape https://example.com
-pawgrab scrape https://example.com --format text
-pawgrab extract https://example.com --prompt "Extract the main heading"
-pawgrab serve --port 8000 --reload
-```
-
-## Configuration
-
-All settings via env vars with `PAWGRAB_` prefix. See [.env.example](https://github.com/jaywyawhare/Pawgrab/blob/master/.env.example) for the full list.
+---
 
 ## License
 
