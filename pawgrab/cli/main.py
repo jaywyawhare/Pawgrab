@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
-
+import orjson
 import typer
 from rich.console import Console
 
@@ -64,7 +63,7 @@ def extract(
 
     try:
         data = asyncio.run(_run())
-        console.print_json(json.dumps(data, indent=2, ensure_ascii=False))
+        console.print_json(orjson.dumps(data, option=orjson.OPT_INDENT_2).decode())
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted[/dim]")
         raise typer.Exit(1)

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-
+import orjson
 import structlog
 from fastapi import APIRouter, HTTPException, Query
 
@@ -28,8 +27,8 @@ async def start_batch_scrape(req: BatchScrapeRequest):
         await pool.enqueue_job(
             "batch_scrape_job",
             job_id,
-            json.dumps(urls),
-            json.dumps(formats),
+            orjson.dumps(urls).decode(),
+            orjson.dumps(formats).decode(),
         )
     except Exception as exc:
         logger.error("batch_enqueue_failed", error=str(exc))

@@ -6,6 +6,7 @@ import asyncio
 import random
 
 import structlog
+from curl_cffi import CurlHttpVersion
 from curl_cffi.requests import AsyncSession
 
 from pawgrab.config import settings
@@ -61,13 +62,18 @@ async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSessi
     When a specific proxy is given, a fresh (non-cached) session is returned
     so retry attempts can rotate through different proxies.
     """
+    # Common session kwargs
+    session_kwargs: dict = {
+        "impersonate": impersonate,
+        "timeout": settings.max_timeout / 1000,
+    }
+    if settings.http3:
+        session_kwargs["http_version"] = CurlHttpVersion.V3ONLY
+
     # Proxy-specific sessions are not cached (they change per retry)
     if proxy:
-        return AsyncSession(
-            impersonate=impersonate,
-            proxy=proxy,
-            timeout=settings.max_timeout / 1000,
-        )
+        session_kwargs["proxy"] = proxy
+        return AsyncSession(**session_kwargs)
 
     if impersonate not in _sessions:
         async with _session_lock:
@@ -80,10 +86,7 @@ async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSessi
                         await old.close()
                     except Exception:
                         pass
-                _sessions[impersonate] = AsyncSession(
-                    impersonate=impersonate,
-                    timeout=settings.max_timeout / 1000,
-                )
+                _sessions[impersonate] = AsyncSession(**session_kwargs)
     return _sessions[impersonate]
 
 
@@ -234,10 +237,12 @@ async def fetch_page(
         )
         if proxy_entry is not None:
             proxy_entry.mark_success()
-    except Exception:
+    except Exception as exc:
         if proxy_entry is not None:
-            is_timeout = True  # network errors on curl are usually timeouts
-            proxy_entry.mark_failure(is_timeout=is_timeout, backoff_seconds=settings.proxy_backoff_seconds)
+            proxy_entry.mark_failure(
+                is_timeout=is_proxy_error(exc),
+                backoff_seconds=settings.proxy_backoff_seconds,
+            )
         raise
 
     challenge = _check_challenge(result)
@@ -276,9 +281,12 @@ async def fetch_page(
                 )
                 if retry_entry is not None:
                     retry_entry.mark_success()
-            except Exception:
+            except Exception as exc:
                 if retry_entry is not None:
-                    retry_entry.mark_failure(is_timeout=True, backoff_seconds=settings.proxy_backoff_seconds)
+                    retry_entry.mark_failure(
+                        is_timeout=is_proxy_error(exc),
+                        backoff_seconds=settings.proxy_backoff_seconds,
+                    )
                 raise
             # Accumulate cookies from each response
             merged_cookies.update(result.cookies)
@@ -416,8 +424,25 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
     return warnings
 
 
-_CF_WAIT_MS = 10_000  # max time to wait for Cloudflare auto-resolve
-_CF_SETTLE_MS = 6_000  # max time to wait for network-idle after redirect
+_CF_WAIT_MS = 10_000
+_CF_SETTLE_MS = 6_000
+_CF_MIN_TIMEOUT = 60_000
+
+_PROXY_ERROR_INDICATORS = frozenset({
+    "net::err_proxy",
+    "net::err_tunnel",
+    "connection refused",
+    "connection reset",
+    "connection timed out",
+    "failed to connect",
+    "could not resolve proxy",
+})
+
+
+def is_proxy_error(exc: Exception) -> bool:
+    """Check if an exception is a proxy-related error."""
+    msg = str(exc).lower()
+    return any(indicator in msg for indicator in _PROXY_ERROR_INDICATORS)
 
 async def _fetch_with_browser(
     url: str,
@@ -447,11 +472,13 @@ async def _fetch_with_browser(
     Supports: shadow DOM flattening, iframe inlining, overlay removal,
     text-only mode, infinite scroll, network/console capture, MHTML snapshots.
     """
+    if settings.solve_cloudflare and timeout < _CF_MIN_TIMEOUT:
+        timeout = _CF_MIN_TIMEOUT
+
     page = await pool.acquire()
     if proxy_url and hasattr(pool, "replace_with_proxied_page"):
         page = await pool.replace_with_proxied_page(page, proxy_url, geolocation=geolocation)
 
-    # Network request capture
     network_requests: list[dict] = [] if capture_network else None
     console_logs: list[dict] = [] if capture_console else None
 
@@ -543,6 +570,22 @@ async def _fetch_with_browser(
             "cloudflare_js",
             "cloudflare_interstitial",
         ):
+            # Active Turnstile solver (when enabled)
+            if settings.solve_cloudflare:
+                from pawgrab.engine.browser import solve_cloudflare as _solve_cf
+
+                logger.info("attempting_cf_solve", url=url)
+                solved = await _solve_cf(page)
+                if solved:
+                    html = await page.content()
+                    return FetchResult(
+                        html=html, status_code=200, url=page.url, used_browser=True,
+                        action_warnings=action_warnings,
+                        network_requests=network_requests,
+                        console_logs=console_logs,
+                    )
+
+            # Fallback: passive wait for auto-resolve
             remaining = max(timeout - 5_000, 2_000)
             cf_wait = min(_CF_WAIT_MS, remaining)
             cf_settle = min(_CF_SETTLE_MS, remaining // 2)

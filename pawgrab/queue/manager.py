@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
+
+import orjson
 
 import structlog
 from redis.asyncio import Redis
@@ -59,7 +60,7 @@ async def create_job(
         "url": url,
         "max_pages": max_pages,
         "max_depth": max_depth,
-        "formats": json.dumps(formats),
+        "formats": orjson.dumps(formats).decode(),
         "pages_scraped": 0,
         "error": "",
         "webhook_url": webhook_url or "",
@@ -99,8 +100,8 @@ async def get_job(
     results = []
     for r in raw_results:
         try:
-            results.append(json.loads(r))
-        except json.JSONDecodeError:
+            results.append(orjson.loads(r))
+        except orjson.JSONDecodeError:
             logger.warning("corrupt_result_entry", job_id=job_id)
 
     return CrawlJobStatus(
@@ -136,7 +137,7 @@ async def append_result(job_id: str, result_dict: dict):
     """Append a single scrape result — O(1) via Redis RPUSH."""
     redis = await get_redis()
     key = _results_key(job_id)
-    await redis.rpush(key, json.dumps(result_dict))
+    await redis.rpush(key, orjson.dumps(result_dict).decode())
     await redis.expire(key, 3600)
 
 
@@ -159,9 +160,9 @@ async def create_batch_job(
     job_data = {
         "job_id": job_id,
         "status": CrawlStatus.QUEUED.value,
-        "urls": json.dumps(urls),
+        "urls": orjson.dumps(urls).decode(),
         "total_urls": len(urls),
-        "formats": json.dumps(formats),
+        "formats": orjson.dumps(formats).decode(),
         "urls_scraped": 0,
         "error": "",
         "webhook_url": webhook_url or "",
@@ -192,8 +193,8 @@ async def get_batch_job(
     results = []
     for r in raw_results:
         try:
-            results.append(json.loads(r))
-        except json.JSONDecodeError:
+            results.append(orjson.loads(r))
+        except orjson.JSONDecodeError:
             logger.warning("corrupt_batch_result", job_id=job_id)
 
     return {
@@ -228,7 +229,7 @@ async def update_batch_job(
 async def append_batch_result(job_id: str, result_dict: dict):
     redis = await get_redis()
     key = _batch_results_key(job_id)
-    await redis.rpush(key, json.dumps(result_dict))
+    await redis.rpush(key, orjson.dumps(result_dict).decode())
     await redis.expire(key, 3600)
 
 
@@ -252,12 +253,12 @@ async def save_checkpoint(
 ) -> None:
     """Save crawl state to Redis so it can be resumed after a crash."""
     redis = await get_redis()
-    data = json.dumps({
+    data = orjson.dumps({
         "visited": list(visited),
         "queue": queue,
         "pages_scraped": pages_scraped,
         "cookie_jar": cookie_jar,
-    })
+    }).decode()
     await redis.set(_checkpoint_key(job_id), data, ex=7200)
 
 
@@ -268,11 +269,11 @@ async def load_checkpoint(job_id: str) -> dict | None:
     if not raw:
         return None
     try:
-        data = json.loads(raw)
+        data = orjson.loads(raw)
         data["visited"] = set(data["visited"])
         data["queue"] = [tuple(q) for q in data["queue"]]
         return data
-    except (json.JSONDecodeError, KeyError):
+    except (orjson.JSONDecodeError, KeyError):
         return None
 
 
@@ -289,7 +290,7 @@ def _pubsub_channel(job_id: str) -> str:
 async def publish_event(job_id: str, event_type: str, data: dict) -> None:
     """Publish an SSE event to the Redis channel for a job."""
     redis = await get_redis()
-    payload = json.dumps({"type": event_type, **data})
+    payload = orjson.dumps({"type": event_type, **data}).decode()
     await redis.publish(_pubsub_channel(job_id), payload)
 
 
@@ -308,10 +309,10 @@ async def subscribe_events(job_id: str):
                 yield data
                 # Stop after terminal events
                 try:
-                    parsed = json.loads(data)
+                    parsed = orjson.loads(data)
                     if parsed.get("type") in ("completed", "failed"):
                         break
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     pass
     finally:
         await pubsub.unsubscribe(channel)

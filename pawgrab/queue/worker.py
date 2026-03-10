@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import random
+
+import orjson
 from urllib.parse import urlparse
 
 import structlog
@@ -165,20 +166,20 @@ async def crawl_job(
     Supports crash recovery: state is checkpointed to Redis every 10 pages.
     Pass resume=True to restore from a previous checkpoint.
     """
-    formats = [OutputFormat(f) for f in json.loads(formats_json)]
+    formats = [OutputFormat(f) for f in orjson.loads(formats_json)]
     browser_pool = ctx.get("browser_pool")
     proxy_pool = ctx.get("proxy_pool")
 
     # Build URL filter chain
     filter_chain = _build_filter_chain(
-        allowed_domains=json.loads(allowed_domains) if allowed_domains else None,
-        blocked_domains=json.loads(blocked_domains) if blocked_domains else None,
-        include_path_patterns=json.loads(include_path_patterns) if include_path_patterns else None,
-        exclude_path_patterns=json.loads(exclude_path_patterns) if exclude_path_patterns else None,
+        allowed_domains=orjson.loads(allowed_domains) if allowed_domains else None,
+        blocked_domains=orjson.loads(blocked_domains) if blocked_domains else None,
+        include_path_patterns=orjson.loads(include_path_patterns) if include_path_patterns else None,
+        exclude_path_patterns=orjson.loads(exclude_path_patterns) if exclude_path_patterns else None,
     )
 
     # Parse keywords for BestFirst scoring
-    kw_list = json.loads(keywords) if keywords else None
+    kw_list = orjson.loads(keywords) if keywords else None
 
     # Create crawl strategy
     strategy = get_strategy(strategy_name, keywords=kw_list)
@@ -319,8 +320,8 @@ async def crawl_job(
 
 async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json: str):
     """Scrape a list of URLs sequentially, storing results as they complete."""
-    urls = json.loads(urls_json)
-    formats = [OutputFormat(f) for f in json.loads(formats_json)]
+    urls = orjson.loads(urls_json)
+    formats = [OutputFormat(f) for f in orjson.loads(formats_json)]
     browser_pool = ctx.get("browser_pool")
     proxy_pool = ctx.get("proxy_pool")
 

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import math
 import re
+
+import orjson
 import xml.etree.ElementTree as ET
 from collections import Counter
 
@@ -69,7 +70,7 @@ def html_to_json(html: str) -> str:
         else:
             sections.append({"heading": "", "level": 0, "content": [text]})
 
-    return json.dumps(sections, ensure_ascii=False)
+    return orjson.dumps(sections).decode()
 
 
 def html_to_csv(html: str) -> str:
@@ -119,6 +120,7 @@ def html_to_xml(html: str) -> str:
     return ET.tostring(root, encoding="unicode", xml_declaration=True)
 
 
+_HEADING_RE = re.compile(r"^#{1,6}\s")
 _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
 
 
@@ -184,7 +186,7 @@ def _split_by_headings(markdown: str) -> list[str]:
     current: list[str] = []
 
     for line in lines:
-        if re.match(r"^#{1,6}\s", line) and current:
+        if _HEADING_RE.match(line) and current:
             sections.append("\n".join(current).strip())
             current = [line]
         else:

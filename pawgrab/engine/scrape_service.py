@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import base64
-import json
-
+import orjson
 import structlog
 
 from pawgrab.engine.cleaner import extract_content
@@ -242,7 +241,7 @@ def _build_response(
                 response.text = converted
                 text_content = converted
             case OutputFormat.JSON:
-                response.json_data = json.loads(converted)
+                response.json_data = orjson.loads(converted)
             case OutputFormat.CSV:
                 response.csv_data = converted
             case OutputFormat.XML:

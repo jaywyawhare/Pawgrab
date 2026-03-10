@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-
+import orjson
 import structlog
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -43,14 +42,14 @@ async def start_crawl(req: CrawlRequest):
             url,
             req.max_pages,
             req.max_depth,
-            json.dumps(formats),
+            orjson.dumps(formats).decode(),
             resume,
             req.strategy.value,
-            json.dumps(req.allowed_domains) if req.allowed_domains else None,
-            json.dumps(req.blocked_domains) if req.blocked_domains else None,
-            json.dumps(req.include_path_patterns) if req.include_path_patterns else None,
-            json.dumps(req.exclude_path_patterns) if req.exclude_path_patterns else None,
-            json.dumps(req.keywords) if req.keywords else None,
+            orjson.dumps(req.allowed_domains).decode() if req.allowed_domains else None,
+            orjson.dumps(req.blocked_domains).decode() if req.blocked_domains else None,
+            orjson.dumps(req.include_path_patterns).decode() if req.include_path_patterns else None,
+            orjson.dumps(req.exclude_path_patterns).decode() if req.exclude_path_patterns else None,
+            orjson.dumps(req.keywords).decode() if req.keywords else None,
         )
     except Exception as exc:
         logger.error("crawl_enqueue_failed", error=str(exc))
@@ -87,11 +86,11 @@ async def stream_crawl_events(job_id: str):
     # If job already completed/failed, send final event immediately
     if job.status in (CrawlStatus.COMPLETED, CrawlStatus.FAILED):
         event_type = job.status.value
-        data = json.dumps({
+        data = orjson.dumps({
             "type": event_type,
             "pages_scraped": job.pages_scraped,
             **({"error": job.error} if job.error else {}),
-        })
+        }).decode()
 
         async def _final():
             yield f"event: {event_type}\ndata: {data}\n\n"
@@ -105,10 +104,10 @@ async def stream_crawl_events(job_id: str):
     async def _stream():
         async for event_data in subscribe_events(job_id):
             try:
-                parsed = json.loads(event_data)
+                parsed = orjson.loads(event_data)
                 event_type = parsed.pop("type", "message")
-                yield f"event: {event_type}\ndata: {json.dumps(parsed)}\n\n"
-            except json.JSONDecodeError:
+                yield f"event: {event_type}\ndata: {orjson.dumps(parsed).decode()}\n\n"
+            except orjson.JSONDecodeError:
                 yield f"data: {event_data}\n\n"
 
     return StreamingResponse(
