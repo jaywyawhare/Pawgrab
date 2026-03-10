@@ -27,7 +27,7 @@ pawgrab extract https://example.com --prompt "Extract the main heading and summa
 
 ```bash
 pawgrab serve
-pawgrab serve --host 127.0.0.3 --port 9000 --reload
+pawgrab serve --host 127.0.0.4 --port 9000 --reload
 ```
 
 `--host` (default `0.0.0.0`), `--port` (default `8000`), `--reload` (watch for code changes).
