@@ -2,7 +2,7 @@ site_name: Pawgrab
 site_url: https://jaywyawhare.github.io/Pawgrab/
 repo_url: https://github.com/jaywyawhare/Pawgrab
 repo_name: jaywyawhare/Pawgrab
-site_description: Web scraping API — clean Markdown, HTML, text, or structured JSON from any URL.
+site_description: Web scraping API - clean Markdown, HTML, text, or structured JSON from any URL.
 
 theme:
   name: material
