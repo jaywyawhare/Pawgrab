@@ -1,7 +1,4 @@
-"""Shared scrape pipeline used by /v1/scrape, /v1/crawl worker, and CLI.
-
-Single source of truth for: fetch → clean → convert → build response.
-"""
+"""Scrape pipeline: fetch → clean → convert → response."""
 
 from __future__ import annotations
 
@@ -15,8 +12,8 @@ from pawgrab.engine.converter import (
     convert,
     fit_markdown,
     markdown_with_citations,
-    word_count,
 )
+from pawgrab.utils.text import word_count
 from pawgrab.engine.fetcher import FetchResult, fetch_page
 from pawgrab.engine.pdf_extractor import extract_pdf_text, pdf_text_to_html
 from pawgrab.engine.robots import is_allowed
@@ -151,14 +148,13 @@ async def scrape_url(
         response.media = extract_all_media(result.html, result.url)
 
     # Attach capture results
-    if hasattr(result, "network_requests") and result.network_requests:
+    if result.network_requests:
         response.network_requests = result.network_requests
-    if hasattr(result, "console_logs") and result.console_logs:
+    if result.console_logs:
         response.console_logs = result.console_logs
-    if hasattr(result, "mhtml_data") and result.mhtml_data:
-        import base64 as b64m
-        response.mhtml_base64 = b64m.b64encode(result.mhtml_data).decode()
-    if hasattr(result, "ssl_info") and result.ssl_info:
+    if result.mhtml_data:
+        response.mhtml_base64 = base64.b64encode(result.mhtml_data).decode()
+    if result.ssl_info:
         response.ssl_certificate = result.ssl_info
 
     # Fire after_extract hook

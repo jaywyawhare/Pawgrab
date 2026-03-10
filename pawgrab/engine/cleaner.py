@@ -1,14 +1,12 @@
-"""Content extraction using Readability algorithm.
-
-Supports pre-processing: tag exclusion, CSS selector scoping,
-word count thresholds, and content filters (pruning / BM25).
-"""
+"""Content extraction via Readability."""
 
 from __future__ import annotations
 
 import structlog
 from bs4 import BeautifulSoup
 from readabilipy import simple_json_from_html_string
+
+from pawgrab.utils.text import make_soup
 
 logger = structlog.get_logger()
 
@@ -67,11 +65,7 @@ def extract_content(
     content_html = article.get("content") or ""
 
     # Extract metadata from original HTML
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        logger.debug("lxml_fallback", url=url)
-        soup = BeautifulSoup(html, "html.parser")
+    soup = make_soup(html)
 
     description = ""
     meta_desc = soup.find("meta", attrs={"name": "description"})
@@ -111,10 +105,7 @@ def _preprocess(
     if not excluded_tags and not excluded_selector and not css_selector:
         return html
 
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = make_soup(html)
 
     # Strip excluded tags
     if excluded_tags:
@@ -142,10 +133,7 @@ def _preprocess(
 
 def _apply_word_count_threshold(html: str, threshold: int) -> str:
     """Remove text blocks with fewer words than threshold."""
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = make_soup(html)
 
     for el in soup.find_all(["p", "li", "td", "th", "span", "div"]):
         text = el.get_text(strip=True)

@@ -1,12 +1,4 @@
-"""Dual-path page fetcher: curl_cffi (fast, TLS-impersonated) + Playwright (JS rendering).
-
-curl_cffi impersonates real browser TLS fingerprints (JA3/JA4/Akamai HTTP/2)
-so anti-bot systems like Cloudflare see a legitimate browser handshake rather
-than a Python HTTP client.  Safari fingerprints are used by default.
-
-When a challenge is still detected, the fetcher retries with a different
-browser family (different TLS stack entirely) then escalates to Playwright.
-"""
+"""Page fetcher: curl_cffi with TLS impersonation, Playwright fallback."""
 
 from __future__ import annotations
 

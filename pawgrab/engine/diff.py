@@ -9,16 +9,13 @@ import structlog
 
 from pawgrab.config import settings
 from pawgrab.models.monitor import ChangeType, ContentDiff
+from pawgrab.utils.text import word_count
 
 logger = structlog.get_logger()
 
 
 def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
-
-
-def _word_count(text: str) -> int:
-    return len(text.split())
 
 
 def _diff_summary(old: str, new: str, max_lines: int = 20) -> str:
@@ -39,7 +36,7 @@ def compare_content(url: str, current_text: str) -> ContentDiff:
     to persist snapshots to Redis.
     """
     current_hash = _content_hash(current_text)
-    current_wc = _word_count(current_text)
+    current_wc = word_count(current_text)
 
     # Try to load previous content from in-memory cache
     prev = _content_cache.get(url)
@@ -82,7 +79,7 @@ _content_cache: dict[str, dict] = {}
 async def store_content(url: str, text: str, *, ttl: int | None = None) -> None:
     """Store content snapshot for future comparison."""
     content_hash = _content_hash(text)
-    wc = _word_count(text)
+    wc = word_count(text)
 
     # Store in memory
     _content_cache[url] = {

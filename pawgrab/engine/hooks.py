@@ -1,14 +1,4 @@
-"""Lifecycle hooks for the scrape pipeline.
-
-Hook points:
-  - before_fetch: called before fetching a URL
-  - after_fetch: called after fetching (with FetchResult)
-  - before_extract: called before content extraction
-  - after_extract: called after extraction (with ScrapeResponse)
-  - on_error: called on any pipeline error
-
-Users register async callables that receive keyword arguments.
-"""
+"""Lifecycle hooks for the scrape pipeline."""
 
 from __future__ import annotations
 

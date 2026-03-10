@@ -1,9 +1,4 @@
-"""Meta proxy pool with rotation policies, health checking, and auto-eviction.
-
-Proxies are loaded from settings on start() and can be added/removed at runtime
-via REST API. The pool tracks per-proxy metrics (latency, success/failure counts)
-and automatically evicts unhealthy proxies with backoff-based reanimation.
-"""
+"""Proxy pool with rotation, health checking, and auto-eviction."""
 
 from __future__ import annotations
 

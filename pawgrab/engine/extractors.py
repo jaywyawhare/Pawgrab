@@ -1,17 +1,14 @@
-"""Non-LLM extraction strategies: CSS, XPath, Regex, and schema auto-generation.
-
-Each extractor takes HTML content and strategy-specific config, returning
-structured data as a list of dictionaries.
-"""
+"""CSS, XPath, and Regex extraction strategies."""
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
 from bs4 import BeautifulSoup, Tag
 from lxml import etree
+
+from pawgrab.utils.text import make_soup
 
 
 class BaseExtractor:
@@ -44,10 +41,7 @@ class CSSExtractor(BaseExtractor):
         self.selectors = selectors
 
     def extract(self, html: str) -> list[dict[str, Any]]:
-        try:
-            soup = BeautifulSoup(html, "lxml")
-        except Exception:
-            soup = BeautifulSoup(html, "html.parser")
+        soup = make_soup(html)
 
         # If container + fields pattern, extract repeated elements
         if "container" in self.selectors and "fields" in self.selectors:
@@ -163,11 +157,7 @@ class RegexExtractor(BaseExtractor):
         self.patterns = patterns
 
     def extract(self, html: str) -> list[dict[str, Any]]:
-        # Strip HTML tags for regex matching
-        try:
-            soup = BeautifulSoup(html, "lxml")
-        except Exception:
-            soup = BeautifulSoup(html, "html.parser")
+        soup = make_soup(html)
         text = soup.get_text(separator="\n", strip=True)
 
         if isinstance(self.patterns, str):

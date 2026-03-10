@@ -111,9 +111,6 @@ class BFSStrategy(CrawlStrategy):
     def __len__(self) -> int:
         return len(self._queue)
 
-    def extend(self, items: list[tuple[str, int]]) -> None:
-        self._queue.extend(items)
-
     def to_list(self) -> list[tuple[str, int]]:
         return list(self._queue)
 
@@ -134,9 +131,6 @@ class DFSStrategy(CrawlStrategy):
 
     def __len__(self) -> int:
         return len(self._stack)
-
-    def extend(self, items: list[tuple[str, int]]) -> None:
-        self._stack.extend(items)
 
     def to_list(self) -> list[tuple[str, int]]:
         return list(self._stack)

@@ -1,9 +1,4 @@
-"""Memory-adaptive dispatcher for dynamic concurrency control.
-
-Monitors system memory and adjusts the number of concurrent browser
-instances to prevent OOM kills. Scales down when memory usage is high,
-scales back up when it recovers.
-"""
+"""Memory-adaptive concurrency control."""
 
 from __future__ import annotations
 

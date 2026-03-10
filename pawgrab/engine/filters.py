@@ -1,8 +1,4 @@
-"""Content filters for removing boilerplate and ranking by relevance.
-
-PruningContentFilter — text density analysis to strip nav/footer/sidebar noise.
-BM25ContentFilter   — TF-IDF cosine similarity scoring for query-relevant blocks.
-"""
+"""Content filters: pruning (text density) and BM25 (TF-IDF similarity)."""
 
 from __future__ import annotations
 
@@ -11,6 +7,8 @@ import re
 from collections import Counter
 
 from bs4 import BeautifulSoup, Tag
+
+from pawgrab.utils.text import make_soup, tokenize
 
 # Tags commonly containing boilerplate
 _BOILERPLATE_TAGS = frozenset({
@@ -70,10 +68,7 @@ class PruningContentFilter:
         if not html or not html.strip():
             return html
 
-        try:
-            soup = BeautifulSoup(html, "lxml")
-        except Exception:
-            soup = BeautifulSoup(html, "html.parser")
+        soup = make_soup(html)
 
         # 1. Remove known boilerplate tags
         for tag_name in _BOILERPLATE_TAGS:
@@ -106,11 +101,6 @@ class PruningContentFilter:
         return str(soup)
 
 
-def _tokenize(text: str) -> list[str]:
-    """Simple whitespace tokenizer with lowercasing."""
-    return re.findall(r"[a-z0-9]+", text.lower())
-
-
 class BM25ContentFilter:
     """Score and filter content blocks by TF-IDF cosine similarity to a query.
 
@@ -127,17 +117,14 @@ class BM25ContentFilter:
         self.query = query
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
-        self._query_terms = _tokenize(query)
+        self._query_terms = tokenize(query)
 
     def filter_html(self, html: str) -> str:
         """Return HTML containing only query-relevant content blocks."""
         if not self._query_terms or not html or not html.strip():
             return html
 
-        try:
-            soup = BeautifulSoup(html, "lxml")
-        except Exception:
-            soup = BeautifulSoup(html, "html.parser")
+        soup = make_soup(html)
 
         # Extract block-level elements
         blocks: list[Tag] = []
@@ -153,7 +140,7 @@ class BM25ContentFilter:
             return html
 
         # Tokenize all blocks
-        block_tokens = [_tokenize(b.get_text()) for b in blocks]
+        block_tokens = [tokenize(b.get_text()) for b in blocks]
 
         # Build document frequency
         n = len(blocks)

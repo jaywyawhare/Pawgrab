@@ -572,32 +572,6 @@ class BrowserPool:
         if new_page is not None:
             await self._pages.put(new_page)
 
-    async def get_persistent_context(self, session_id: str) -> BrowserContext:
-        """Get or create a persistent browser context for session reuse.
-
-        Persistent contexts preserve cookies, localStorage, and other state
-        across requests with the same session_id.
-        """
-        if session_id in self._persistent_contexts:
-            return self._persistent_contexts[session_id]
-
-        assert self._browser is not None
-        ctx = await self._browser.new_context()
-        if settings.stealth_mode:
-            await _apply_stealth(ctx)
-            await ctx.add_init_script(_build_evasion_script())
-        self._persistent_contexts[session_id] = ctx
-        return ctx
-
-    async def close_persistent_context(self, session_id: str) -> None:
-        """Close a persistent context and remove from pool."""
-        ctx = self._persistent_contexts.pop(session_id, None)
-        if ctx:
-            try:
-                await ctx.close()
-            except Exception:
-                pass
-
     async def stop(self):
         if not self._started:
             return

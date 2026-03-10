@@ -1,26 +1,16 @@
-"""Media and link extraction from HTML pages.
-
-Extracts all images, videos, audio, and links with metadata
-(src, alt, dimensions, href, anchor text, etc.).
-"""
+"""Extract images, videos, audio, and links from HTML."""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
+from pawgrab.utils.text import make_soup
 
 
 def extract_all_media(html: str, base_url: str = "") -> dict[str, Any]:
-    """Extract all media elements and links from HTML.
-
-    Returns a dict with keys: images, videos, audio, links
-    """
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = make_soup(html)
 
     return {
         "images": _extract_images(soup, base_url),
@@ -59,7 +49,6 @@ def _extract_images(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
     for el in soup.find_all(style=True):
         style = el.get("style", "")
         if "url(" in style:
-            import re
             urls = re.findall(r'url\(["\']?([^"\')\s]+)["\']?\)', style)
             for u in urls:
                 images.append({

@@ -14,6 +14,7 @@ import html2text
 from bs4 import BeautifulSoup
 
 from pawgrab.models.common import OutputFormat
+from pawgrab.utils.text import make_soup, tokenize, word_count
 
 # Reuse a single converter instance — HTML2Text is stateless between calls.
 _md_converter = html2text.HTML2Text()
@@ -46,20 +47,14 @@ def html_to_markdown(html: str) -> str:
 
 
 def html_to_text(html: str) -> str:
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = make_soup(html)
     text = soup.get_text(separator="\n", strip=True)
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
 def html_to_json(html: str) -> str:
     """Convert HTML to a JSON structure of headings and paragraphs."""
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = make_soup(html)
     sections: list[dict] = []
 
     for el in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "li"]):
@@ -82,10 +77,7 @@ def html_to_csv(html: str) -> str:
 
     If no tables are found, falls back to heading/content pairs.
     """
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = make_soup(html)
 
     tables = soup.find_all("table")
     buf = io.StringIO()
@@ -112,10 +104,7 @@ def html_to_csv(html: str) -> str:
 
 def html_to_xml(html: str) -> str:
     """Convert HTML content to a structured XML document."""
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = make_soup(html)
 
     root = ET.Element("document")
 
@@ -161,21 +150,7 @@ def markdown_with_citations(markdown: str) -> str:
 
 
 def fit_markdown(markdown: str, query: str, *, top_k: int = 5, min_score: float = 0.0) -> str:
-    """Filter markdown sections by BM25 relevance to a query.
-
-    Splits markdown by headings, scores each section against the query using
-    BM25, and returns only the top-k most relevant sections. This dramatically
-    reduces token usage when feeding content to LLMs.
-
-    Args:
-        markdown: Full markdown text.
-        query: Search query for relevance scoring.
-        top_k: Maximum number of sections to keep.
-        min_score: Minimum BM25 score threshold.
-
-    Returns:
-        Filtered markdown containing only the most relevant sections.
-    """
+    """Filter markdown sections by BM25 relevance to a query."""
     if not query or not markdown.strip():
         return markdown
 
@@ -183,7 +158,7 @@ def fit_markdown(markdown: str, query: str, *, top_k: int = 5, min_score: float 
     if len(sections) <= 1:
         return markdown
 
-    query_terms = _tokenize(query)
+    query_terms = tokenize(query)
     if not query_terms:
         return markdown
 
@@ -221,11 +196,6 @@ def _split_by_headings(markdown: str) -> list[str]:
     return [s for s in sections if s]
 
 
-def _tokenize(text: str) -> list[str]:
-    """Simple whitespace tokenizer with lowercasing."""
-    return re.findall(r"[a-z0-9]+", text.lower())
-
-
 def _bm25_score(
     sections: list[str],
     query_terms: list[str],
@@ -234,7 +204,7 @@ def _bm25_score(
 ) -> list[tuple[str, float]]:
     """Score sections using Okapi BM25."""
     n = len(sections)
-    tokenized = [_tokenize(s) for s in sections]
+    tokenized = [tokenize(s) for s in sections]
     avg_dl = sum(len(t) for t in tokenized) / max(n, 1)
 
     # Document frequency for IDF
@@ -261,7 +231,3 @@ def _bm25_score(
         results.append((section, score))
 
     return results
-
-
-def word_count(text: str) -> int:
-    return len(text.split())
