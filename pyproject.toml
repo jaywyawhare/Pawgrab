@@ -50,7 +50,7 @@ dev = [
 ]
 
 [project.scripts]
-pawgrab = "cli.main:app"
+pawgrab = "pawgrab.cli.main:app"
 
 [tool.ruff]
 target-version = "py311"
