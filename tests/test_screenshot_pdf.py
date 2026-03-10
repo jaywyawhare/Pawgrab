@@ -1,6 +1,5 @@
 """Tests for screenshot and PDF capture functionality."""
 
-import base64
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

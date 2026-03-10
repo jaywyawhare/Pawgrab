@@ -2,6 +2,8 @@
 
 import pytest
 
+from pawgrab import __version__
+
 
 async def test_health(client):
     resp = await client.get("/health")
@@ -17,7 +19,7 @@ async def test_status(client):
     resp = await client.get("/status")
     data = resp.json()
     assert data["service"] == "pawgrab"
-    assert data["version"] == "0.0.1"
+    assert data["version"] == __version__
 
 
 async def test_scrape_missing_url(client):

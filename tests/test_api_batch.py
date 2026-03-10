@@ -30,7 +30,7 @@ async def test_batch_scrape_creation(client):
     """Batch scrape should return 202 with job_id."""
     with (
         patch("pawgrab.api.batch.create_batch_job", new_callable=AsyncMock) as mock_create,
-        patch("pawgrab.api.batch._get_arq_pool", new_callable=AsyncMock) as mock_pool,
+        patch("pawgrab.api.batch.get_arq_pool", new_callable=AsyncMock) as mock_pool,
     ):
         mock_create.return_value = "abcdef123456"
         pool = AsyncMock()
@@ -82,7 +82,7 @@ async def test_batch_queue_unavailable(client):
     """Should return 503 when queue is down."""
     with (
         patch("pawgrab.api.batch.create_batch_job", new_callable=AsyncMock) as mock_create,
-        patch("pawgrab.api.batch._get_arq_pool", new_callable=AsyncMock) as mock_pool,
+        patch("pawgrab.api.batch.get_arq_pool", new_callable=AsyncMock) as mock_pool,
     ):
         mock_create.return_value = "abcdef123456"
         mock_pool.side_effect = Exception("Redis down")

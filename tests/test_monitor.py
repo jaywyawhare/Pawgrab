@@ -31,7 +31,8 @@ def test_unchanged_content():
     text = "Hello World"
 
     # Simulate previous storage
-    from pawgrab.engine.diff import _content_hash, _word_count
+    from pawgrab.engine.diff import _content_hash
+    from pawgrab.utils.text import word_count as _word_count
     _content_cache[url] = {
         "hash": _content_hash(text),
         "word_count": _word_count(text),
@@ -49,7 +50,8 @@ def test_modified_content():
     old_text = "Hello World"
     new_text = "Hello New World"
 
-    from pawgrab.engine.diff import _content_hash, _word_count
+    from pawgrab.engine.diff import _content_hash
+    from pawgrab.utils.text import word_count as _word_count
     _content_cache[url] = {
         "hash": _content_hash(old_text),
         "word_count": _word_count(old_text),

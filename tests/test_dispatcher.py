@@ -1,8 +1,5 @@
 """Tests for Phase 6: Memory-adaptive dispatcher."""
 
-import asyncio
-from unittest.mock import patch
-
 import pytest
 
 from pawgrab.engine.dispatcher import MemoryAdaptiveDispatcher, _get_memory_percent

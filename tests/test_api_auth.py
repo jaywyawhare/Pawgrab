@@ -1,7 +1,6 @@
 """Tests for API key authentication middleware."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 
 @pytest.fixture
@@ -15,17 +14,13 @@ def auth_app():
         mock_settings.openai_api_key = ""
         mock_settings.openai_model = "gpt-4o-mini"
         mock_settings.browser_pool_size = 1
-        mock_settings.browser_timeout = 30000
         mock_settings.rate_limit_rpm = 60
         mock_settings.respect_robots = True
         mock_settings.stealth_mode = True
         mock_settings.max_challenge_retries = 2
         mock_settings.impersonate = ""
         mock_settings.proxy_url = ""
-        mock_settings.cache_ttl = 0
         mock_settings.max_timeout = 120000
-        mock_settings.max_crawl_pages = 500
-        mock_settings.max_crawl_depth = 10
 
         # Reimport to pick up patched settings
         import importlib
