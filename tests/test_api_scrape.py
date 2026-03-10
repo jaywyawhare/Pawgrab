@@ -1,0 +1,30 @@
+"""Tests for the /v1/scrape endpoint."""
+
+import pytest
+
+
+async def test_health(client):
+    resp = await client.get("/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    # API itself must always be "ok"; overall status is "degraded" when Redis
+    # is unavailable, which is expected in test environments without Redis.
+    assert data["status"] in ("ok", "degraded")
+    assert data["checks"]["api"] == "ok"
+
+
+async def test_status(client):
+    resp = await client.get("/status")
+    data = resp.json()
+    assert data["service"] == "pawgrab"
+    assert data["version"] == "0.0.1"
+
+
+async def test_scrape_missing_url(client):
+    resp = await client.post("/v1/scrape", json={})
+    assert resp.status_code == 422
+
+
+async def test_scrape_invalid_url(client):
+    resp = await client.post("/v1/scrape", json={"url": "not-a-url"})
+    assert resp.status_code == 422
