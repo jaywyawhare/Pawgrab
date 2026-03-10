@@ -1,10 +1,9 @@
-"""Job management via Redis for async crawl operations."""
+"""Job management via Redis."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-import re
 import uuid
 
 import structlog
@@ -12,13 +11,12 @@ from redis.asyncio import Redis
 
 from pawgrab.config import settings
 from pawgrab.models.crawl import CrawlJobStatus, CrawlStatus
+from pawgrab.queue.pool import JOB_ID_RE
 
 logger = structlog.get_logger()
 
 _redis: Redis | None = None
 _redis_lock = asyncio.Lock()
-
-_JOB_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 
 
 async def get_redis() -> Redis:
@@ -85,7 +83,7 @@ async def get_job(
     limit: int = 50,
 ) -> CrawlJobStatus | None:
     """Get job status with paginated results."""
-    if not _JOB_ID_RE.match(job_id):
+    if not JOB_ID_RE.match(job_id):
         return None
 
     redis = await get_redis()
@@ -179,7 +177,7 @@ async def get_batch_job(
     page: int = 1,
     limit: int = 50,
 ) -> dict | None:
-    if not _JOB_ID_RE.match(job_id):
+    if not JOB_ID_RE.match(job_id):
         return None
 
     redis = await get_redis()
