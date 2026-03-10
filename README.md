@@ -12,8 +12,8 @@
 - Single URL scraping with multiple output formats
 - Async site crawling (BFS, depth/page limits, Redis job queue)
 - Structured extraction via OpenAI, CSS selectors, XPath, or regex
-- Auto JS detection — curl_cffi first, Playwright fallback for JS-heavy pages
-- Anti-bot evasion — TLS fingerprint impersonation, stealth browser profiles
+- Auto JS detection - curl_cffi first, Playwright fallback for JS-heavy pages
+- Anti-bot evasion - TLS fingerprint impersonation, stealth browser profiles
 - Robots.txt compliance
 - Per-domain rate limiting
 - Proxy rotation with health checking
