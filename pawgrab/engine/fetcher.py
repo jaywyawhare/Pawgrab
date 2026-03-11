@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import random
 
+from urllib.parse import urlparse
+
 import structlog
 from curl_cffi import CurlHttpVersion
 from curl_cffi.requests import AsyncSession
 
 from pawgrab.config import settings
 from pawgrab.engine.antibot import (
+    SAFARI_TARGETS,
     ChallengeDetection,
     detect_challenge,
     fallback_impersonate,
@@ -54,6 +57,23 @@ def _sanitize_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
 _MAX_SESSIONS = 12  # cap session pool size
 _sessions: dict[str, AsyncSession] = {}
 _session_lock = asyncio.Lock()
+_host_targets: dict[str, str] = {}  # host → impersonate target for connection reuse
+
+
+def _impersonate_for_host(host: str) -> str:
+    """Return a consistent impersonation target for a host.
+
+    Pins the TLS fingerprint per-host so repeated requests reuse
+    the same session → warm TCP/TLS connection.
+
+    Always starts with Safari so the TLS fingerprint matches the browser
+    fallback path (which uses Safari UA/evasion profile).  This prevents
+    anti-bot systems from seeing two different browser families from the
+    same IP when curl escalates to Playwright.
+    """
+    if host not in _host_targets:
+        _host_targets[host] = random.choice(SAFARI_TARGETS)
+    return _host_targets[host]
 
 
 async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSession:
@@ -98,6 +118,7 @@ async def close_sessions():
         except Exception:
             pass
     _sessions.clear()
+    _host_targets.clear()
 
 
 class FetchResult:
@@ -229,7 +250,8 @@ async def fetch_page(
         if ref:
             headers["Referer"] = ref
 
-    first_target = settings.impersonate or random_impersonate()
+    host = urlparse(url).netloc
+    first_target = settings.impersonate or _impersonate_for_host(host)
     try:
         result = await _fetch_with_curl(
             url, timeout=timeout, impersonate=first_target,
@@ -292,6 +314,8 @@ async def fetch_page(
             merged_cookies.update(result.cookies)
             challenge = _check_challenge(result)
             if not challenge.detected:
+                # Pin the successful target so future requests reuse this session
+                _host_targets[host] = retry_target
                 logger.info(
                     "challenge_bypassed",
                     url=url,
@@ -495,9 +519,15 @@ async def _fetch_with_browser(
             ]
             await page.context.add_cookies(cookie_list)
 
-        # Text-only mode: block images, CSS, fonts for faster loading
+        # Text-only mode: block images, fonts, media for faster loading
+        # (ad/tracker blocking is already active at context level)
         if text_mode:
-            await page.route("**/*", _text_mode_route_handler)
+            from pawgrab.engine.browser import _BLOCKED_MEDIA_TYPES
+            async def _media_block_handler(route):
+                if route.request.resource_type in _BLOCKED_MEDIA_TYPES:
+                    return await route.abort()
+                return await route.continue_()
+            await page.route("**/*", _media_block_handler)
 
         # Set up network request capture
         if capture_network:
@@ -658,15 +688,6 @@ async def _fetch_with_browser(
         )
     finally:
         await pool.release(page)
-
-
-async def _text_mode_route_handler(route):
-    """Block non-essential resources for text-only mode."""
-    blocked = {"image", "stylesheet", "font", "media"}
-    if route.request.resource_type in blocked:
-        await route.abort()
-    else:
-        await route.continue_()
 
 
 async def _capture_ssl_info(page, url: str) -> dict | None:
