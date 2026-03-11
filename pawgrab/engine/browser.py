@@ -7,6 +7,7 @@ import random
 import re
 import shutil
 import tempfile
+from urllib.parse import urlparse
 
 import structlog
 from patchright.async_api import Browser, BrowserContext, Page, async_playwright
@@ -393,6 +394,54 @@ if (typeof speechSynthesis !== 'undefined') {
         return voices;
     };
 }
+
+if (navigator.mediaDevices) {
+    navigator.mediaDevices.enumerateDevices = function() {
+        return Promise.resolve([]);
+    };
+}
+
+if ('vibrate' in navigator) {
+    Object.defineProperty(navigator, 'vibrate', {
+        get: () => undefined,
+        configurable: true,
+    });
+}
+
+if (typeof SpeechRecognition !== 'undefined') {
+    Object.defineProperty(window, 'SpeechRecognition', {
+        get: () => undefined,
+        configurable: true,
+    });
+}
+
+if ('keyboard' in navigator) {
+    Object.defineProperty(navigator, 'keyboard', {
+        get: () => undefined,
+        configurable: true,
+    });
+}
+
+if ('serial' in navigator) {
+    Object.defineProperty(navigator, 'serial', {
+        get: () => undefined,
+        configurable: true,
+    });
+}
+
+if ('hid' in navigator) {
+    Object.defineProperty(navigator, 'hid', {
+        get: () => undefined,
+        configurable: true,
+    });
+}
+
+if ('presentation' in navigator) {
+    Object.defineProperty(navigator, 'presentation', {
+        get: () => undefined,
+        configurable: true,
+    });
+}
 """
 
 
@@ -546,6 +595,54 @@ async function scrollToBottom() {
 }
 await scrollToBottom();
 """
+
+_AD_TRACKER_DOMAINS = frozenset({
+    "doubleclick.net",
+    "adservice.google.com",
+    "googlesyndication.com",
+    "googletagservices.com",
+    "googletagmanager.com",
+    "google-analytics.com",
+    "googleadservices.com",
+    "analytics.google.com",
+    "adsystem.com",
+    "adnxs.com",
+    "ads-twitter.com",
+    "facebook.net",
+    "fbcdn.net",
+    "amazon-adsystem.com",
+    "hotjar.com",
+    "clarity.ms",
+    "newrelic.com",
+    "nr-data.net",
+    "sentry.io",
+    "segment.com",
+    "mixpanel.com",
+    "quantserve.com",
+    "scorecardresearch.com",
+    "criteo.com",
+    "outbrain.com",
+    "taboola.com",
+})
+
+_BLOCKED_MEDIA_TYPES = frozenset({"image", "media", "font"})
+
+
+async def _route_handler(route, *, block_media: bool = False):
+    """Block ad/tracker domains and optionally media resources."""
+    req = route.request
+    try:
+        hostname = urlparse(req.url).hostname or ""
+    except Exception:
+        hostname = ""
+    # Block known ad/tracker domains
+    if any(hostname == d or hostname.endswith("." + d) for d in _AD_TRACKER_DOMAINS):
+        return await route.abort()
+    # Optionally block media resources (images, fonts, video/audio)
+    if block_media and req.resource_type in _BLOCKED_MEDIA_TYPES:
+        return await route.abort()
+    return await route.continue_()
+
 
 _CF_CHALLENGE_RE = re.compile(
     r"^https?://challenges\.cloudflare\.com/cdn-cgi/challenge-platform/.*"
@@ -774,6 +871,7 @@ class BrowserPool:
                 await _apply_stealth(ctx)
                 evasion_js = _build_evasion_script(browser_type=self._browser_type)
                 await ctx.add_init_script(evasion_js)
+            await ctx.route("**/*", _route_handler)
             return await ctx.new_page()
 
         assert self._browser is not None
@@ -783,6 +881,7 @@ class BrowserPool:
             await _apply_stealth(ctx)
             evasion_js = _build_evasion_script(browser_type=self._browser_type)
             await ctx.add_init_script(evasion_js)
+        await ctx.route("**/*", _route_handler)
         return await ctx.new_page()
 
     async def _get_browser_launcher(self):
@@ -817,6 +916,8 @@ class BrowserPool:
                 await _apply_stealth(self._persistent_ctx)
                 evasion_js = _build_evasion_script(browser_type="chromium")
                 await self._persistent_ctx.add_init_script(evasion_js)
+            # Block ad/tracker domains on all requests
+            await self._persistent_ctx.route("**/*", _route_handler)
             try:
                 await self._persistent_ctx.grant_permissions(
                     ["geolocation", "notifications"],
