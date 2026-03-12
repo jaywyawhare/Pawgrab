@@ -45,7 +45,7 @@ Every response includes these headers:
 | Header | Example | Description |
 |--------|---------|-------------|
 | `X-Request-ID` | `a1b2c3d4e5f6` | Unique request identifier (send your own via `X-Request-ID` header) |
-| `X-API-Version` | `0.0.4` | API version |
+| `X-API-Version` | `0.1.0` | API version |
 | `X-Response-Time` | `42.3ms` | Server-side request duration |
 | `X-RateLimit-Limit` | `600` | Requests allowed per minute |
 | `X-RateLimit-Remaining` | `598` | Requests remaining in current window |
@@ -69,7 +69,7 @@ Exempt paths: `/health`, `/status`, `/docs`, `/openapi.json`, `/redoc`.
 ```json
 {
   "status": "ok",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "checks": {
     "api": "ok",
     "redis": "ok",
@@ -88,7 +88,7 @@ Status levels:
 ## GET /status
 
 ```json
-{ "status": "ok", "version": "0.0.4", "service": "pawgrab" }
+{ "status": "ok", "version": "0.1.0", "service": "pawgrab" }
 ```
 
 ---
