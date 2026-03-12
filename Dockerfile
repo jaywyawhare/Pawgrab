@@ -19,7 +19,6 @@ RUN pip install --no-cache-dir hatchling && \
 
 # Copy source
 COPY pawgrab/ pawgrab/
-COPY cli/ cli/
 RUN pip install --no-cache-dir -e .
 
 # Non-root user
