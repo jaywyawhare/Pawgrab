@@ -20,7 +20,7 @@ Env vars with `PAWGRAB_` prefix. See `.env.example`.
 
 ## Browser
 
-- `PAWGRAB_BROWSER_POOL_SIZE` - default `3` (Playwright instances)
+- `PAWGRAB_BROWSER_POOL_SIZE` - default `3` (Patchright instances)
 - `PAWGRAB_BROWSER_TIMEOUT` - default `30000` ms
 - `PAWGRAB_BROWSER_TYPE` - `chromium`, `firefox`, or `webkit` (default `chromium`)
 - `PAWGRAB_STEALTH_MODE` - default `true` (fingerprint evasion)
