@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 
 import orjson
-
 import structlog
 from redis.asyncio import Redis
 
 from pawgrab.config import settings
+from pawgrab.models.batch import BatchJobStatus
 from pawgrab.models.crawl import CrawlJobStatus, CrawlStatus
 from pawgrab.queue.pool import JOB_ID_RE
 
@@ -19,13 +20,20 @@ logger = structlog.get_logger()
 _redis: Redis | None = None
 _redis_lock = asyncio.Lock()
 
+_HEARTBEAT_INTERVAL = 15
+
 
 async def get_redis() -> Redis:
     global _redis
     if _redis is None:
         async with _redis_lock:
             if _redis is None:
-                _redis = Redis.from_url(settings.redis_url, decode_responses=True)
+                _redis = Redis.from_url(
+                    settings.redis_url,
+                    decode_responses=True,
+                    socket_timeout=settings.redis_operation_timeout,
+                    socket_connect_timeout=settings.redis_operation_timeout,
+                )
     return _redis
 
 
@@ -71,7 +79,6 @@ async def create_job(
 
 
 async def get_webhook_url(job_id: str) -> str | None:
-    """Get the webhook URL for a job, if any."""
     redis = await get_redis()
     url = await redis.hget(_job_key(job_id), "webhook_url")
     return url if url else None
@@ -83,7 +90,6 @@ async def get_job(
     page: int = 1,
     limit: int = 50,
 ) -> CrawlJobStatus | None:
-    """Get job status with paginated results."""
     if not JOB_ID_RE.match(job_id):
         return None
 
@@ -92,10 +98,10 @@ async def get_job(
     if not data:
         return None
 
-    # Paginated results from the Redis list
     start = (page - 1) * limit
     end = start + limit - 1
     raw_results = await redis.lrange(_results_key(job_id), start, end)
+    total_results = await redis.llen(_results_key(job_id))
 
     results = []
     for r in raw_results:
@@ -110,6 +116,10 @@ async def get_job(
         pages_scraped=int(data.get("pages_scraped", 0)),
         results=results,
         error=data.get("error") or None,
+        page=page,
+        limit=limit,
+        total_results=total_results,
+        has_next=(start + len(results)) < total_results,
     )
 
 
@@ -120,7 +130,6 @@ async def update_job(
     pages_scraped: int | None = None,
     error: str | None = None,
 ):
-    """Update job metadata fields (not results)."""
     redis = await get_redis()
     updates: dict = {}
     if status is not None:
@@ -134,7 +143,6 @@ async def update_job(
 
 
 async def append_result(job_id: str, result_dict: dict):
-    """Append a single scrape result — O(1) via Redis RPUSH."""
     redis = await get_redis()
     key = _results_key(job_id)
     await redis.rpush(key, orjson.dumps(result_dict).decode())
@@ -177,7 +185,7 @@ async def get_batch_job(
     *,
     page: int = 1,
     limit: int = 50,
-) -> dict | None:
+) -> BatchJobStatus | None:
     if not JOB_ID_RE.match(job_id):
         return None
 
@@ -189,6 +197,7 @@ async def get_batch_job(
     start = (page - 1) * limit
     end = start + limit - 1
     raw_results = await redis.lrange(_batch_results_key(job_id), start, end)
+    total_results = await redis.llen(_batch_results_key(job_id))
 
     results = []
     for r in raw_results:
@@ -197,14 +206,18 @@ async def get_batch_job(
         except orjson.JSONDecodeError:
             logger.warning("corrupt_batch_result", job_id=job_id)
 
-    return {
-        "job_id": data["job_id"],
-        "status": data["status"],
-        "urls_scraped": int(data.get("urls_scraped", 0)),
-        "total_urls": int(data.get("total_urls", 0)),
-        "results": results,
-        "error": data.get("error") or None,
-    }
+    return BatchJobStatus(
+        job_id=data["job_id"],
+        status=CrawlStatus(data["status"]),
+        urls_scraped=int(data.get("urls_scraped", 0)),
+        total_urls=int(data.get("total_urls", 0)),
+        results=results,
+        error=data.get("error") or None,
+        page=page,
+        limit=limit,
+        total_results=total_results,
+        has_next=(start + len(results)) < total_results,
+    )
 
 
 async def update_batch_job(
@@ -251,7 +264,6 @@ async def save_checkpoint(
     pages_scraped: int,
     cookie_jar: dict[str, str],
 ) -> None:
-    """Save crawl state to Redis so it can be resumed after a crash."""
     redis = await get_redis()
     data = orjson.dumps({
         "visited": list(visited),
@@ -263,7 +275,6 @@ async def save_checkpoint(
 
 
 async def load_checkpoint(job_id: str) -> dict | None:
-    """Load a saved crawl checkpoint. Returns None if no checkpoint exists."""
     redis = await get_redis()
     raw = await redis.get(_checkpoint_key(job_id))
     if not raw:
@@ -278,7 +289,6 @@ async def load_checkpoint(job_id: str) -> dict | None:
 
 
 async def delete_checkpoint(job_id: str) -> None:
-    """Remove checkpoint after successful completion."""
     redis = await get_redis()
     await redis.delete(_checkpoint_key(job_id))
 
@@ -288,32 +298,44 @@ def _pubsub_channel(job_id: str) -> str:
 
 
 async def publish_event(job_id: str, event_type: str, data: dict) -> None:
-    """Publish an SSE event to the Redis channel for a job."""
     redis = await get_redis()
     payload = orjson.dumps({"type": event_type, **data}).decode()
     await redis.publish(_pubsub_channel(job_id), payload)
 
 
 async def subscribe_events(job_id: str):
-    """Async generator that yields SSE events for a job via Redis pub/sub."""
+    """Yields event strings from Redis pub/sub, or None as a heartbeat signal."""
     redis = await get_redis()
     pubsub = redis.pubsub()
     channel = _pubsub_channel(job_id)
     await pubsub.subscribe(channel)
+    deadline = time.monotonic() + settings.sse_max_duration
+    last_event = time.monotonic()
     try:
-        async for message in pubsub.listen():
-            if message["type"] == "message":
+        while True:
+            if time.monotonic() > deadline:
+                logger.info("sse_max_duration_exceeded", job_id=job_id)
+                break
+
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True, timeout=1.0
+            )
+
+            if message is not None and message["type"] == "message":
                 data = message["data"]
                 if isinstance(data, bytes):
                     data = data.decode()
+                last_event = time.monotonic()
                 yield data
-                # Stop after terminal events
                 try:
                     parsed = orjson.loads(data)
                     if parsed.get("type") in ("completed", "failed"):
                         break
                 except orjson.JSONDecodeError:
                     pass
+            elif (time.monotonic() - last_event) >= _HEARTBEAT_INTERVAL:
+                last_event = time.monotonic()
+                yield None
     finally:
         await pubsub.unsubscribe(channel)
         await pubsub.aclose()

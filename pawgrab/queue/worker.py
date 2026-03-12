@@ -111,7 +111,6 @@ def _extract_links(
         if not is_same_domain(href, seed_url):
             continue
 
-        # Apply URL filter chain
         if url_filter and not url_filter.accept(href):
             continue
 
@@ -170,7 +169,6 @@ async def crawl_job(
     browser_pool = ctx.get("browser_pool")
     proxy_pool = ctx.get("proxy_pool")
 
-    # Build URL filter chain
     filter_chain = _build_filter_chain(
         allowed_domains=orjson.loads(allowed_domains) if allowed_domains else None,
         blocked_domains=orjson.loads(blocked_domains) if blocked_domains else None,
@@ -178,10 +176,7 @@ async def crawl_job(
         exclude_path_patterns=orjson.loads(exclude_path_patterns) if exclude_path_patterns else None,
     )
 
-    # Parse keywords for BestFirst scoring
     kw_list = orjson.loads(keywords) if keywords else None
-
-    # Create crawl strategy
     strategy = get_strategy(strategy_name, keywords=kw_list)
 
     await update_job(job_id, status=CrawlStatus.IN_PROGRESS)
@@ -191,7 +186,6 @@ async def crawl_job(
     cookie_jar: dict[str, str] = {}
     job_error: str | None = None
 
-    # Restore from checkpoint if resuming
     if resume:
         checkpoint = await load_checkpoint(job_id)
         if checkpoint:
@@ -209,7 +203,7 @@ async def crawl_job(
     else:
         strategy.add(url, 0)
 
-    _CHECKPOINT_INTERVAL = 10
+    checkpoint_interval = settings.checkpoint_interval
 
     try:
         while not strategy.is_empty and pages_scraped < max_pages:
@@ -227,7 +221,6 @@ async def crawl_job(
             if pages_scraped > 0:
                 await asyncio.sleep(random.uniform(0.5, 2.5))
 
-            # Fetch raw HTML
             try:
                 raw_result = await fetch_page(
                     current_url,
@@ -241,7 +234,6 @@ async def crawl_job(
                 await publish_event(job_id, "error", {"url": current_url, "error": str(exc)})
                 continue
 
-            # Build scrape response
             try:
                 from pawgrab.engine.scrape_service import _build_response
                 response = _build_response(raw_result, formats=formats, include_metadata=True)
@@ -261,8 +253,7 @@ async def crawl_job(
                 "max_pages": max_pages,
             })
 
-            # Checkpoint every N pages
-            if pages_scraped % _CHECKPOINT_INTERVAL == 0:
+            if pages_scraped % checkpoint_interval == 0:
                 await save_checkpoint(
                     job_id,
                     visited=visited,
@@ -303,7 +294,6 @@ async def crawl_job(
             cookie_jar=cookie_jar,
         )
 
-    # Fire webhook
     webhook_url = await get_webhook_url(job_id)
     if webhook_url:
         from pawgrab.queue.manager import get_job as _get_job
@@ -369,7 +359,7 @@ async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json:
             webhook_url,
             job_id=job_id,
             job_type="batch",
-            status="completed" if not job_error else "failed",
+            status=CrawlStatus.COMPLETED.value if not job_error else CrawlStatus.FAILED.value,
             pages_scraped=urls_scraped,
             total_pages=len(urls),
             error=job_error,
@@ -416,13 +406,12 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = None  # Set dynamically below
-    max_jobs = 5
-    job_timeout = 600
+    max_jobs = settings.worker_max_jobs
+    job_timeout = settings.worker_job_timeout
 
 
-# Avoid import-time failure if redis_url is not set
 try:
     from arq.connections import RedisSettings
     WorkerSettings.redis_settings = RedisSettings.from_dsn(settings.redis_url)
-except Exception:
-    pass
+except Exception as exc:
+    logger.warning("worker_redis_settings_failed", error=str(exc), redis_url=settings.redis_url)
