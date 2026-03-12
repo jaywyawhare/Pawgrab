@@ -1,25 +1,24 @@
 """Proxy pool management endpoints."""
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter
 
 from pawgrab.dependencies import get_proxy_pool
+from pawgrab.exceptions import ErrorCode, PawgrabError
+from pawgrab.models.common import ErrorResponse
+from pawgrab.models.proxy import (
+    AddProxyRequest,
+    AddProxyResponse,
+    ProxyListResponse,
+    ProxyStatsResponse,
+    RemoveProxyResponse,
+)
 
-router = APIRouter()
-
-
-class AddProxyRequest(BaseModel):
-    url: str
-
-
-class AddProxyResponse(BaseModel):
-    success: bool
-    url: str
-    message: str
+router = APIRouter(tags=["Proxy"])
 
 
 @router.post("/proxy/pool", response_model=AddProxyResponse)
 async def add_proxy(req: AddProxyRequest):
+    """Add a proxy to the rotation pool."""
     pool = await get_proxy_pool()
     added = pool.add_proxy(req.url)
     return AddProxyResponse(
@@ -29,22 +28,35 @@ async def add_proxy(req: AddProxyRequest):
     )
 
 
-@router.delete("/proxy/pool/{proxy_url:path}")
+@router.delete(
+    "/proxy/pool/{proxy_url:path}",
+    response_model=RemoveProxyResponse,
+    responses={
+        404: {"model": ErrorResponse, "description": "Proxy not found in pool"},
+    },
+)
 async def remove_proxy(proxy_url: str):
+    """Remove a proxy from the rotation pool."""
     pool = await get_proxy_pool()
     removed = pool.remove_proxy(proxy_url)
     if not removed:
-        raise HTTPException(status_code=404, detail="Proxy not found in pool")
-    return {"success": True, "url": proxy_url, "message": "Proxy removed"}
+        raise PawgrabError(
+            status_code=404,
+            code=ErrorCode.RESOURCE_NOT_FOUND,
+            message=f"Proxy not found in pool: {proxy_url}",
+        )
+    return RemoveProxyResponse(success=True, url=proxy_url, message="Proxy removed")
 
 
-@router.get("/proxy/pool")
+@router.get("/proxy/pool", response_model=ProxyListResponse)
 async def list_proxies():
+    """List all proxies in the pool with their health status."""
     pool = await get_proxy_pool()
-    return {"proxies": pool.snapshot()}
+    return ProxyListResponse(proxies=pool.snapshot())
 
 
-@router.get("/proxy/pool/stats")
+@router.get("/proxy/pool/stats", response_model=ProxyStatsResponse)
 async def pool_stats():
+    """Get aggregate statistics for the proxy pool."""
     pool = await get_proxy_pool()
     return pool.pool_stats()
