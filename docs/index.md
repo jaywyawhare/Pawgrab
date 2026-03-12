@@ -43,7 +43,7 @@ hide:
 
     ---
 
-    curl_cffi first, automatic Playwright fallback for JS-heavy pages
+    curl_cffi first, automatic Patchright fallback for JS-heavy pages
 
 -   **Anti-Bot Evasion**
 
@@ -65,7 +65,7 @@ hide:
 
 ```bash
 pip install pawgrab
-playwright install chromium
+patchright install chromium
 ```
 
 ## Quickstart
