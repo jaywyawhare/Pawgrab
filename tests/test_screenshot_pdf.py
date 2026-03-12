@@ -138,4 +138,6 @@ async def test_browser_unavailable_returns_503(client):
             "screenshot": True,
         })
     assert resp.status_code == 503
-    assert "Browser pool" in resp.json()["detail"]
+    data = resp.json()
+    assert "Browser pool" in data["error"]
+    assert data["code"] == "browser_unavailable"

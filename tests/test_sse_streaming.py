@@ -35,10 +35,20 @@ class TestSSEEndpoint:
 
     @pytest.fixture
     def app(self):
-        from fastapi import FastAPI
+        from fastapi import FastAPI, Request
+        from fastapi.responses import JSONResponse
         from pawgrab.api.crawl import router
+        from pawgrab.exceptions import PawgrabError
         app = FastAPI()
         app.include_router(router, prefix="/v1")
+
+        @app.exception_handler(PawgrabError)
+        async def pawgrab_error_handler(request: Request, exc: PawgrabError):
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"error": exc.message, "code": exc.code.value},
+            )
+
         return app
 
     async def test_404_for_missing_job(self, app):

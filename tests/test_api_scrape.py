@@ -9,9 +9,10 @@ async def test_health(client):
     resp = await client.get("/health")
     assert resp.status_code == 200
     data = resp.json()
-    # API itself must always be "ok"; overall status is "degraded" when Redis
-    # is unavailable, which is expected in test environments without Redis.
-    assert data["status"] in ("ok", "degraded")
+    # API itself must always be "ok"; overall status may be "unhealthy" when
+    # Redis is unavailable, or "degraded" when browser pool is down (expected
+    # in test environments without Redis/browser).
+    assert data["status"] in ("ok", "degraded", "unhealthy")
     assert data["checks"]["api"] == "ok"
 
 

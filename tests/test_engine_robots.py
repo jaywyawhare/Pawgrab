@@ -25,6 +25,7 @@ async def test_allowed_when_robots_disabled():
 async def test_allowed_when_robots_fetch_fails():
     with patch("pawgrab.engine.robots.settings") as mock_settings:
         mock_settings.respect_robots = True
+        mock_settings.robots_cache_ttl = 3600
         with patch("pawgrab.engine.robots._fetch_robots", new_callable=AsyncMock, return_value=None):
             assert await is_allowed("https://example.com/page") is True
 
@@ -36,6 +37,7 @@ async def test_blocked_by_robots():
     robots = Protego.parse("User-agent: Pawgrab\nDisallow: /private/")
     with patch("pawgrab.engine.robots.settings") as mock_settings:
         mock_settings.respect_robots = True
+        mock_settings.robots_cache_ttl = 3600
         with patch("pawgrab.engine.robots._fetch_robots", new_callable=AsyncMock, return_value=robots):
             assert await is_allowed("https://example.com/private/page") is False
             assert await is_allowed("https://example.com/public/page") is True
@@ -44,11 +46,9 @@ async def test_blocked_by_robots():
 @pytest.mark.asyncio
 async def test_cache_backoff_for_failures():
     """Failed robots.txt fetches should use shorter TTL."""
-    import time
-    from pawgrab.engine import robots
-
     with patch("pawgrab.engine.robots.settings") as mock_settings:
         mock_settings.respect_robots = True
+        mock_settings.robots_cache_ttl = 3600
         with patch("pawgrab.engine.robots._fetch_robots", new_callable=AsyncMock, return_value=None) as mock_fetch:
             # First call fetches
             await is_allowed("https://example.com/page")
