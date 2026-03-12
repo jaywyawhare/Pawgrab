@@ -1,7 +1,7 @@
 """Models for the /v1/scrape endpoint."""
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
@@ -20,10 +20,10 @@ class ActionType(str, Enum):
 
 class PageAction(BaseModel):
     type: ActionType
-    selector: str | None = None
-    text: str | None = None
-    direction: str | None = None  # "up" or "down" for scroll
-    amount: int | None = None  # px for scroll, ms for wait
+    selector: str | None = Field(default=None, description="CSS selector for the target element")
+    text: str | None = Field(default=None, description="Text to type or JS code to execute")
+    direction: str | None = Field(default=None, description="Scroll direction: 'up' or 'down'")
+    amount: int | None = Field(default=None, description="Pixels to scroll or milliseconds to wait")
 
     @model_validator(mode="after")
     def validate_fields(self):
@@ -47,43 +47,36 @@ class PageAction(BaseModel):
 
 class ScrapeRequest(BaseModel):
     url: HttpUrl
-    formats: list[OutputFormat] = [OutputFormat.MARKDOWN]
-    wait_for_js: bool | None = None  # None = auto-detect
-    timeout: int = Field(default=30000, ge=1000, le=120000)
-    include_metadata: bool = True
-    headers: dict[str, str] | None = None  # custom request headers
-    cookies: dict[str, str] | None = None  # custom cookies
-    screenshot: bool = False
-    screenshot_fullpage: bool = True
-    pdf: bool = False
-    monitor: bool = False
-    monitor_ttl: int | None = None
-    # Citation-style references: converts inline links to numbered footnotes
-    citations: bool = False
-    # Fit markdown: BM25 relevance filtering — only keeps sections relevant to this query
-    fit_markdown_query: str | None = None
-    fit_markdown_top_k: int = Field(default=5, ge=1, le=50)
-    # Page actions — executed sequentially before content extraction
-    actions: list[PageAction] | None = None
-    # Content processing — tag exclusion, CSS scoping, word count filtering
-    excluded_tags: list[str] | None = None  # HTML tags to strip (e.g. ["nav", "footer"])
-    excluded_selector: str | None = None  # CSS selector for elements to remove
-    css_selector: str | None = None  # CSS selector to scope content extraction
-    word_count_threshold: int | None = None  # min words per text block to keep
-    # Content filters
-    content_filter: str | None = None  # "pruning" or "bm25"
-    content_filter_query: str | None = None  # query for BM25 content filter
-    # Browser enhancements
-    browser_type: str | None = None  # "chromium", "firefox", "webkit"
-    geolocation: dict[str, float] | None = None  # {"latitude": ..., "longitude": ..., "accuracy": ...}
-    text_mode: bool = False  # disable images/CSS/fonts for speed
-    scroll_to_bottom: bool = False  # auto-scroll to trigger lazy loading
-    # Capture options
-    capture_network: bool = False  # intercept network requests/responses
-    capture_console: bool = False  # capture browser console messages
-    capture_mhtml: bool = False  # save MHTML snapshot
-    extract_media: bool = False  # extract images/videos/audio/links
-    capture_ssl: bool = False  # capture SSL certificate info
+    formats: list[OutputFormat] = Field(default=[OutputFormat.MARKDOWN], description="Output formats to return")
+    wait_for_js: bool | None = Field(default=None, description="Force JS rendering. None = auto-detect based on page content")
+    timeout: int = Field(default=30000, ge=1000, le=120000, description="Request timeout in milliseconds")
+    include_metadata: bool = Field(default=True, description="Include page metadata (title, description, language, word count)")
+    headers: dict[str, str] | None = Field(default=None, description="Custom HTTP request headers")
+    cookies: dict[str, str] | None = Field(default=None, description="Custom cookies to send with the request")
+    screenshot: bool = Field(default=False, description="Capture a screenshot (requires browser)")
+    screenshot_fullpage: bool = Field(default=True, description="Capture full page screenshot vs viewport only")
+    pdf: bool = Field(default=False, description="Capture page as PDF (requires browser)")
+    monitor: bool = Field(default=False, description="Enable content change monitoring")
+    monitor_ttl: int | None = Field(default=None, description="Content monitor TTL in seconds")
+    citations: bool = Field(default=False, description="Convert inline links to numbered citation-style references")
+    fit_markdown_query: str | None = Field(default=None, description="BM25 query to filter markdown sections by relevance")
+    fit_markdown_top_k: int = Field(default=5, ge=1, le=50, description="Number of top sections to keep when using fit_markdown_query")
+    actions: list[PageAction] | None = Field(default=None, description="Browser actions to execute before content extraction")
+    excluded_tags: list[str] | None = Field(default=None, description="HTML tags to strip before extraction (e.g. ['nav', 'footer'])")
+    excluded_selector: str | None = Field(default=None, max_length=2000, description="CSS selector for elements to remove before extraction")
+    css_selector: str | None = Field(default=None, max_length=2000, description="CSS selector to scope content extraction to matching elements")
+    word_count_threshold: int | None = Field(default=None, ge=1, le=10000, description="Minimum words per text block to keep")
+    content_filter: Literal["pruning", "bm25"] | None = Field(default=None, description="Post-extraction content filter: 'pruning' or 'bm25'")
+    content_filter_query: str | None = Field(default=None, description="Query string for BM25 content filter")
+    browser_type: str | None = Field(default=None, description="Browser engine: 'chromium', 'firefox', or 'webkit'")
+    geolocation: dict[str, float] | None = Field(default=None, description="Geolocation override: {latitude, longitude, accuracy}")
+    text_mode: bool = Field(default=False, description="Disable images/CSS/fonts for faster loading")
+    scroll_to_bottom: bool = Field(default=False, description="Auto-scroll to trigger lazy loading before extraction")
+    capture_network: bool = Field(default=False, description="Capture network requests and responses")
+    capture_console: bool = Field(default=False, description="Capture browser console messages")
+    capture_mhtml: bool = Field(default=False, description="Save page as MHTML archive")
+    extract_media: bool = Field(default=False, description="Extract images, videos, audio, and links")
+    capture_ssl: bool = Field(default=False, description="Capture SSL certificate information")
 
 
 class PageMetadata(BaseModel):
@@ -98,7 +91,8 @@ class PageMetadata(BaseModel):
 class ScrapeResponse(BaseModel):
     success: bool
     url: str
-    warning: str | None = None
+    error: str | None = Field(default=None, description="Error message when success=False")
+    warnings: list[str] = Field(default_factory=list, description="Non-fatal warnings (e.g. fallback used, partial results)")
     metadata: PageMetadata | None = None
     markdown: str | None = None
     html: str | None = None
@@ -109,9 +103,9 @@ class ScrapeResponse(BaseModel):
     screenshot_base64: str | None = None
     pdf_base64: str | None = None
     diff: Any | None = None  # ContentDiff when monitor=True
-    # Capture results (Phase 6)
+    # Capture results
     network_requests: list[dict[str, Any]] | None = None
     console_logs: list[dict[str, Any]] | None = None
     mhtml_base64: str | None = None
-    media: dict[str, Any] | None = None  # images, videos, audio, links
+    media: dict[str, Any] | None = None
     ssl_certificate: dict[str, Any] | None = None
