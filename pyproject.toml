@@ -28,7 +28,7 @@ dependencies = [
     "playwright-stealth>=1.0.6",
     "readability-lxml>=0.8",
     "trafilatura>=2.0",
-    "html2text>=2024.2",
+
     "beautifulsoup4>=4.12",
     "lxml>=5.3",
     "openai>=1.57",
