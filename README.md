@@ -9,19 +9,34 @@
 
 ## Features
 
+**Scraping**
 - Single URL scraping with multiple output formats
 - Async site crawling (BFS, depth/page limits, Redis job queue)
 - Structured extraction via OpenAI, CSS selectors, XPath, or regex
-- Auto JS detection - curl_cffi first, Playwright fallback for JS-heavy pages
+
+**Browser**
+- Auto JS detection - curl_cffi first, Patchright fallback for JS-heavy pages
 - Anti-bot evasion - TLS fingerprint impersonation, stealth browser profiles
-- Robots.txt compliance
-- Per-domain and API-level rate limiting
 - Proxy rotation with health checking
+
+**Production**
+- Per-domain and API-level rate limiting
+- Robots.txt compliance
 - Unified error responses with machine-readable error codes
 - SSE heartbeats for reliable streaming through reverse proxies
 - Idempotency keys for safe retries on crawl/batch endpoints
 - Request ID correlation and response timing headers
 - Docker Compose deployment (API + worker + Redis)
+
+## Benchmarks
+
+End-to-end scraping, median of 5 runs, [books.toscrape.com](https://books.toscrape.com/), lower is better.
+
+> Pawgrab extracts **article-quality content** via Readability while raw BS4/lxml return ALL page text (nav, footer, ads, etc). Pawgrab also adds TLS fingerprint impersonation + anti-bot evasion.
+
+<p align="center">
+  <img src="assets/bench.svg" alt="Benchmark" width="700">
+</p>
 
 ## Install
 
