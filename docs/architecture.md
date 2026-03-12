@@ -8,7 +8,7 @@
 2. Per-domain rate limit
 3. Fetch with curl_cffi - random Safari/Chrome/Edge TLS fingerprint
 4. If challenged -> retry with different browser family
-5. If JS needed (auto-detected or `wait_for_js=true`) -> Playwright with stealth
+5. If JS needed (auto-detected or `wait_for_js=true`) -> Patchright with stealth
 6. Readability extraction
 7. Optional pre/post filters: tag exclusion, CSS scoping, word count, pruning, BM25
 8. Convert to requested formats
@@ -17,12 +17,12 @@
 ## Fetcher Escalation
 
 ```
-curl_cffi (Safari TLS) -> challenge? -> different family -> still blocked? -> Playwright
+curl_cffi (Safari TLS) -> challenge? -> different family -> still blocked? -> Patchright
 ```
 
 Challenge detection covers Cloudflare, reCAPTCHA, hCaptcha, Turnstile, AWS WAF, Akamai, Imperva, DataDome, PerimeterX, Sucuri.
 
-Playwright stealth spoofs WebGL, canvas, audio, navigator, plugins, and WebRTC. Browser pool reuses contexts.
+Patchright stealth spoofs WebGL, canvas, audio, navigator, plugins, and WebRTC. Browser pool reuses contexts.
 
 ## Error Handling
 
