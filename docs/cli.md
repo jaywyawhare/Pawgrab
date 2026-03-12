@@ -2,7 +2,7 @@
 
 ```bash
 pip install pawgrab
-playwright install chromium
+patchright install chromium
 ```
 
 ## scrape
