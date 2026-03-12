@@ -72,7 +72,7 @@ class OpenAIProvider:
             )
         except APIError as exc:
             logger.error("openai_api_error", error=str(exc), status=getattr(exc, "status_code", None))
-            raise RuntimeError(f"LLM API error: {exc.message}") from exc
+            raise RuntimeError(f"LLM API error: {exc}") from exc
 
         raw = response.choices[0].message.content or "{}"
         try:
