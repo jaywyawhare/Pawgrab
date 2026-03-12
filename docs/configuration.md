@@ -11,7 +11,7 @@ Env vars with `PAWGRAB_` prefix. See `.env.example`.
 
 ## Redis
 
-- `PAWGRAB_REDIS_URL` - default `redis://localhost:6379/0`. Needed for crawl, batch, health.
+- `PAWGRAB_REDIS_URL` - default `redis://localhost:6379/0`. Needed for crawl, batch, health, idempotency cache.
 
 ## OpenAI
 
@@ -29,7 +29,8 @@ Env vars with `PAWGRAB_` prefix. See `.env.example`.
 
 ## Rate Limiting
 
-- `PAWGRAB_RATE_LIMIT_RPM` - default `60`, per domain
+- `PAWGRAB_RATE_LIMIT_RPM` - default `60`, per domain (applied during scraping)
+- `PAWGRAB_API_RATE_LIMIT_RPM` - default `600`, API-level per client (by API key or IP). Applies to all endpoints except `/health`, `/status`, `/docs`, `/openapi.json`, `/redoc`. Returns `429` with `Retry-After` header when exceeded.
 - `PAWGRAB_RESPECT_ROBOTS` - default `true`
 
 ## Proxy
@@ -56,6 +57,10 @@ Env vars with `PAWGRAB_` prefix. See `.env.example`.
 - `PAWGRAB_MAX_CRAWL_DEPTH` - default `10`
 - `PAWGRAB_MAX_TIMEOUT` - default `120000` ms
 
+## SSE
+
+- `PAWGRAB_SSE_MAX_DURATION` - default `3600` seconds, max SSE stream duration
+
 ## Concurrency
 
 - `PAWGRAB_MIN_CONCURRENCY` - default `1`
@@ -66,3 +71,9 @@ Env vars with `PAWGRAB_` prefix. See `.env.example`.
 
 - `PAWGRAB_MONITOR_TTL` - default `86400` seconds, how long to keep previous content for diff
 - `PAWGRAB_WORD_COUNT_THRESHOLD` - default `0` (off), min words per text block
+- `PAWGRAB_REDIS_OPERATION_TIMEOUT` - default `5.0` seconds
+- `PAWGRAB_WEBHOOK_TIMEOUT` - default `15` seconds
+- `PAWGRAB_WEBHOOK_RETRIES` - default `3`
+- `PAWGRAB_WORKER_MAX_JOBS` - default `5`
+- `PAWGRAB_WORKER_JOB_TIMEOUT` - default `600` seconds
+- `PAWGRAB_CHECKPOINT_INTERVAL` - default `10` pages
