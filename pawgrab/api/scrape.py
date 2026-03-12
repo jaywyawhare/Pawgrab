@@ -1,19 +1,33 @@
-"""POST /v1/scrape — single URL scraping endpoint."""
+"""POST /v1/scrape endpoint."""
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from pawgrab.dependencies import get_browser_pool, get_proxy_pool
 from pawgrab.engine.scrape_service import scrape_url
+from pawgrab.exceptions import ErrorCode, PawgrabError
+from pawgrab.models.common import ErrorResponse
 from pawgrab.models.scrape import ScrapeRequest, ScrapeResponse
 
 logger = structlog.get_logger()
-router = APIRouter()
+router = APIRouter(tags=["Scrape"])
 
 
-@router.post("/scrape", response_model=ScrapeResponse)
+@router.post(
+    "/scrape",
+    response_model=ScrapeResponse,
+    responses={
+        403: {"model": ErrorResponse, "description": "Blocked by robots.txt"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+        502: {"model": ErrorResponse, "description": "Failed to fetch URL"},
+        503: {"model": ErrorResponse, "description": "Browser pool unavailable"},
+        504: {"model": ErrorResponse, "description": "Request timed out"},
+    },
+)
 async def scrape(req: ScrapeRequest):
+    """Scrape a single URL and return content in the requested formats."""
     url = str(req.url)
+    warnings: list[str] = []
 
     try:
         pool = await get_browser_pool()
@@ -25,51 +39,44 @@ async def scrape(req: ScrapeRequest):
     except Exception:
         proxy_pool = None
 
-    # Screenshot/PDF/actions require browser pool
     if (req.screenshot or req.pdf or req.actions) and pool is None:
-        raise HTTPException(
+        raise PawgrabError(
             status_code=503,
-            detail="Browser pool unavailable — screenshot/PDF/actions require Playwright",
+            code=ErrorCode.BROWSER_UNAVAILABLE,
+            message="Browser pool unavailable — screenshot, PDF, and actions require a running browser",
         )
 
+    if pool is None and req.wait_for_js is not False:
+        warnings.append("Browser pool unavailable — running without JS rendering")
+
     try:
-        return await scrape_url(
+        response = await scrape_url(
             url,
+            **req.model_dump(exclude={"url", "formats", "actions"}),
             formats=req.formats,
-            wait_for_js=req.wait_for_js,
-            timeout=req.timeout,
-            include_metadata=req.include_metadata,
+            actions=req.actions,
             browser_pool=pool,
             proxy_pool=proxy_pool,
-            headers=req.headers,
-            cookies=req.cookies,
-            screenshot=req.screenshot,
-            screenshot_fullpage=req.screenshot_fullpage,
-            pdf=req.pdf,
-            monitor=req.monitor,
-            monitor_ttl=req.monitor_ttl,
-            citations=req.citations,
-            fit_markdown_query=req.fit_markdown_query,
-            fit_markdown_top_k=req.fit_markdown_top_k,
-            actions=req.actions,
-            excluded_tags=req.excluded_tags,
-            excluded_selector=req.excluded_selector,
-            css_selector=req.css_selector,
-            word_count_threshold=req.word_count_threshold,
-            content_filter=req.content_filter,
-            content_filter_query=req.content_filter_query,
-            browser_type=req.browser_type,
-            geolocation=req.geolocation,
-            text_mode=req.text_mode,
-            scroll_to_bottom=req.scroll_to_bottom,
-            capture_network=req.capture_network,
-            capture_console=req.capture_console,
-            capture_mhtml=req.capture_mhtml,
-            extract_media=req.extract_media,
-            capture_ssl=req.capture_ssl,
         )
+        if warnings:
+            response.warnings = warnings + response.warnings
+        return response
     except PermissionError:
-        raise HTTPException(status_code=403, detail="Blocked by robots.txt")
+        raise PawgrabError(
+            status_code=403,
+            code=ErrorCode.ROBOTS_BLOCKED,
+            message="Blocked by robots.txt",
+        )
+    except TimeoutError:
+        raise PawgrabError(
+            status_code=504,
+            code=ErrorCode.TIMEOUT,
+            message=f"Request timed out after {req.timeout}ms",
+        )
     except Exception as exc:
         logger.error("scrape_failed", url=url, error=str(exc))
-        raise HTTPException(status_code=502, detail="Failed to fetch URL")
+        raise PawgrabError(
+            status_code=502,
+            code=ErrorCode.FETCH_FAILED,
+            message=f"Failed to fetch URL: {type(exc).__name__}",
+        )
