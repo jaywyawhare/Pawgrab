@@ -13,8 +13,8 @@ from pawgrab.config import settings
 logger = structlog.get_logger()
 
 _USER_AGENT = "Pawgrab"
-_CACHE_TTL = 3600  # 1 hour for successful fetches
 _FAILURE_TTL = 300  # 5 minutes backoff for failed fetches
+_MAX_CACHE_SIZE = 2000
 
 # Cache stores (parser, timestamp, is_failure) tuples
 _cache: dict[str, tuple[Protego | None, float, bool]] = {}
@@ -32,11 +32,16 @@ async def is_allowed(url: str) -> bool:
 
     if base in _cache:
         parser, cached_at, was_failure = _cache[base]
-        ttl = _FAILURE_TTL if was_failure else _CACHE_TTL
+        ttl = _FAILURE_TTL if was_failure else settings.robots_cache_ttl
         if now - cached_at < ttl:
             if parser is None:
                 return True
             return parser.can_fetch(url, _USER_AGENT)
+
+    # Evict oldest entries if cache is full
+    if len(_cache) >= _MAX_CACHE_SIZE:
+        oldest = min(_cache, key=lambda k: _cache[k][1])
+        del _cache[oldest]
 
     # Cache miss or expired
     parser = await _fetch_robots(base)
@@ -52,11 +57,13 @@ async def _fetch_robots(base_url: str) -> Protego | None:
     robots_url = f"{base_url}/robots.txt"
     try:
         async with AsyncSession() as session:
-            resp = await session.get(robots_url, timeout=10, impersonate="safari184")
+            resp = await session.get(
+                robots_url, timeout=settings.robots_fetch_timeout, impersonate="safari184"
+            )
             if resp.status_code == 200:
                 return Protego.parse(resp.text)
     except Exception:
-        logger.debug("robots_fetch_failed", url=robots_url)
+        logger.info("robots_fetch_failed", url=robots_url)
     return None
 
 

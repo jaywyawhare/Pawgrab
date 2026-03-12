@@ -73,11 +73,9 @@ async def scrape_url(
 
     await wait_for_slot(url)
 
-    # Fire before_fetch hook
     if hooks:
         await hooks.fire("before_fetch", url=url)
 
-    # Force browser when captures or actions are requested
     effective_wait = wait_for_js
     needs_browser_features = (
         screenshot or pdf or actions or scroll_to_bottom
@@ -109,7 +107,6 @@ async def scrape_url(
         capture_ssl=capture_ssl,
     )
 
-    # Fire after_fetch hook
     if hooks:
         await hooks.fire("after_fetch", url=url, result=result)
 
@@ -122,7 +119,6 @@ async def scrape_url(
         elif pdf_warning:
             logger.warning("pdf_extraction_warning", url=url, warning=pdf_warning)
 
-    # Fire before_extract hook
     if hooks:
         await hooks.fire("before_extract", url=url, html=result.html)
 
@@ -141,12 +137,10 @@ async def scrape_url(
         content_filter_query=content_filter_query,
     )
 
-    # Extract media if requested
     if extract_media:
         from pawgrab.engine.media import extract_all_media
         response.media = extract_all_media(result.html, result.url)
 
-    # Attach capture results
     if result.network_requests:
         response.network_requests = result.network_requests
     if result.console_logs:
@@ -156,28 +150,20 @@ async def scrape_url(
     if result.ssl_info:
         response.ssl_certificate = result.ssl_info
 
-    # Fire after_extract hook
     if hooks:
         await hooks.fire("after_extract", url=url, response=response)
 
-    # Append action warnings if any
     if result.action_warnings:
-        action_warn = "; ".join(result.action_warnings)
-        existing = response.warning or ""
-        response.warning = f"{existing}; {action_warn}".lstrip("; ") if existing else action_warn
+        response.warnings.extend(result.action_warnings)
 
-    # Append PDF extraction warning if any
     if pdf_warning:
-        existing = response.warning or ""
-        response.warning = f"{existing}; {pdf_warning}".lstrip("; ") if existing else pdf_warning
+        response.warnings.append(pdf_warning)
 
-    # Attach base64-encoded captures
     if result.screenshot_bytes:
         response.screenshot_base64 = base64.b64encode(result.screenshot_bytes).decode()
     if result.pdf_bytes:
         response.pdf_base64 = base64.b64encode(result.pdf_bytes).decode()
 
-    # Change tracking
     if monitor:
         from pawgrab.engine.diff import compare_content, load_content, store_content
         text_content = response.markdown or response.text or ""
@@ -215,11 +201,11 @@ def _build_response(
         content_filter_query=content_filter_query,
     )
 
-    warning = None
+    warnings = []
     if result.challenge and result.challenge.detected:
-        warning = result.challenge.detail
+        warnings.append(result.challenge.detail)
 
-    response = ScrapeResponse(success=True, url=result.url, warning=warning)
+    response = ScrapeResponse(success=True, url=result.url, warnings=warnings)
 
     text_content = ""
     for fmt in formats:

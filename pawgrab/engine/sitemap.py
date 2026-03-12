@@ -8,10 +8,11 @@ from urllib.parse import urlparse
 import structlog
 from curl_cffi.requests import AsyncSession
 
+from pawgrab.config import settings
+
 logger = structlog.get_logger()
 
 _SITEMAP_PATHS = ["/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml"]
-_FETCH_TIMEOUT = 15
 
 
 async def discover_urls(
@@ -46,12 +47,12 @@ async def _fetch_sitemap(url: str, *, limit: int = 5000) -> list[str]:
     """Fetch and parse a sitemap XML, handling sitemap indexes recursively."""
     try:
         async with AsyncSession() as session:
-            resp = await session.get(url, timeout=_FETCH_TIMEOUT, allow_redirects=True)
+            resp = await session.get(url, timeout=settings.sitemap_fetch_timeout, allow_redirects=True)
         if resp.status_code != 200:
             return []
         return _parse_sitemap_xml(resp.text, limit=limit)
     except Exception as exc:
-        logger.debug("sitemap_fetch_failed", url=url, error=str(exc))
+        logger.info("sitemap_fetch_failed", url=url, error=str(exc))
         return []
 
 
@@ -109,7 +110,7 @@ async def _extract_homepage_links(
     """Fallback: fetch homepage and extract all same-domain links."""
     try:
         async with AsyncSession() as session:
-            resp = await session.get(url, timeout=_FETCH_TIMEOUT, allow_redirects=True)
+            resp = await session.get(url, timeout=settings.sitemap_fetch_timeout, allow_redirects=True)
         if resp.status_code != 200:
             return []
     except Exception:
@@ -148,8 +149,9 @@ async def _extract_homepage_links(
             if host != domain:
                 continue
 
-        # Normalize
-        normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        # Normalize — strip query/fragment to deduplicate
+        path = parsed.path.rstrip("/") or "/"
+        normalized = f"{parsed.scheme}://{parsed.netloc}{path}"
         if normalized not in seen:
             seen.add(normalized)
             urls.append(normalized)

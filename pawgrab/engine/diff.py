@@ -39,7 +39,6 @@ def compare_content(url: str, current_text: str) -> ContentDiff:
     current_hash = _content_hash(current_text)
     current_wc = word_count(current_text)
 
-    # Try to load previous content from in-memory cache
     prev = _content_cache.get(url)
 
     if prev is None:
@@ -83,7 +82,6 @@ async def store_content(url: str, text: str, *, ttl: int | None = None) -> None:
     content_hash = _content_hash(text)
     wc = word_count(text)
 
-    # Store in memory with LRU eviction
     _content_cache[url] = {
         "hash": content_hash,
         "word_count": wc,

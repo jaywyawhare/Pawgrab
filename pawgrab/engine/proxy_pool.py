@@ -132,7 +132,6 @@ class ProxyPool:
         except ValueError:
             self._policy = RotationPolicy.ROUND_ROBIN
 
-        # Load proxies from config
         urls: list[str] = []
         if settings.proxy_urls:
             urls = [p.strip() for p in settings.proxy_urls.split(",") if p.strip()]
@@ -264,11 +263,11 @@ class ProxyPool:
                         if resp.status_code == 200:
                             latency = time.monotonic() - t0
                             entry.mark_success(speed=latency)
-                            logger.debug("proxy_health_ok", url=entry.url, latency=round(latency, 3))
+                            logger.info("proxy_health_ok", url=entry.url, latency=round(latency, 3))
                         else:
                             entry.mark_failure(backoff_seconds=settings.proxy_backoff_seconds)
-                            logger.debug("proxy_health_fail", url=entry.url, status=resp.status_code)
+                            logger.info("proxy_health_fail", url=entry.url, status=resp.status_code)
                 except Exception as exc:
                     is_timeout = "timeout" in str(exc).lower()
                     entry.mark_failure(is_timeout=is_timeout, backoff_seconds=settings.proxy_backoff_seconds)
-                    logger.debug("proxy_health_error", url=entry.url, error=str(exc))
+                    logger.info("proxy_health_error", url=entry.url, error=str(exc))

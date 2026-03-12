@@ -55,6 +55,7 @@ def _sanitize_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
 
 
 _MAX_SESSIONS = 12  # cap session pool size
+_MAX_HOST_TARGETS = 2000
 _sessions: dict[str, AsyncSession] = {}
 _session_lock = asyncio.Lock()
 _host_targets: dict[str, str] = {}  # host → impersonate target for connection reuse
@@ -72,6 +73,9 @@ def _impersonate_for_host(host: str) -> str:
     same IP when curl escalates to Playwright.
     """
     if host not in _host_targets:
+        if len(_host_targets) >= _MAX_HOST_TARGETS:
+            oldest = next(iter(_host_targets))
+            del _host_targets[oldest]
         _host_targets[host] = random.choice(SAFARI_TARGETS)
     return _host_targets[host]
 
@@ -82,7 +86,6 @@ async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSessi
     When a specific proxy is given, a fresh (non-cached) session is returned
     so retry attempts can rotate through different proxies.
     """
-    # Common session kwargs
     session_kwargs: dict = {
         "impersonate": impersonate,
         "timeout": settings.max_timeout / 1000,
@@ -90,7 +93,6 @@ async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSessi
     if settings.http3:
         session_kwargs["http_version"] = CurlHttpVersion.V3ONLY
 
-    # Proxy-specific sessions are not cached (they change per retry)
     if proxy:
         session_kwargs["proxy"] = proxy
         return AsyncSession(**session_kwargs)
@@ -98,7 +100,6 @@ async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSessi
     if impersonate not in _sessions:
         async with _session_lock:
             if impersonate not in _sessions:
-                # Evict oldest session if at capacity
                 if len(_sessions) >= _MAX_SESSIONS:
                     oldest_key = next(iter(_sessions))
                     old = _sessions.pop(oldest_key)
@@ -200,7 +201,6 @@ async def fetch_page(
     timeout = min(timeout, settings.max_timeout)
     headers = _sanitize_headers(headers)
 
-    # Get proxy from pool for this request
     proxy_entry = None
     proxy_url: str | None = None
     if proxy_pool is not None:
@@ -208,7 +208,6 @@ async def fetch_page(
         if proxy_entry is not None:
             proxy_url = proxy_entry.url
 
-    # Common kwargs for _fetch_with_browser
     _browser_kwargs = dict(
         timeout=timeout, pool=browser_pool,
         headers=headers, cookies=cookies,
@@ -225,11 +224,9 @@ async def fetch_page(
         capture_ssl=capture_ssl,
     )
 
-    # Force browser when actions are present
     if actions and browser_pool is not None:
         return await _fetch_with_browser(url, actions=actions, **_browser_kwargs)
 
-    # Force browser when captures requested
     needs_browser = (
         capture_screenshot or capture_pdf or text_mode
         or scroll_to_bottom or capture_network or capture_console
@@ -238,11 +235,9 @@ async def fetch_page(
     if needs_browser and browser_pool is not None:
         return await _fetch_with_browser(url, **_browser_kwargs)
 
-    # Go straight to browser when explicitly asked
     if wait_for_js is True and browser_pool is not None:
         return await _fetch_with_browser(url, **_browser_kwargs)
 
-    # Inject a realistic Referer header if none provided
     if headers is None:
         headers = {}
     if "Referer" not in headers and "referer" not in headers:
@@ -289,7 +284,6 @@ async def fetch_page(
             else:
                 await _backoff(attempt)
             retry_target = fallback_impersonate(prev_target)
-            # Get a fresh proxy for each retry
             retry_entry = None
             retry_proxy: str | None = None
             if proxy_pool is not None:
@@ -310,7 +304,6 @@ async def fetch_page(
                         backoff_seconds=settings.proxy_backoff_seconds,
                     )
                 raise
-            # Accumulate cookies from each response
             merged_cookies.update(result.cookies)
             challenge = _check_challenge(result)
             if not challenge.detected:
@@ -390,7 +383,6 @@ async def _fetch_with_curl(
             except Exception:
                 pass
     resp_headers = {k: v for k, v in resp.headers.items()}
-    # Extract cookies from response for session persistence
     resp_cookies = {}
     if hasattr(resp, "cookies"):
         for k, v in resp.cookies.items():
@@ -500,18 +492,20 @@ async def _fetch_with_browser(
         timeout = _CF_MIN_TIMEOUT
 
     page = await pool.acquire()
-    if proxy_url and hasattr(pool, "replace_with_proxied_page"):
-        page = await pool.replace_with_proxied_page(page, proxy_url, geolocation=geolocation)
+    try:
+        if proxy_url and hasattr(pool, "replace_with_proxied_page"):
+            page = await pool.replace_with_proxied_page(page, proxy_url, geolocation=geolocation)
+    except Exception:
+        await pool.release(page)
+        raise
 
     network_requests: list[dict] = [] if capture_network else None
     console_logs: list[dict] = [] if capture_console else None
 
     try:
-        # Apply custom headers
         if headers:
             await page.set_extra_http_headers(headers)
 
-        # Apply custom cookies
         if cookies:
             cookie_list = [
                 {"name": k, "value": v, "url": url}
@@ -519,8 +513,7 @@ async def _fetch_with_browser(
             ]
             await page.context.add_cookies(cookie_list)
 
-        # Text-only mode: block images, fonts, media for faster loading
-        # (ad/tracker blocking is already active at context level)
+        # Ad/tracker blocking is already active at context level
         if text_mode:
             from pawgrab.engine.browser import _BLOCKED_MEDIA_TYPES
             async def _media_block_handler(route):
@@ -529,7 +522,6 @@ async def _fetch_with_browser(
                 return await route.continue_()
             await page.route("**/*", _media_block_handler)
 
-        # Set up network request capture
         if capture_network:
             page.on("request", lambda req: network_requests.append({
                 "url": req.url,
@@ -543,7 +535,6 @@ async def _fetch_with_browser(
                 "headers": dict(resp.headers),
             }))
 
-        # Set up console log capture
         if capture_console:
             page.on("console", lambda msg: console_logs.append({
                 "type": msg.type,
@@ -553,12 +544,10 @@ async def _fetch_with_browser(
 
         response = await page.goto(url, timeout=timeout, wait_until="networkidle")
 
-        # Execute page actions before extracting content
         action_warnings: list[str] = []
         if actions:
             action_warnings = await _execute_actions(page, actions, timeout)
 
-        # Auto-scroll to trigger lazy loading
         if scroll_to_bottom:
             try:
                 from pawgrab.engine.browser import _SCROLL_TO_BOTTOM_JS
@@ -566,21 +555,18 @@ async def _fetch_with_browser(
             except Exception as exc:
                 logger.warning("scroll_to_bottom_failed", url=url, error=str(exc))
 
-        # Remove overlays/popups
         try:
             from pawgrab.engine.browser import _OVERLAY_REMOVAL_JS
             await page.evaluate(_OVERLAY_REMOVAL_JS)
         except Exception:
             pass
 
-        # Flatten shadow DOM
         try:
             from pawgrab.engine.browser import _SHADOW_DOM_FLATTEN_JS
             await page.evaluate(_SHADOW_DOM_FLATTEN_JS)
         except Exception:
             pass
 
-        # Inline iframes
         try:
             from pawgrab.engine.browser import _IFRAME_INLINE_JS
             await page.evaluate(_IFRAME_INLINE_JS)
@@ -590,7 +576,6 @@ async def _fetch_with_browser(
         html = await page.content()
         status = response.status if response else 200
 
-        # Extract response headers from Playwright
         resp_headers = {}
         if response:
             resp_headers = {k: v for k, v in response.headers.items()}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import structlog
 from bs4 import BeautifulSoup
 from lxml import html as lxml_html
@@ -26,9 +28,6 @@ class CleanedContent:
         self.content_html = content_html
         self.description = description
         self.language = language
-
-
-import re
 
 _TAG_RE = re.compile(r"<[^>]+>")
 

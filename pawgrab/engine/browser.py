@@ -916,7 +916,6 @@ class BrowserPool:
                 await _apply_stealth(self._persistent_ctx)
                 evasion_js = _build_evasion_script(browser_type="chromium")
                 await self._persistent_ctx.add_init_script(evasion_js)
-            # Block ad/tracker domains on all requests
             await self._persistent_ctx.route("**/*", _route_handler)
             try:
                 await self._persistent_ctx.grant_permissions(
@@ -1044,7 +1043,6 @@ class BrowserPool:
             await self._playwright.stop()
             self._playwright = None
 
-        # Clean up user data directory
         if self._user_data_dir:
             shutil.rmtree(self._user_data_dir, ignore_errors=True)
             self._user_data_dir = None
