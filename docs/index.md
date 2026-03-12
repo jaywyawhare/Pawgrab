@@ -55,7 +55,7 @@ hide:
 
     ---
 
-    Proxy rotation, rate limiting, robots.txt compliance, Docker Compose deployment
+    Unified error responses, API rate limiting, request ID correlation, response timing, SSE heartbeats, idempotency keys, proxy rotation, robots.txt compliance, Docker Compose deployment
 
 </div>
 
@@ -106,11 +106,16 @@ playwright install chromium
 |----------|--------|-------------|
 | `/v1/scrape` | POST | Scrape a single URL |
 | `/v1/crawl` | POST | Async site crawl (returns job ID) |
+| `/v1/crawl/{job_id}` | GET | Poll crawl status with pagination |
+| `/v1/crawl/{job_id}/stream` | GET | Real-time SSE stream with heartbeats |
 | `/v1/extract` | POST | Structured data extraction |
 | `/v1/batch/scrape` | POST | Batch scrape multiple URLs |
-| `/v1/search` | POST | Search the web and scrape results |
+| `/v1/batch/{job_id}` | GET | Poll batch status with pagination |
+| `/v1/search` | POST | Search the web and scrape results (parallel) |
 | `/v1/map` | POST | Discover URLs from sitemap |
-| `/health` | GET | Health check |
+| `/v1/proxy/pool` | POST/GET | Manage proxy pool |
+| `/health` | GET | Health check (API, Redis, browser pool, memory) |
+| `/status` | GET | Service info and version |
 
 [Full API Reference](api.md){ .md-button }
 
