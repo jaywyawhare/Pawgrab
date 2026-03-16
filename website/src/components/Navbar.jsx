@@ -35,7 +35,6 @@ export default function Navbar() {
             </>
           ) : null}
           <Link to="/docs" className="navbar__link">Docs</Link>
-          <Link to="/docs/api" className="navbar__link">API</Link>
         </div>
 
         <div className="navbar__actions">
