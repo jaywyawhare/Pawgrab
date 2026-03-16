@@ -14,7 +14,7 @@ export default defineConfig({
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'syntax-highlighter': ['react-syntax-highlighter'],
-          'markdown': ['react-markdown', 'remark-gfm', 'rehype-raw'],
+          'markdown': ['react-markdown', 'remark-gfm', 'rehype-raw', 'rehype-sanitize'],
           'animation': ['gsap', 'framer-motion'],
           'three': ['three'],
         },

@@ -1,10 +1,22 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+
+const sanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code || []), 'className'],
+    span: [...(defaultSchema.attributes?.span || []), 'className'],
+  },
+}
+
+const mdCache = new Map()
 
 const codeTheme = {
   ...oneDark,
@@ -102,20 +114,27 @@ export default function DocsPage() {
   const contentRef = useRef(null)
 
   useEffect(() => {
-    setLoading(true)
     setSidebarOpen(false)
     const base = import.meta.env.BASE_URL || '/'
+
+    if (mdCache.has(activeSlug)) {
+      const { stripped, headings } = mdCache.get(activeSlug)
+      setContent(stripped)
+      setToc(headings)
+      setLoading(false)
+      if (contentRef.current) contentRef.current.scrollTo(0, 0)
+      window.scrollTo(0, 0)
+      return
+    }
+
+    setLoading(true)
     fetch(`${base}docs/${activeSlug}.md`)
       .then((res) => {
         if (!res.ok) throw new Error('Not found')
         return res.text()
       })
       .then((text) => {
-        // Strip frontmatter
         const stripped = text.replace(/^---[\s\S]*?---\n*/, '')
-        setContent(stripped)
-
-        // Generate TOC
         const headings = []
         const regex = /^#{2,3}\s+(.+)$/gm
         let match
@@ -123,13 +142,13 @@ export default function DocsPage() {
           const level = match[0].startsWith('###') ? 3 : 2
           headings.push({ text: match[1], id: generateId(match[1]), level })
         }
+
+        mdCache.set(activeSlug, { stripped, headings })
+        setContent(stripped)
         setToc(headings)
         setLoading(false)
 
-        // Scroll to top
-        if (contentRef.current) {
-          contentRef.current.scrollTo(0, 0)
-        }
+        if (contentRef.current) contentRef.current.scrollTo(0, 0)
         window.scrollTo(0, 0)
       })
       .catch(() => {
@@ -184,7 +203,7 @@ export default function DocsPage() {
         onClick={() => setSidebarOpen(!sidebarOpen)}
         aria-label="Toggle sidebar"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <line x1="3" y1="6" x2="21" y2="6" />
           <line x1="3" y1="12" x2="21" y2="12" />
           <line x1="3" y1="18" x2="21" y2="18" />
@@ -238,7 +257,7 @@ export default function DocsPage() {
           <div className="docs__markdown">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeRaw]}
+              rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
               components={{
                 h2: ({ children }) => {
                   const id = generateId(String(children))
@@ -306,7 +325,7 @@ export default function DocsPage() {
         <div className="docs__nav-footer">
           {prev ? (
             <Link to={`/docs/${prev.slug}`} className="docs__nav-prev">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                 <path d="M19 12H5M12 19l-7-7 7-7" />
               </svg>
               <div>
@@ -321,7 +340,7 @@ export default function DocsPage() {
                 <span className="docs__nav-label">Next</span>
                 <span className="docs__nav-title">{next.label}</span>
               </div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                 <path d="M5 12h14M12 5l7 7-7 7" />
               </svg>
             </Link>

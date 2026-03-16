@@ -329,6 +329,14 @@ export function useWebGraph() {
     }
     window.addEventListener('mousemove', onMove)
 
+    // Pause animation when canvas is off-screen
+    let isVisible = true
+    const visObserver = new IntersectionObserver(
+      ([entry]) => { isVisible = entry.isIntersecting },
+      { threshold: 0 }
+    )
+    visObserver.observe(canvas)
+
     const lookTarget = new THREE.Vector3(0, 0, 0)
     const clock = new THREE.Clock()
     let raf
@@ -336,6 +344,7 @@ export function useWebGraph() {
 
     function loop() {
       raf = requestAnimationFrame(loop)
+      if (!isVisible) return
       const t = clock.getElapsedTime()
       const dt = clock.getDelta()
       frameCount++
@@ -426,6 +435,7 @@ export function useWebGraph() {
 
     return () => {
       cancelAnimationFrame(raf)
+      visObserver.disconnect()
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('resize', onResize)
       if (trailMesh) { trailMesh.geometry.dispose(); trailMesh.material.dispose() }
