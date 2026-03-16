@@ -1,11 +1,10 @@
-name: Deploy Docs
+name: Deploy Website
 
 on:
   push:
     branches: [master]
     paths:
-      - "docs/**"
-      - "mkdocs.yml"
+      - "website/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -18,12 +17,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
+          node-version: "20"
 
       - name: Install dependencies
-        run: pip install mkdocs-material mkdocs-minify-plugin
+        working-directory: website
+        run: npm ci
+
+      - name: Build
+        working-directory: website
+        run: npm run build
 
       - name: Deploy to GitHub Pages
-        run: mkdocs gh-deploy --force
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: website/dist
