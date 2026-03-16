@@ -4,7 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './index.css'
 
-const basename = import.meta.env.MODE === 'production' ? '/pawgrab' : '/'
+const basename = import.meta.env.MODE === 'production' ? '/Pawgrab' : '/'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
