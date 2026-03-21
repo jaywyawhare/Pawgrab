@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -88,7 +88,7 @@ export default function Features() {
   return (
     <section className="features" id="features" ref={ref}>
       <div className="features__inner">
-        <div className="section-header-feat" style={{ opacity: 0, marginBottom: 48 }}>
+        <div className="section-header" style={{marginBottom: 48 }}>
           <div className="section-label">Capabilities</div>
           <h2 className="section-title">Everything you need to scrape the web</h2>
           <p className="section-desc">
@@ -98,7 +98,7 @@ export default function Features() {
 
         <div className="features__grid">
           {features.map((f, i) => (
-            <Link to={f.link} className="features__card" key={i} style={{ opacity: 0 }}>
+            <Link to={f.link} className="features__card" key={i}>
               <h3 className="features__card-title">{f.title}</h3>
               <p className="features__card-desc">{f.desc}</p>
               <div className="features__card-tags">

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import gsap from 'gsap'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useWebGraph } from '../hooks/useWebGraph'
 
 export default function Hero() {
@@ -33,22 +33,22 @@ export default function Hero() {
       <div className="hero__fade" />
 
       <div ref={inner} className="hero__content">
-        <div className="hero__badge" style={{ opacity: 0 }}>
+        <div className="hero__badge">
           <span className="hero__badge-dot" />
           Open Source &middot; Production Ready
         </div>
 
-        <h1 className="hero__title" style={{ opacity: 0 }}>
+        <h1 className="hero__title" >
           Turn any URL into<br />
           <span className="hero__title-accent">clean, structured data</span>
         </h1>
 
-        <p className="hero__subtitle" style={{ opacity: 0 }}>
+        <p className="hero__subtitle" >
           Professional-grade web scraping API with anti-bot evasion,
           multiple output formats, async crawling, and LLM-ready extraction.
         </p>
 
-        <div className="hero__install" style={{ opacity: 0 }} onClick={handleCopy}>
+        <div className="hero__install" onClick={handleCopy}>
           <code>
             <span className="hero__install-prompt">$</span> pip install pawgrab
           </code>
@@ -66,7 +66,7 @@ export default function Hero() {
           </button>
         </div>
 
-        <div className="hero__actions" style={{ opacity: 0 }}>
+        <div className="hero__actions">
           <Link to="/docs" className="hero__btn hero__btn--primary">
             Get Started
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
