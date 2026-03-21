@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import rehypeRaw from 'rehype-raw'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import remarkGfm from 'remark-gfm'
 
 const sanitizeSchema = {
   ...defaultSchema,
@@ -281,6 +281,7 @@ export default function DocsPage() {
                           style={codeTheme}
                           language={match[1]}
                           PreTag="div"
+                          codeTagProps={{style: {fontFamily: 'var(--font-mono)', fontSize: '0.8rem'} }}
                           customStyle={{
                             margin: 0,
                             borderRadius: '0 0 8px 8px',

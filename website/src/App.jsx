@@ -1,8 +1,8 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route } from 'react-router-dom'
-import Navbar from './components/Navbar'
-import Footer from './components/Footer'
+import { Route, Routes } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary'
+import Footer from './components/Footer'
+import Navbar from './components/Navbar'
 
 const Hero = lazy(() => import('./components/Hero'))
 const FeatureTabs = lazy(() => import('./components/FeatureTabs'))
