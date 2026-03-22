@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -22,11 +22,11 @@ export default function CTA() {
 
   return (
     <div ref={ref} className="cta">
-      <h2 className="cta__title" style={{ opacity: 0 }}>Start scraping.</h2>
-      <p className="cta__desc" style={{ opacity: 0 }}>
+      <h2 className="cta__title">Start scraping.</h2>
+      <p className="cta__desc">
         Install, start, and make your first API call. No configuration required.
       </p>
-      <div className="cta__actions" style={{ opacity: 0 }}>
+      <div className="cta__actions">
         <Link to="/docs/quickstart" className="cta__btn cta__btn--primary">
           Get Started
         </Link>

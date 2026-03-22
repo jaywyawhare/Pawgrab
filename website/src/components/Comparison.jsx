@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { useEffect, useRef } from 'react'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -97,7 +97,7 @@ export default function Comparison() {
 
         <div className="perf__numbers">
           {numbers.map((n, i) => (
-            <div className="numbers__item" key={i} style={{ opacity: 0 }}>
+            <div className="numbers__item" key={i}>
               <div className="numbers__value">{n.value}</div>
               <div className="numbers__label">{n.label}</div>
             </div>
