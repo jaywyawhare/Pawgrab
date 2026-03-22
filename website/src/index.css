@@ -1,8 +1,3 @@
-/* ============================================
-   Pawgrab Design System
-   Dark theme with amber accent
-   ============================================ */
-
 :root {
   --bg: #0c0c0c;
   --bg-subtle: #151516;
@@ -34,9 +29,6 @@
   --navbar-height: 64px;
 }
 
-/* ============================================
-   Reset & Base
-   ============================================ */
 *, *::before, *::after {
   margin: 0;
   padding: 0;
@@ -72,7 +64,6 @@ a:hover {
   color: var(--bg);
 }
 
-/* Focus styles for keyboard navigation */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -85,7 +76,6 @@ a:focus-visible {
   border-radius: var(--radius-sm);
 }
 
-/* Respect prefers-reduced-motion globally */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -95,9 +85,6 @@ a:focus-visible {
   }
 }
 
-/* ============================================
-   Section Headers (shared)
-   ============================================ */
 .section-header {
   text-align: center;
   margin-bottom: 3.5rem;
@@ -132,9 +119,6 @@ a:focus-visible {
   font-weight: 300;
 }
 
-/* ============================================
-   Navbar
-   ============================================ */
 .navbar {
   position: fixed;
   top: 0;
@@ -296,9 +280,6 @@ a:focus-visible {
   }
 }
 
-/* ============================================
-   Hero
-   ============================================ */
 .hero {
   position: relative;
   min-height: 100vh;
@@ -333,6 +314,14 @@ a:focus-visible {
   max-width: 800px;
   width: 100%;
   text-align: center;
+}
+
+.hero__content > * {
+  animation: hero-fallback 0s 1s forwards;
+}
+
+@keyframes hero-fallback {
+  to { opacity: 1; }
 }
 
 .hero__badge {
@@ -466,9 +455,6 @@ a:focus-visible {
   border-color: var(--border-strong);
 }
 
-/* ============================================
-   Feature Tabs
-   ============================================ */
 .feature-tabs {
   padding: 100px 24px;
   position: relative;
@@ -587,7 +573,6 @@ a:focus-visible {
   font-size: 0.8rem;
 }
 
-/* Language switcher */
 .feature-tabs__lang-switcher {
   display: flex;
   gap: 0.15rem;
@@ -619,7 +604,6 @@ a:focus-visible {
   background: var(--bg-hover);
 }
 
-/* Response meta */
 .feature-tabs__meta {
   display: flex;
   gap: 0.5rem;
@@ -645,7 +629,6 @@ a:focus-visible {
   border-radius: 4px;
 }
 
-/* Copy button */
 .ft-copy {
   background: none;
   border: none;
@@ -675,9 +658,6 @@ a:focus-visible {
   color: #86efac;
 }
 
-/* ============================================
-   Features Grid
-   ============================================ */
 .features {
   padding: 100px 24px;
   max-width: 1000px;
@@ -749,9 +729,6 @@ a:focus-visible {
   background: rgba(245, 78, 0, 0.06);
 }
 
-/* ============================================
-   Performance Numbers (inside Comparison)
-   ============================================ */
 .perf__numbers {
   display: flex;
   justify-content: center;
@@ -786,7 +763,6 @@ a:focus-visible {
   .numbers__value { font-size: 1.6rem; }
 }
 
-/* Divider */
 .divider {
   height: 1px;
   background: var(--border);
@@ -794,9 +770,6 @@ a:focus-visible {
   margin: 0 auto;
 }
 
-/* ============================================
-   Comparison Table + Benchmarks
-   ============================================ */
 .comparison {
   padding: 100px 24px;
   max-width: 1000px;
@@ -807,9 +780,6 @@ a:focus-visible {
   max-width: 100%;
 }
 
-/* ============================================
-   Grouped Benchmark Chart
-   ============================================ */
 .bench__card {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -843,7 +813,6 @@ a:focus-visible {
   padding: 0.5rem 2rem 1rem;
 }
 
-/* --- Row: name + paired bars --- */
 .bench__row {
   display: grid;
   grid-template-columns: 130px 1fr;
@@ -878,7 +847,6 @@ a:focus-visible {
   font-weight: 700;
 }
 
-/* --- Paired bars (single + multi stacked) --- */
 .bench__pairs {
   display: flex;
   flex-direction: column;
@@ -934,7 +902,6 @@ a:focus-visible {
   font-weight: 600;
 }
 
-/* --- Footer / note --- */
 .bench__footer {
   padding: 0.85rem 2rem;
   border-top: 1px solid var(--border);
@@ -946,7 +913,6 @@ a:focus-visible {
   font-style: italic;
 }
 
-/* --- Legend (in header) --- */
 .bench__legend {
   display: flex;
   gap: 0.85rem;
@@ -978,7 +944,6 @@ a:focus-visible {
   background: var(--accent-secondary);
 }
 
-/* --- Responsive --- */
 @media (max-width: 600px) {
   .bench__header {
     flex-direction: column;
@@ -1004,9 +969,6 @@ a:focus-visible {
   }
 }
 
-/* ============================================
-   CTA
-   ============================================ */
 .cta {
   padding: 80px 24px;
   max-width: 1000px;
@@ -1069,9 +1031,6 @@ a:focus-visible {
   box-shadow: 0 0 30px var(--accent-glow);
 }
 
-/* ============================================
-   Footer
-   ============================================ */
 .footer {
   border-top: 1px solid var(--border);
   padding: 32px;
@@ -1115,9 +1074,6 @@ a:focus-visible {
   .footer { flex-direction: column; gap: 16px; text-align: center; }
 }
 
-/* ============================================
-   Docs Page - Three-column layout
-   ============================================ */
 .docs {
   display: grid;
   grid-template-columns: 260px 1fr 200px;
@@ -1178,7 +1134,6 @@ a:focus-visible {
   }
 }
 
-/* Sidebar */
 .docs__sidebar {
   border-right: 1px solid var(--border);
   padding: 1.5rem 0;
@@ -1233,7 +1188,6 @@ a:focus-visible {
   border-left-color: var(--accent);
 }
 
-/* Content */
 .docs__content {
   padding: 2rem 2.5rem 4rem;
   max-width: 100%;
@@ -1246,7 +1200,6 @@ a:focus-visible {
   }
 }
 
-/* Breadcrumb */
 .docs__breadcrumb {
   display: flex;
   align-items: center;
@@ -1273,7 +1226,6 @@ a:focus-visible {
   color: var(--text-2);
 }
 
-/* Loading */
 .docs__loading {
   display: flex;
   justify-content: center;
@@ -1293,7 +1245,6 @@ a:focus-visible {
   to { transform: rotate(360deg); }
 }
 
-/* Markdown Content Styles */
 .docs__markdown h1 {
   font-family: var(--font-display);
   font-size: 1.9rem;
@@ -1344,7 +1295,6 @@ a:focus-visible {
   font-weight: 600;
 }
 
-/* Code blocks */
 .docs__code-block {
   margin-bottom: 1.25rem;
   border-radius: var(--radius);
@@ -1392,7 +1342,6 @@ a:focus-visible {
   border: 1px solid rgba(245, 78, 0, 0.15);
 }
 
-/* Tables */
 .docs__table-wrap {
   overflow-x: auto;
   margin-bottom: 1.25rem;
@@ -1426,7 +1375,6 @@ a:focus-visible {
   background: var(--bg-subtle);
 }
 
-/* Blockquote */
 .docs__blockquote {
   border-left: 3px solid var(--accent);
   padding: 0.75rem 1rem;
@@ -1440,7 +1388,6 @@ a:focus-visible {
   margin-bottom: 0;
 }
 
-/* Prev / Next Navigation */
 .docs__nav-footer {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1486,7 +1433,6 @@ a:focus-visible {
   color: var(--text);
 }
 
-/* Table of Contents */
 .docs__toc {
   position: sticky;
   top: var(--navbar-height);
@@ -1530,9 +1476,6 @@ a:focus-visible {
   border-left-color: var(--accent);
 }
 
-/* ============================================
-   Scrollbar
-   ============================================ */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

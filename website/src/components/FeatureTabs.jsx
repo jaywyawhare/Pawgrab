@@ -338,7 +338,6 @@ export default function FeatureTabs() {
             <p className="feature-tabs__desc">{tab.description}</p>
 
             <div className="feature-tabs__panels">
-              {/* Request panel */}
               <div className="feature-tabs__panel">
                 <div className="feature-tabs__panel-header">
                   <span className="feature-tabs__panel-title">Request</span>
@@ -366,7 +365,6 @@ export default function FeatureTabs() {
                 </SyntaxHighlighter>
               </div>
 
-              {/* Response panel */}
               <div className="feature-tabs__panel feature-tabs__panel--response">
                 <div className="feature-tabs__panel-header">
                   <span className="feature-tabs__panel-title">Response</span>
