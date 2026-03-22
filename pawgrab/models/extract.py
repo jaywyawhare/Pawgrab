@@ -11,6 +11,7 @@ class ExtractionStrategy(str, Enum):
     CSS = "css"
     XPATH = "xpath"
     REGEX = "regex"
+    TABLE = "table"
 
 
 class ChunkStrategy(str, Enum):
@@ -33,6 +34,7 @@ class ExtractRequest(BaseModel):
     chunk_strategy: ChunkStrategy | None = Field(default=None, description="Chunking strategy for long pages: fixed, sliding, or semantic")
     chunk_size: int = Field(default=4000, ge=100, le=100000, description="Target chunk size in tokens")
     chunk_overlap: int = Field(default=200, ge=0, le=10000, description="Token overlap between chunks")
+    table_index: int | None = Field(default=None, ge=0, description="Extract a specific table by index (0-based). None = extract all tables")
 
 
 class ExtractResponse(BaseModel):

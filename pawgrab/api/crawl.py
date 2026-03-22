@@ -7,8 +7,8 @@ import structlog
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
-from pawgrab.exceptions import ErrorCode, PawgrabError
-from pawgrab.models.common import ErrorResponse
+from pawgrab.exceptions import PawgrabError
+from pawgrab.models.common import ErrorResponse, JOB_ID_RESPONSES, QUEUE_RESPONSES
 from pawgrab.models.crawl import CrawlRequest, CrawlResponse, CrawlStatus
 from pawgrab.queue.manager import create_job, get_job, subscribe_events
 from pawgrab.queue.pool import JOB_ID_RE, get_arq_pool
@@ -16,24 +16,18 @@ from pawgrab.queue.pool import JOB_ID_RE, get_arq_pool
 logger = structlog.get_logger()
 router = APIRouter(tags=["Crawl"])
 
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
 
 def _require_valid_job_id(job_id: str) -> None:
     if not JOB_ID_RE.match(job_id):
-        raise PawgrabError(
-            status_code=400,
-            code=ErrorCode.VALIDATION_ERROR,
-            message="Invalid job ID format — must be a 12-character hex string",
-        )
+        raise PawgrabError.invalid_job_id()
 
 
 async def _require_job(job_id: str, **kwargs):
     job = await get_job(job_id, **kwargs)
     if job is None:
-        raise PawgrabError(
-            status_code=404,
-            code=ErrorCode.RESOURCE_NOT_FOUND,
-            message=f"Job not found: {job_id}",
-        )
+        raise PawgrabError.not_found(job_id)
     return job
 
 
@@ -41,12 +35,7 @@ async def _require_job(job_id: str, **kwargs):
     "/crawl",
     response_model=CrawlResponse,
     status_code=202,
-    responses={
-        400: {"model": ErrorResponse, "description": "Invalid request"},
-        404: {"model": ErrorResponse, "description": "Resume job not found"},
-        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
-        503: {"model": ErrorResponse, "description": "Queue service unavailable"},
-    },
+    responses={**JOB_ID_RESPONSES, **QUEUE_RESPONSES},
 )
 async def start_crawl(req: CrawlRequest):
     """Start an async crawl job. Returns a job ID immediately."""
@@ -67,13 +56,8 @@ async def start_crawl(req: CrawlRequest):
         pool = await get_arq_pool()
         await pool.enqueue_job(
             "crawl_job",
-            job_id,
-            url,
-            req.max_pages,
-            req.max_depth,
-            orjson.dumps(formats).decode(),
-            resume,
-            req.strategy.value,
+            job_id, url, req.max_pages, req.max_depth,
+            orjson.dumps(formats).decode(), resume, req.strategy.value,
             orjson.dumps(req.allowed_domains).decode() if req.allowed_domains else None,
             orjson.dumps(req.blocked_domains).decode() if req.blocked_domains else None,
             orjson.dumps(req.include_path_patterns).decode() if req.include_path_patterns else None,
@@ -82,21 +66,14 @@ async def start_crawl(req: CrawlRequest):
         )
     except Exception as exc:
         logger.error("crawl_enqueue_failed", error=str(exc))
-        raise PawgrabError(
-            status_code=503,
-            code=ErrorCode.QUEUE_UNAVAILABLE,
-            message="Queue service unavailable — is Redis running?",
-        )
+        raise PawgrabError.queue_unavailable()
 
     return CrawlResponse(job_id=job_id, status=CrawlStatus.QUEUED, url=url)
 
 
 @router.get(
     "/crawl/{job_id}",
-    responses={
-        400: {"model": ErrorResponse, "description": "Invalid job ID format"},
-        404: {"model": ErrorResponse, "description": "Job not found"},
-    },
+    responses=JOB_ID_RESPONSES,
 )
 async def get_crawl_status(
     job_id: str,
@@ -110,10 +87,7 @@ async def get_crawl_status(
 
 @router.get(
     "/crawl/{job_id}/stream",
-    responses={
-        400: {"model": ErrorResponse, "description": "Invalid job ID format"},
-        404: {"model": ErrorResponse, "description": "Job not found"},
-    },
+    responses=JOB_ID_RESPONSES,
 )
 async def stream_crawl_events(job_id: str):
     """Stream real-time crawl progress via Server-Sent Events."""
@@ -134,7 +108,7 @@ async def stream_crawl_events(job_id: str):
         return StreamingResponse(
             _final(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            headers=_SSE_HEADERS,
         )
 
     async def _stream():
@@ -152,5 +126,5 @@ async def stream_crawl_events(job_id: str):
     return StreamingResponse(
         _stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers=_SSE_HEADERS,
     )

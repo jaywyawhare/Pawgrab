@@ -5,13 +5,24 @@ from fastapi import APIRouter
 
 from pawgrab.ai.extractor import extract_from_url
 from pawgrab.config import settings
-from pawgrab.dependencies import get_browser_pool
+from pawgrab.dependencies import try_browser_pool
+from pawgrab.engine.extractors import auto_generate_schema, get_extractor
+from pawgrab.engine.fetcher import fetch_page
+from pawgrab.engine.table_extractor import extract_tables
 from pawgrab.exceptions import ErrorCode, PawgrabError
 from pawgrab.models.common import ErrorResponse
 from pawgrab.models.extract import ExtractRequest, ExtractResponse, ExtractionStrategy
+from pawgrab.utils.rate_limiter import guard_url
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["Extract"])
+
+_PROVIDER_KEY_MAP = {
+    "openai": lambda: settings.openai_api_key,
+    "anthropic": lambda: settings.anthropic_api_key,
+    "gemini": lambda: settings.gemini_api_key,
+    "ollama": lambda: "local",
+}
 
 
 @router.post(
@@ -29,113 +40,85 @@ router = APIRouter(tags=["Extract"])
 async def extract(req: ExtractRequest):
     """Extract structured data from a URL using LLM, CSS, XPath, or regex."""
     url = str(req.url)
+    pool = await try_browser_pool()
 
-    try:
-        pool = await get_browser_pool()
-    except Exception:
-        pool = None
-
+    if req.strategy == ExtractionStrategy.TABLE:
+        return await _extract_table(req, url, pool)
     if req.strategy == ExtractionStrategy.LLM:
         return await _extract_llm(req, url, pool)
     return await _extract_non_llm(req, url, pool)
 
 
-async def _extract_llm(req: ExtractRequest, url: str, pool):
+async def _fetch_for_extraction(url: str, req: ExtractRequest, pool) -> object:
+    """Shared fetch + robots guard for non-LLM extraction paths."""
+    try:
+        await guard_url(url)
+    except PermissionError as exc:
+        raise PawgrabError(status_code=403, code=ErrorCode.ROBOTS_BLOCKED, message=str(exc))
+    try:
+        return await fetch_page(url, timeout=req.timeout, browser_pool=pool)
+    except TimeoutError:
+        raise PawgrabError.timeout(req.timeout)
+    except Exception as exc:
+        raise PawgrabError.fetch_failed(exc)
+
+
+async def _extract_table(req: ExtractRequest, url: str, pool) -> ExtractResponse:
+    result = await _fetch_for_extraction(url, req, pool)
+    tables = extract_tables(result.html, table_index=req.table_index)
+    return ExtractResponse(success=True, url=url, data=tables)
+
+
+async def _extract_llm(req: ExtractRequest, url: str, pool) -> ExtractResponse:
     if not req.prompt:
         raise PawgrabError(
-            status_code=400,
-            code=ErrorCode.VALIDATION_ERROR,
+            status_code=400, code=ErrorCode.VALIDATION_ERROR,
             message="LLM strategy requires the 'prompt' field — describe what data to extract",
         )
-    if not settings.openai_api_key:
+    key_getter = _PROVIDER_KEY_MAP.get(settings.llm_provider)
+    if not key_getter or not key_getter():
         raise PawgrabError(
-            status_code=503,
-            code=ErrorCode.LLM_UNAVAILABLE,
-            message="LLM provider not configured. Set PAWGRAB_OPENAI_API_KEY environment variable.",
+            status_code=503, code=ErrorCode.LLM_UNAVAILABLE,
+            message=f"LLM provider '{settings.llm_provider}' not configured. Set the corresponding API key.",
         )
 
     try:
         data = await extract_from_url(
-            url,
-            prompt=req.prompt,
-            schema_hint=req.schema_hint,
-            json_schema=req.json_schema,
-            timeout=req.timeout,
-            browser_pool=pool,
-            chunk_strategy=req.chunk_strategy,
-            chunk_size=req.chunk_size,
+            url, prompt=req.prompt, schema_hint=req.schema_hint,
+            json_schema=req.json_schema, timeout=req.timeout, browser_pool=pool,
+            chunk_strategy=req.chunk_strategy, chunk_size=req.chunk_size,
             chunk_overlap=req.chunk_overlap,
         )
-        resp = ExtractResponse(success=True, url=url, data=data)
-        if req.auto_schema:
-            from pawgrab.engine.extractors import auto_generate_schema
-            resp.auto_schema = auto_generate_schema(data)
-        return resp
     except PermissionError as exc:
-        raise PawgrabError(
-            status_code=403,
-            code=ErrorCode.ROBOTS_BLOCKED,
-            message=str(exc),
-        )
+        raise PawgrabError(status_code=403, code=ErrorCode.ROBOTS_BLOCKED, message=str(exc))
     except Exception as exc:
         logger.error("extract_failed", url=url, error=str(exc))
         raise PawgrabError(
-            status_code=502,
-            code=ErrorCode.EXTRACTION_FAILED,
+            status_code=502, code=ErrorCode.EXTRACTION_FAILED,
             message=f"Extraction failed: {type(exc).__name__}",
         )
 
+    resp = ExtractResponse(success=True, url=url, data=data)
+    if req.auto_schema:
+        resp.auto_schema = auto_generate_schema(data)
+    return resp
 
-async def _extract_non_llm(req: ExtractRequest, url: str, pool):
-    from pawgrab.engine.extractors import auto_generate_schema, get_extractor
-    from pawgrab.engine.fetcher import fetch_page
-    from pawgrab.engine.robots import is_allowed
-    from pawgrab.utils.rate_limiter import wait_for_slot
 
-    if not await is_allowed(url):
-        raise PawgrabError(
-            status_code=403,
-            code=ErrorCode.ROBOTS_BLOCKED,
-            message=f"URL blocked by robots.txt: {url}",
-        )
-
-    await wait_for_slot(url)
-
-    try:
-        result = await fetch_page(url, timeout=req.timeout, browser_pool=pool)
-    except TimeoutError:
-        raise PawgrabError(
-            status_code=504,
-            code=ErrorCode.TIMEOUT,
-            message=f"Request timed out after {req.timeout}ms",
-        )
-    except Exception as exc:
-        logger.error("fetch_failed", url=url, error=str(exc))
-        raise PawgrabError(
-            status_code=502,
-            code=ErrorCode.FETCH_FAILED,
-            message=f"Failed to fetch URL: {type(exc).__name__}",
-        )
+async def _extract_non_llm(req: ExtractRequest, url: str, pool) -> ExtractResponse:
+    result = await _fetch_for_extraction(url, req, pool)
 
     try:
         extractor = get_extractor(
-            req.strategy.value,
-            selectors=req.selectors,
-            xpath_queries=req.xpath_queries,
-            patterns=req.patterns,
+            req.strategy.value, selectors=req.selectors,
+            xpath_queries=req.xpath_queries, patterns=req.patterns,
         )
         data = extractor.extract(result.html)
     except ValueError as exc:
-        raise PawgrabError(
-            status_code=400,
-            code=ErrorCode.VALIDATION_ERROR,
-            message=str(exc),
-        )
+        raise PawgrabError(status_code=400, code=ErrorCode.VALIDATION_ERROR, message=str(exc))
     except Exception as exc:
         logger.error("extraction_failed", url=url, error=str(exc))
         raise PawgrabError(
-            status_code=502,
-            code=ErrorCode.EXTRACTION_FAILED,
+            status_code=502, code=ErrorCode.EXTRACTION_FAILED,
             message=f"Extraction failed: {type(exc).__name__}",
         )
 

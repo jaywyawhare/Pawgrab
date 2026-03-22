@@ -16,14 +16,23 @@ class ActionType(str, Enum):
     WAIT_FOR = "wait_for"
     SCREENSHOT = "screenshot"
     EXECUTE_JS = "execute_js"
+    SELECT = "select"
+    CHECK = "check"
+    UNCHECK = "uncheck"
+    FOCUS = "focus"
+    HOVER = "hover"
+    FILL_FORM = "fill_form"
+    SUBMIT_FORM = "submit_form"
+    PRESS_KEY = "press_key"
 
 
 class PageAction(BaseModel):
     type: ActionType
     selector: str | None = Field(default=None, description="CSS selector for the target element")
-    text: str | None = Field(default=None, description="Text to type or JS code to execute")
+    text: str | None = Field(default=None, description="Text to type, JS code, key name, or select option value")
     direction: str | None = Field(default=None, description="Scroll direction: 'up' or 'down'")
     amount: int | None = Field(default=None, description="Pixels to scroll or milliseconds to wait")
+    form_data: dict[str, str] | None = Field(default=None, description="Form fields to fill: {selector: value}")
 
     @model_validator(mode="after")
     def validate_fields(self):
@@ -42,6 +51,16 @@ class PageAction(BaseModel):
                 raise ValueError("'wait' action requires 'amount' (ms)")
         if t == ActionType.EXECUTE_JS and not self.text:
             raise ValueError("'execute_js' action requires 'text' (JS code)")
+        if t == ActionType.SELECT and (not self.selector or not self.text):
+            raise ValueError("'select' action requires 'selector' and 'text' (option value)")
+        if t in (ActionType.CHECK, ActionType.UNCHECK, ActionType.FOCUS, ActionType.HOVER) and not self.selector:
+            raise ValueError(f"'{t.value}' action requires 'selector'")
+        if t == ActionType.FILL_FORM and not self.form_data:
+            raise ValueError("'fill_form' action requires 'form_data' ({selector: value})")
+        if t == ActionType.SUBMIT_FORM and not self.selector:
+            raise ValueError("'submit_form' action requires 'selector' (form selector)")
+        if t == ActionType.PRESS_KEY and not self.text:
+            raise ValueError("'press_key' action requires 'text' (key name, e.g. 'Enter', 'Tab')")
         return self
 
 
@@ -77,6 +96,10 @@ class ScrapeRequest(BaseModel):
     capture_mhtml: bool = Field(default=False, description="Save page as MHTML archive")
     extract_media: bool = Field(default=False, description="Extract images, videos, audio, and links")
     capture_ssl: bool = Field(default=False, description="Capture SSL certificate information")
+    capture_websocket: bool = Field(default=False, description="Capture WebSocket messages during page load")
+    llm_ready: bool = Field(default=False, description="Optimize output for LLM consumption: aggressive cleanup, token count estimation")
+    cache_ttl: int | None = Field(default=None, ge=0, le=86400, description="Cache TTL in seconds. 0 = skip cache, None = use server default")
+    session_id: str | None = Field(default=None, description="Session ID for persistent cookies/state across requests")
 
 
 class PageMetadata(BaseModel):
@@ -86,6 +109,8 @@ class PageMetadata(BaseModel):
     url: str
     status_code: int
     word_count: int = 0
+    token_count_estimate: int | None = Field(default=None, description="Estimated token count for LLM processing")
+    retry_count: int = Field(default=0, description="Number of retry attempts needed to fetch the page")
 
 
 class ScrapeResponse(BaseModel):
@@ -103,9 +128,11 @@ class ScrapeResponse(BaseModel):
     screenshot_base64: str | None = None
     pdf_base64: str | None = None
     diff: Any | None = None  # ContentDiff when monitor=True
-    # Capture results
+    screenshot_diff: dict | None = Field(default=None, description="Screenshot comparison with previous capture when monitor=True")
     network_requests: list[dict[str, Any]] | None = None
     console_logs: list[dict[str, Any]] | None = None
     mhtml_base64: str | None = None
     media: dict[str, Any] | None = None
     ssl_certificate: dict[str, Any] | None = None
+    websocket_messages: list[dict[str, Any]] | None = Field(default=None, description="Captured WebSocket messages")
+    cache_hit: bool = Field(default=False, description="Whether this response was served from cache")

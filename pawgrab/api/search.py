@@ -5,7 +5,7 @@ import asyncio
 import structlog
 from fastapi import APIRouter
 
-from pawgrab.dependencies import get_browser_pool
+from pawgrab.dependencies import try_browser_pool
 from pawgrab.engine.scrape_service import scrape_url
 from pawgrab.engine.search_provider import search_web
 from pawgrab.exceptions import ErrorCode, PawgrabError
@@ -45,10 +45,7 @@ async def search(req: SearchRequest):
     if not urls:
         return SearchResponse(success=True, query=req.query, results=[], total=0)
 
-    try:
-        pool = await get_browser_pool()
-    except Exception:
-        pool = None
+    pool = await try_browser_pool()
 
     sem = asyncio.Semaphore(_SEARCH_CONCURRENCY)
 
