@@ -28,7 +28,6 @@ async def discover_urls(
     parsed = urlparse(url)
     base = f"{parsed.scheme}://{parsed.netloc}"
 
-    # Try sitemap paths
     for path in _SITEMAP_PATHS:
         sitemap_url = base + path
         urls = await _fetch_sitemap(sitemap_url, limit=limit)
@@ -38,7 +37,6 @@ async def discover_urls(
                 urls = [u for u in urls if _matches_domain(u, domain)]
             return urls[:limit], "sitemap"
 
-    # Fallback: extract links from homepage
     urls = await _extract_homepage_links(url, base, include_subdomains=include_subdomains)
     return urls[:limit], "crawl"
 
@@ -63,25 +61,20 @@ def _parse_sitemap_xml(xml_text: str, *, limit: int = 5000) -> list[str]:
     except ET.ParseError:
         return []
 
-    # Strip namespace for easier querying
     ns = ""
     if root.tag.startswith("{"):
         ns = root.tag.split("}")[0] + "}"
 
     urls: list[str] = []
 
-    # Check if this is a sitemap index
     for sitemap in root.findall(f"{ns}sitemap"):
         loc = sitemap.find(f"{ns}loc")
         if loc is not None and loc.text:
             urls.append(loc.text.strip())
 
-    # If it's a sitemap index, return the sub-sitemap URLs
-    # (the caller can recursively fetch them)
     if urls:
         return urls[:limit]
 
-    # Regular sitemap — extract URL locs
     for url_elem in root.findall(f"{ns}url"):
         loc = url_elem.find(f"{ns}loc")
         if loc is not None and loc.text:
@@ -131,7 +124,6 @@ async def _extract_homepage_links(
     for a_tag in soup.find_all("a", href=True):
         href = a_tag["href"]
 
-        # Resolve relative URLs
         if href.startswith("/"):
             href = base + href
         elif not href.startswith("http"):
@@ -149,7 +141,6 @@ async def _extract_homepage_links(
             if host != domain:
                 continue
 
-        # Normalize — strip query/fragment to deduplicate
         path = parsed.path.rstrip("/") or "/"
         normalized = f"{parsed.scheme}://{parsed.netloc}{path}"
         if normalized not in seen:

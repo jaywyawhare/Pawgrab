@@ -56,11 +56,9 @@ class PathFilter(URLFilter):
 
     def accept(self, url: str) -> bool:
         path = urlparse(url).path
-        # Check exclude first
         for pattern in self.exclude_re:
             if pattern.search(path):
                 return False
-        # If include patterns exist, at least one must match
         if self.include_re:
             return any(p.search(path) for p in self.include_re)
         return True
@@ -69,7 +67,6 @@ class PathFilter(URLFilter):
 class ContentTypeFilter(URLFilter):
     """Filter URLs by file extension as a proxy for MIME type."""
 
-    # Default blocked extensions (binary/non-content files)
     _DEFAULT_BLOCKED = frozenset({
         ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico", ".bmp",
         ".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm",
@@ -89,7 +86,6 @@ class ContentTypeFilter(URLFilter):
 
     def accept(self, url: str) -> bool:
         path = urlparse(url).path.lower()
-        # Extract extension
         dot_idx = path.rfind(".")
         if dot_idx == -1:
             return True  # no extension = likely HTML
@@ -117,7 +113,6 @@ class DuplicateFilter(URLFilter):
     @staticmethod
     def _normalize(url: str) -> str:
         parsed = urlparse(url)
-        # Remove fragment, normalize trailing slash
         path = parsed.path.rstrip("/") or "/"
         return f"{parsed.scheme}://{parsed.netloc}{path}?{parsed.query}" if parsed.query else f"{parsed.scheme}://{parsed.netloc}{path}"
 

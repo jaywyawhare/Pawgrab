@@ -26,8 +26,7 @@ def _extract_images(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
     for img in soup.find_all("img"):
         src = img.get("src", "")
         if not src:
-            # Try data-src (lazy loading) or srcset
-            src = img.get("data-src", "") or img.get("data-lazy-src", "")
+                src = img.get("data-src", "") or img.get("data-lazy-src", "")
         if not src:
             continue
 
@@ -45,7 +44,6 @@ def _extract_images(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
 
         images.append(image)
 
-    # Also extract background images from style attributes
     for el in soup.find_all(style=True):
         style = el.get("style", "")
         if "url(" in style:
@@ -65,7 +63,6 @@ def _extract_videos(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
     """Extract all video elements."""
     videos = []
 
-    # HTML5 <video> elements
     for video in soup.find_all("video"):
         sources = []
         for source in video.find_all("source"):
@@ -75,7 +72,6 @@ def _extract_videos(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
                     "src": urljoin(base_url, src) if base_url else src,
                     "type": source.get("type", ""),
                 })
-        # Direct src on video tag
         src = video.get("src", "")
         if src:
             sources.append({
@@ -90,7 +86,6 @@ def _extract_videos(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
                 "height": video.get("height"),
             })
 
-    # Embedded iframes (YouTube, Vimeo, etc.)
     for iframe in soup.find_all("iframe"):
         src = iframe.get("src", "")
         if any(domain in src for domain in ("youtube", "vimeo", "dailymotion", "wistia")):

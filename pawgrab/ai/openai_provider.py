@@ -37,16 +37,13 @@ class OpenAIProvider:
     ) -> dict[str, Any]:
         user_message = build_extraction_prompt(content, prompt, schema_hint)
 
-        # Truncate at paragraph boundary if too long (rough ~25k token budget)
         if len(user_message) > 100_000:
             truncated = user_message[:100_000]
-            # Find last paragraph break to avoid splitting mid-sentence
             last_break = truncated.rfind("\n\n")
             if last_break > 50_000:
                 truncated = truncated[:last_break]
             user_message = truncated + "\n\n[Content truncated]"
 
-        # Build response format — use structured outputs if JSON schema provided
         if json_schema:
             response_format = {
                 "type": "json_schema",

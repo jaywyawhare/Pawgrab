@@ -20,9 +20,6 @@ import random
 import re
 from dataclasses import dataclass
 
-# How much of the response body to inspect for challenge markers.
-# Cloudflare challenge scripts can appear after the initial <head> block,
-# so we check a generous chunk without scanning multi-MB pages.
 _CHALLENGE_SCAN_BYTES = 15_000
 
 
@@ -189,7 +186,6 @@ EDGE_TARGETS = [
     "edge99",
 ]
 
-# All targets combined — Safari first so they're picked by ordered fallback
 IMPERSONATE_TARGETS = SAFARI_TARGETS + CHROME_TARGETS + EDGE_TARGETS
 
 

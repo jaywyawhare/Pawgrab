@@ -10,13 +10,11 @@ from bs4 import BeautifulSoup, Tag
 
 from pawgrab.utils.text import make_soup, tokenize
 
-# Tags commonly containing boilerplate
 _BOILERPLATE_TAGS = frozenset({
     "nav", "footer", "aside", "header",
     "form", "noscript", "figcaption",
 })
 
-# CSS class/id patterns associated with non-content regions
 _BOILERPLATE_PATTERNS = re.compile(
     r"(sidebar|footer|header|nav|menu|breadcrumb|widget|banner|advert|cookie|"
     r"social|share|comment|related|popup|modal|overlay|newsletter|signup|"
@@ -70,12 +68,10 @@ class PruningContentFilter:
 
         soup = make_soup(html)
 
-        # 1. Remove known boilerplate tags
         for tag_name in _BOILERPLATE_TAGS:
             for el in soup.find_all(tag_name):
                 el.decompose()
 
-        # 2. Remove elements with boilerplate class/id patterns
         for el in list(soup.find_all(True)):
             if el.decomposed if hasattr(el, "decomposed") else el.parent is None:
                 continue
@@ -84,7 +80,6 @@ class PruningContentFilter:
             if _BOILERPLATE_PATTERNS.search(classes) or _BOILERPLATE_PATTERNS.search(el_id):
                 el.decompose()
 
-        # 3+4. Remove low text-density / high link-density block elements
         for el in list(soup.find_all(["div", "section", "article", "table"])):
             if el.decomposed if hasattr(el, "decomposed") else el.parent is None:
                 continue
@@ -126,7 +121,6 @@ class BM25ContentFilter:
 
         soup = make_soup(html)
 
-        # Extract block-level elements
         blocks: list[Tag] = []
         for el in soup.find_all(
             ["p", "div", "section", "article", "li", "td", "th",
@@ -139,17 +133,13 @@ class BM25ContentFilter:
         if not blocks:
             return html
 
-        # Tokenize all blocks
         block_tokens = [tokenize(b.get_text()) for b in blocks]
-
-        # Build document frequency
         n = len(blocks)
         df: Counter[str] = Counter()
         for tokens in block_tokens:
             for term in set(tokens):
                 df[term] += 1
 
-        # Compute IDF for query terms
         idf: dict[str, float] = {}
         for term in self._query_terms:
             if df[term] > 0:
@@ -157,7 +147,6 @@ class BM25ContentFilter:
             else:
                 idf[term] = math.log(n + 1) + 1
 
-        # Score each block by cosine similarity with query
         scored: list[tuple[int, float, Tag]] = []
         query_vec = {t: idf.get(t, 0) for t in self._query_terms}
         query_norm = math.sqrt(sum(v * v for v in query_vec.values())) or 1.0
@@ -176,17 +165,13 @@ class BM25ContentFilter:
             if similarity >= self.similarity_threshold:
                 scored.append((i, similarity, block))
 
-        # Sort by score descending, take top_k
         scored.sort(key=lambda x: x[1], reverse=True)
         kept = scored[:self.top_k]
 
         if not kept:
             return html
 
-        # Re-sort by document order
         kept.sort(key=lambda x: x[0])
-
-        # Build new HTML from kept blocks
         new_soup = BeautifulSoup("<div></div>", "html.parser")
         container = new_soup.find("div")
         for _, _, block in kept:

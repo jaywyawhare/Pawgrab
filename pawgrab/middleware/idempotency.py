@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import orjson
 import structlog
 from fastapi import Request
@@ -23,7 +25,13 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         if not idem_key:
             return await call_next(request)
 
-        cache_key = f"pawgrab:idempotency:{request.url.path}:{idem_key}"
+        # Scope the key to the client so one client can't replay another's response
+        auth = request.headers.get("Authorization", "")
+        if auth:
+            client_id = hashlib.sha256(auth.encode()).hexdigest()[:16]
+        else:
+            client_id = request.client.host if request.client else "anon"
+        cache_key = f"pawgrab:idempotency:{request.url.path}:{client_id}:{idem_key}"
 
         try:
             from pawgrab.queue.manager import get_redis
@@ -59,7 +67,6 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
             except Exception:
                 logger.warning("idempotency_cache_failed", key=idem_key)
 
-            # body_iterator was consumed, rebuild response
             return Response(
                 content=body,
                 status_code=response.status_code,

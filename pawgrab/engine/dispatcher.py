@@ -22,7 +22,6 @@ def _get_memory_percent() -> float:
     """
     global _mem_fallback_warned
 
-    # Linux / Docker (primary)
     try:
         with open("/proc/meminfo") as f:
             lines = f.readlines()
@@ -39,7 +38,6 @@ def _get_memory_percent() -> float:
     except FileNotFoundError:
         pass
 
-    # Cross-platform fallback via psutil
     try:
         import psutil
         return psutil.virtual_memory().percent
@@ -114,15 +112,20 @@ class MemoryAdaptiveDispatcher:
         """Release a concurrency slot."""
         self._semaphore.release()
 
-    def _adjust_semaphore(self, new_level: int) -> None:
+    async def _adjust_semaphore(self, new_level: int) -> None:
         """Adjust semaphore capacity without replacing it (preserves waiters)."""
         diff = new_level - self._current_concurrency
         if diff > 0:
             for _ in range(diff):
                 self._semaphore.release()
         elif diff < 0:
+            # Non-blocking drain: asyncio.timeout(0) raises TimeoutError instead of blocking.
             for _ in range(-diff):
-                self._semaphore._value = max(0, self._semaphore._value - 1)
+                try:
+                    async with asyncio.timeout(0):
+                        await self._semaphore.acquire()
+                except TimeoutError:
+                    break
         self._current_concurrency = new_level
 
     async def _monitor_loop(self) -> None:
@@ -133,7 +136,7 @@ class MemoryAdaptiveDispatcher:
                 if mem_pct > self._threshold:
                     new_level = max(self._min, self._current_concurrency - 1)
                     if new_level < self._current_concurrency:
-                        self._adjust_semaphore(new_level)
+                        await self._adjust_semaphore(new_level)
                         logger.warning(
                             "dispatcher_scaling_down",
                             memory_percent=round(mem_pct, 1),
@@ -142,7 +145,7 @@ class MemoryAdaptiveDispatcher:
                 elif mem_pct < self._threshold - 10:
                     new_level = min(self._max, self._current_concurrency + 1)
                     if new_level > self._current_concurrency:
-                        self._adjust_semaphore(new_level)
+                        await self._adjust_semaphore(new_level)
                         logger.info(
                             "dispatcher_scaling_up",
                             memory_percent=round(mem_pct, 1),
