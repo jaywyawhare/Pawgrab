@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import structlog
@@ -13,11 +14,12 @@ from pawgrab.config import settings
 logger = structlog.get_logger()
 
 _USER_AGENT = "Pawgrab"
-_FAILURE_TTL = 300  # 5 minutes backoff for failed fetches
+_FAILURE_TTL = 300
 _MAX_CACHE_SIZE = 2000
 
-# Cache stores (parser, timestamp, is_failure) tuples
 _cache: dict[str, tuple[Protego | None, float, bool]] = {}
+_cache_lock = asyncio.Lock()
+_inflight: dict[str, asyncio.Event] = {}
 
 
 async def is_allowed(url: str) -> bool:
@@ -28,29 +30,48 @@ async def is_allowed(url: str) -> bool:
     from pawgrab.utils.url import get_base_url
 
     base = get_base_url(url)
-    now = time.monotonic()
 
-    if base in _cache:
-        parser, cached_at, was_failure = _cache[base]
-        ttl = _FAILURE_TTL if was_failure else settings.robots_cache_ttl
-        if now - cached_at < ttl:
-            if parser is None:
-                return True
-            return parser.can_fetch(url, _USER_AGENT)
+    while True:
+        now = time.monotonic()
+        async with _cache_lock:
+            if base in _cache:
+                parser, cached_at, was_failure = _cache[base]
+                ttl = _FAILURE_TTL if was_failure else settings.robots_cache_ttl
+                if now - cached_at < ttl:
+                    if parser is None:
+                        return True
+                    return parser.can_fetch(url, _USER_AGENT)
 
-    # Evict oldest entries if cache is full
-    if len(_cache) >= _MAX_CACHE_SIZE:
-        oldest = min(_cache, key=lambda k: _cache[k][1])
-        del _cache[oldest]
+            if base in _inflight:
+                wait_event: asyncio.Event = _inflight[base]
+                fetch_event = None
+            else:
+                fetch_event = asyncio.Event()
+                _inflight[base] = fetch_event
+                wait_event = None
 
-    # Cache miss or expired
-    parser = await _fetch_robots(base)
-    is_failure = parser is None
-    _cache[base] = (parser, now, is_failure)
+        if wait_event is not None:
+            await wait_event.wait()
+            continue
 
-    if parser is None:
-        return True
-    return parser.can_fetch(url, _USER_AGENT)
+        parser: Protego | None = None
+        try:
+            parser = await _fetch_robots(base)
+            is_failure = parser is None
+            now = time.monotonic()
+            async with _cache_lock:
+                if len(_cache) >= _MAX_CACHE_SIZE:
+                    oldest = min(_cache, key=lambda k: _cache[k][1])
+                    del _cache[oldest]
+                _cache[base] = (parser, now, is_failure)
+        finally:
+            async with _cache_lock:
+                _inflight.pop(base, None)
+            fetch_event.set()
+
+        if parser is None:
+            return True
+        return parser.can_fetch(url, _USER_AGENT)
 
 
 async def _fetch_robots(base_url: str) -> Protego | None:

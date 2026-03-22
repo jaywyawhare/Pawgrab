@@ -15,10 +15,10 @@ from pawgrab.engine.converter import (
 from pawgrab.utils.text import word_count
 from pawgrab.engine.fetcher import FetchResult, fetch_page
 from pawgrab.engine.pdf_extractor import extract_pdf_text, pdf_text_to_html
-from pawgrab.engine.robots import is_allowed
 from pawgrab.models.common import OutputFormat
 from pawgrab.models.scrape import PageMetadata, ScrapeResponse
-from pawgrab.utils.rate_limiter import wait_for_slot
+from pawgrab.config import settings
+from pawgrab.utils.rate_limiter import guard_url
 
 logger = structlog.get_logger()
 
@@ -43,35 +43,63 @@ async def scrape_url(
     fit_markdown_query: str | None = None,
     fit_markdown_top_k: int = 5,
     actions: list | None = None,
-    # Content processing
     excluded_tags: list[str] | None = None,
     excluded_selector: str | None = None,
     css_selector: str | None = None,
     word_count_threshold: int | None = None,
     content_filter: str | None = None,
     content_filter_query: str | None = None,
-    # Browser enhancements
     browser_type: str | None = None,
     geolocation: dict[str, float] | None = None,
     text_mode: bool = False,
     scroll_to_bottom: bool = False,
-    # Capture options
     capture_network: bool = False,
     capture_console: bool = False,
     capture_mhtml: bool = False,
     extract_media: bool = False,
     capture_ssl: bool = False,
-    # Hooks
+    capture_websocket: bool = False,
+    llm_ready: bool = False,
+    cache_ttl: int | None = None,
+    session_id: str | None = None,
     hooks: object | None = None,
 ) -> ScrapeResponse:
     """Full scrape pipeline: robots → rate-limit → fetch → clean → convert."""
     if formats is None:
         formats = [OutputFormat.MARKDOWN]
 
-    if not await is_allowed(url):
-        raise PermissionError(f"URL blocked by robots.txt: {url}")
+    await guard_url(url)
 
-    await wait_for_slot(url)
+    # Cache lookup
+    effective_cache_ttl = cache_ttl if cache_ttl is not None else settings.cache_ttl
+    cache_params = {
+        "formats": [f.value for f in formats],
+        "wait_for_js": wait_for_js,
+        "css_selector": css_selector,
+        "excluded_tags": excluded_tags,
+        "excluded_selector": excluded_selector,
+        "content_filter": content_filter,
+        "fit_markdown_query": fit_markdown_query,
+    }
+    if effective_cache_ttl > 0:
+        from pawgrab.engine.cache import get_cached
+        cached = await get_cached(url, cache_params)
+        if cached:
+            resp = ScrapeResponse(**cached)
+            resp.cache_hit = True
+            return resp
+
+    # Session: merge persisted cookies
+    if session_id:
+        from pawgrab.engine.sessions import get_session, merge_cookies_for_session
+        session_data = await get_session(session_id)
+        if session_data:
+            session_cookies = session_data.get("cookies", {})
+            if session_cookies:
+                cookies = {**session_cookies, **(cookies or {})}
+            session_headers = session_data.get("headers", {})
+            if session_headers:
+                headers = {**session_headers, **(headers or {})}
 
     if hooks:
         await hooks.fire("before_fetch", url=url)
@@ -80,37 +108,29 @@ async def scrape_url(
     needs_browser_features = (
         screenshot or pdf or actions or scroll_to_bottom
         or capture_network or capture_console or capture_mhtml
-        or text_mode or geolocation
+        or text_mode or geolocation or capture_websocket
     )
     if needs_browser_features and effective_wait is None:
         effective_wait = True
 
-    result = await fetch_page(
-        url,
-        wait_for_js=effective_wait,
-        timeout=timeout,
-        browser_pool=browser_pool,
-        proxy_pool=proxy_pool,
-        headers=headers,
-        cookies=cookies,
-        capture_screenshot=screenshot,
-        screenshot_fullpage=screenshot_fullpage,
-        capture_pdf=pdf,
-        actions=actions,
-        browser_type=browser_type,
-        geolocation=geolocation,
-        text_mode=text_mode,
-        scroll_to_bottom=scroll_to_bottom,
-        capture_network=capture_network,
-        capture_console=capture_console,
-        capture_mhtml=capture_mhtml,
-        capture_ssl=capture_ssl,
-    )
+    fetch_kwargs = {
+        "wait_for_js": effective_wait, "timeout": timeout,
+        "browser_pool": browser_pool, "proxy_pool": proxy_pool,
+        "headers": headers, "cookies": cookies,
+        "capture_screenshot": screenshot, "screenshot_fullpage": screenshot_fullpage,
+        "capture_pdf": pdf, "actions": actions,
+        "browser_type": browser_type, "geolocation": geolocation,
+        "text_mode": text_mode, "scroll_to_bottom": scroll_to_bottom,
+        "capture_network": capture_network, "capture_console": capture_console,
+        "capture_mhtml": capture_mhtml, "capture_ssl": capture_ssl,
+        "capture_websocket": capture_websocket,
+        "session_id": session_id,
+    }
+    result = await fetch_page(url, **fetch_kwargs)
 
     if hooks:
         await hooks.fire("after_fetch", url=url, result=result)
 
-    # PDF content extraction — convert PDF bytes into HTML for the pipeline
     pdf_warning: str | None = None
     if result.content_bytes is not None:
         text, pdf_warning = extract_pdf_text(result.content_bytes)
@@ -122,20 +142,19 @@ async def scrape_url(
     if hooks:
         await hooks.fire("before_extract", url=url, html=result.html)
 
-    response = _build_response(
-        result,
-        formats=formats,
-        include_metadata=include_metadata,
-        citations=citations,
-        fit_markdown_query=fit_markdown_query,
-        fit_markdown_top_k=fit_markdown_top_k,
-        excluded_tags=excluded_tags,
-        excluded_selector=excluded_selector,
-        css_selector=css_selector,
-        word_count_threshold=word_count_threshold,
-        content_filter=content_filter,
-        content_filter_query=content_filter_query,
+    content_kwargs = {
+        "excluded_tags": excluded_tags, "excluded_selector": excluded_selector,
+        "css_selector": css_selector, "word_count_threshold": word_count_threshold,
+        "content_filter": content_filter, "content_filter_query": content_filter_query,
+    }
+    response = build_response(
+        result, formats=formats, include_metadata=include_metadata,
+        citations=citations, fit_markdown_query=fit_markdown_query,
+        fit_markdown_top_k=fit_markdown_top_k, **content_kwargs,
     )
+
+    if llm_ready and response.markdown:
+        response.markdown = _clean_for_llm(response.markdown)
 
     if extract_media:
         from pawgrab.engine.media import extract_all_media
@@ -149,6 +168,11 @@ async def scrape_url(
         response.mhtml_base64 = base64.b64encode(result.mhtml_data).decode()
     if result.ssl_info:
         response.ssl_certificate = result.ssl_info
+    if result.websocket_messages:
+        response.websocket_messages = result.websocket_messages
+
+    if include_metadata and response.metadata:
+        response.metadata.retry_count = result.retry_count
 
     if hooks:
         await hooks.fire("after_extract", url=url, response=response)
@@ -167,14 +191,32 @@ async def scrape_url(
     if monitor:
         from pawgrab.engine.diff import compare_content, load_content, store_content
         text_content = response.markdown or response.text or ""
-        await load_content(url)  # populate cache from Redis
+        await load_content(url)  # populates in-memory cache used by compare_content
         response.diff = compare_content(url, text_content)
         await store_content(url, text_content, ttl=monitor_ttl)
+
+    if monitor and result.screenshot_bytes:
+        from pawgrab.engine.diff import compare_screenshots
+        response.screenshot_diff = await compare_screenshots(url, result.screenshot_bytes, ttl=monitor_ttl)
+
+    # Session: persist cookies from response
+    if session_id and result.cookies:
+        try:
+            from pawgrab.engine.sessions import merge_cookies_for_session
+            await merge_cookies_for_session(session_id, result.cookies)
+        except Exception:
+            pass
+
+    # Cache store — only cache successful, non-error responses
+    status = response.metadata.status_code if response.metadata else 200
+    if effective_cache_ttl > 0 and response.success and status < 400:
+        from pawgrab.engine.cache import set_cached
+        await set_cached(url, cache_params, response.model_dump(), ttl=effective_cache_ttl)
 
     return response
 
 
-def _build_response(
+def build_response(
     result: FetchResult,
     *,
     formats: list[OutputFormat],
@@ -189,16 +231,11 @@ def _build_response(
     content_filter: str | None = None,
     content_filter_query: str | None = None,
 ) -> ScrapeResponse:
-    """Convert a FetchResult into a ScrapeResponse."""
     cleaned = extract_content(
-        result.html,
-        url=result.url,
-        excluded_tags=excluded_tags,
-        excluded_selector=excluded_selector,
-        css_selector=css_selector,
-        word_count_threshold=word_count_threshold,
-        content_filter=content_filter,
-        content_filter_query=content_filter_query,
+        result.html, url=result.url,
+        excluded_tags=excluded_tags, excluded_selector=excluded_selector,
+        css_selector=css_selector, word_count_threshold=word_count_threshold,
+        content_filter=content_filter, content_filter_query=content_filter_query,
     )
 
     warnings = []
@@ -213,10 +250,8 @@ def _build_response(
         match fmt:
             case OutputFormat.MARKDOWN:
                 md = converted
-                # Apply fit_markdown first (filter by relevance)
                 if fit_markdown_query:
                     md = fit_markdown(md, fit_markdown_query, top_k=fit_markdown_top_k)
-                # Then apply citations
                 if citations:
                     md = markdown_with_citations(md)
                 response.markdown = md
@@ -238,12 +273,24 @@ def _build_response(
 
     if include_metadata:
         response.metadata = PageMetadata(
-            title=cleaned.title,
-            description=cleaned.description,
-            language=cleaned.language,
-            url=result.url,
-            status_code=result.status_code,
-            word_count=word_count(text_content),
+            title=cleaned.title, description=cleaned.description,
+            language=cleaned.language, url=result.url,
+            status_code=result.status_code, word_count=word_count(text_content),
         )
 
+    if include_metadata and response.metadata:
+        from pawgrab.utils.tokens import estimate_tokens
+        response.metadata.token_count_estimate = estimate_tokens(text_content)
+
     return response
+
+
+def _clean_for_llm(markdown: str) -> str:
+    """Strip navigation links, image refs, HTML comments, and excess whitespace."""
+    import re
+    markdown = re.sub(r'^\s*\[.*?\]\(#.*?\)\s*$', '', markdown, flags=re.MULTILINE)
+    markdown = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'\1', markdown)
+    markdown = re.sub(r'\n{3,}', '\n\n', markdown)
+    markdown = re.sub(r'<!--.*?-->', '', markdown, flags=re.DOTALL)
+    markdown = re.sub(r'\[([^\]]*)\]\(\s*\)', r'\1', markdown)
+    return markdown.strip()

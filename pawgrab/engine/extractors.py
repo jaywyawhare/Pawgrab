@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import re
 from typing import Any
 
@@ -9,6 +10,26 @@ from bs4 import BeautifulSoup, Tag
 from lxml import etree
 
 from pawgrab.utils.text import make_soup
+
+_REGEX_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+def _safe_findall(pattern: str, text: str, timeout: int) -> list:
+    """re.findall with a thread-based timeout to prevent catastrophic backtracking."""
+    try:
+        future = _REGEX_POOL.submit(re.findall, pattern, text, re.MULTILINE | re.DOTALL)
+        return future.result(timeout=timeout)
+    except (concurrent.futures.TimeoutError, re.error):
+        return []
+
+
+def _safe_finditer(pattern: str, text: str, timeout: int) -> list[re.Match]:
+    """re.finditer with a thread-based timeout. Returns list since threads can't yield."""
+    try:
+        future = _REGEX_POOL.submit(lambda: list(re.finditer(pattern, text, re.MULTILINE | re.DOTALL)))
+        return future.result(timeout=timeout)
+    except (concurrent.futures.TimeoutError, re.error):
+        return []
 
 
 class BaseExtractor:
@@ -43,11 +64,8 @@ class CSSExtractor(BaseExtractor):
     def extract(self, html: str) -> list[dict[str, Any]]:
         soup = make_soup(html)
 
-        # If container + fields pattern, extract repeated elements
         if "container" in self.selectors and "fields" in self.selectors:
             return self._extract_repeated(soup)
-
-        # Simple field extraction
         return [self._extract_fields(soup, self.selectors)]
 
     def _extract_repeated(self, soup: BeautifulSoup) -> list[dict[str, Any]]:
@@ -153,7 +171,20 @@ class RegexExtractor(BaseExtractor):
         patterns = r"(?P<name>\\w+)\\s+(?P<value>\\d+)"
     """
 
+    _REGEX_TIMEOUT = 5
+
     def __init__(self, patterns: dict[str, str] | str):
+        if isinstance(patterns, dict):
+            for name, p in patterns.items():
+                try:
+                    re.compile(p)
+                except re.error as exc:
+                    raise ValueError(f"Invalid regex for '{name}': {exc}") from exc
+        else:
+            try:
+                re.compile(patterns)
+            except re.error as exc:
+                raise ValueError(f"Invalid regex pattern: {exc}") from exc
         self.patterns = patterns
 
     def extract(self, html: str) -> list[dict[str, Any]]:
@@ -165,7 +196,7 @@ class RegexExtractor(BaseExtractor):
 
         result: dict[str, Any] = {}
         for name, pattern in self.patterns.items():
-            matches = re.findall(pattern, text, re.MULTILINE | re.DOTALL)
+            matches = _safe_findall(pattern, text, self._REGEX_TIMEOUT)
             if not matches:
                 result[name] = None
             elif len(matches) == 1:
@@ -174,10 +205,9 @@ class RegexExtractor(BaseExtractor):
                 result[name] = matches
         return [result]
 
-    @staticmethod
-    def _extract_single_pattern(text: str, pattern: str) -> list[dict[str, Any]]:
+    def _extract_single_pattern(self, text: str, pattern: str) -> list[dict[str, Any]]:
         results = []
-        for m in re.finditer(pattern, text, re.MULTILINE | re.DOTALL):
+        for m in _safe_finditer(pattern, text, self._REGEX_TIMEOUT):
             if m.groupdict():
                 results.append(m.groupdict())
             elif m.groups():
