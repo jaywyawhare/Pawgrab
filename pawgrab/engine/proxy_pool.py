@@ -7,6 +7,7 @@ import enum
 import random
 import time
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 import structlog
 
@@ -14,7 +15,8 @@ from pawgrab.config import settings
 
 logger = structlog.get_logger()
 
-# Health-check endpoints (rotate through them to avoid rate limits)
+_VALID_PROXY_SCHEMES = frozenset({"http", "https", "socks4", "socks5", "socks5h"})
+
 _HEALTH_CHECK_URLS = [
     "https://ifconfig.me/ip",
     "https://api.ipify.org",
@@ -36,21 +38,18 @@ class ProxyEntry:
     ok: bool = True
     speed: float = 0.0  # EMA latency in seconds
 
-    # Lifetime counters
     offered: int = 0
     succeed: int = 0
     timeouts: int = 0
     failures: int = 0
     reanimated: int = 0
 
-    # Recent window counters (reset every _RECENT_WINDOW seconds)
     recent_offered: int = 0
     recent_succeed: int = 0
     recent_timeouts: int = 0
     recent_failures: int = 0
     recent_window_start: float = field(default_factory=time.monotonic)
 
-    # Backoff: monotonic timestamp after which proxy can be retried
     reanimate_after: float | None = None
 
     def _reset_window_if_needed(self) -> None:
@@ -99,6 +98,11 @@ class ProxyEntry:
         self._reset_window_if_needed()
         return self.recent_succeed == 0 and self.recent_failures >= failure_threshold
 
+    @property
+    def is_socks(self) -> bool:
+        """Return True if the proxy uses a SOCKS protocol (socks4/socks5/socks5h)."""
+        return self.url.startswith(("socks4://", "socks5://", "socks5h://"))
+
     def snapshot(self) -> dict:
         self._reset_window_if_needed()
         return {
@@ -114,6 +118,7 @@ class ProxyEntry:
             "recent_succeed": self.recent_succeed,
             "recent_timeouts": self.recent_timeouts,
             "recent_failures": self.recent_failures,
+            "is_socks": self.is_socks,
         }
 
 
@@ -160,12 +165,23 @@ class ProxyPool:
         logger.info("proxy_pool_stopped", count=len(self._entries))
 
     def add_proxy(self, url: str) -> bool:
-        """Add a proxy (idempotent). Returns True if added, False if duplicate."""
+        """Add a proxy (idempotent). Returns True if added, False if duplicate.
+
+        Supports http, https, socks4, socks5, and socks5h proxy schemes.
+        """
+        parsed = urlparse(url)
+        if parsed.scheme not in _VALID_PROXY_SCHEMES:
+            logger.warning(
+                "proxy_invalid_scheme",
+                url=url,
+                scheme=parsed.scheme,
+                valid=sorted(_VALID_PROXY_SCHEMES),
+            )
+            return False
         for entry in self._entries:
             if entry.url == url:
                 return False
         self._entries.append(ProxyEntry(url=url))
-        # Start background tasks if this is the first proxy added at runtime
         if len(self._entries) == 1 and self._eviction_task is None:
             self._eviction_task = asyncio.create_task(self._eviction_loop())
             if settings.proxy_health_check and self._health_task is None:
@@ -190,37 +206,32 @@ class ProxyPool:
             if not self._entries:
                 return None
 
-            n = len(self._entries)
             offer_limit = settings.proxy_offer_limit
+            candidates = [e for e in self._entries if not e.should_skip(offer_limit)]
+            if not candidates:
+                return None
 
             if self._policy == RotationPolicy.RANDOM:
-                candidates = [e for e in self._entries if not e.should_skip(offer_limit)]
-                if not candidates:
-                    return None
                 entry = random.choice(candidates)
-                entry.offered += 1
-                entry.recent_offered += 1
-                return entry
-
-            if self._policy == RotationPolicy.LEAST_USED:
-                candidates = [e for e in self._entries if not e.should_skip(offer_limit)]
-                if not candidates:
-                    return None
+            elif self._policy == RotationPolicy.LEAST_USED:
                 entry = min(candidates, key=lambda e: e.offered)
-                entry.offered += 1
-                entry.recent_offered += 1
+            else:
+                entry = self._pick_round_robin(candidates, offer_limit)
+                if entry is None:
+                    return None
+
+            entry.offered += 1
+            entry.recent_offered += 1
+            return entry
+
+    def _pick_round_robin(self, candidates: list[ProxyEntry], offer_limit: int) -> ProxyEntry | None:
+        n = len(self._entries)
+        for _ in range(n):
+            entry = self._entries[self._rotation_index % n]
+            self._rotation_index += 1
+            if entry in candidates:
                 return entry
-
-            # Default: round_robin
-            for _ in range(n):
-                entry = self._entries[self._rotation_index % n]
-                self._rotation_index += 1
-                if not entry.should_skip(offer_limit):
-                    entry.offered += 1
-                    entry.recent_offered += 1
-                    return entry
-
-            return None
+        return None
 
     def snapshot(self) -> list[dict]:
         return [e.snapshot() for e in self._entries]
@@ -249,25 +260,32 @@ class ProxyPool:
                     entry.reanimate_after = time.monotonic() + backoff
                     logger.info("proxy_evicted", url=entry.url, recent_failures=entry.recent_failures)
 
+    async def _check_one_proxy(self, entry: "ProxyEntry") -> None:
+        """Health-check a single proxy entry."""
+        from curl_cffi.requests import AsyncSession
+
+        check_url = random.choice(_HEALTH_CHECK_URLS)
+        health_timeout = 15 if entry.is_socks else 10
+        t0 = time.monotonic()
+        try:
+            async with AsyncSession(proxy=entry.url, timeout=health_timeout) as session:
+                resp = await session.get(check_url, timeout=health_timeout)
+                if resp.status_code == 200:
+                    latency = time.monotonic() - t0
+                    entry.mark_success(speed=latency)
+                    logger.info("proxy_health_ok", url=entry.url, latency=round(latency, 3), socks=entry.is_socks)
+                else:
+                    entry.mark_failure(backoff_seconds=settings.proxy_backoff_seconds)
+                    logger.info("proxy_health_fail", url=entry.url, status=resp.status_code, socks=entry.is_socks)
+        except Exception as exc:
+            is_timeout = "timeout" in str(exc).lower()
+            entry.mark_failure(is_timeout=is_timeout, backoff_seconds=settings.proxy_backoff_seconds)
+            logger.info("proxy_health_error", url=entry.url, error=str(exc), socks=entry.is_socks)
+
     async def _health_check_loop(self) -> None:
-        """Periodically check proxy health via IP-check endpoints."""
+        """Periodically check all proxy health concurrently via IP-check endpoints."""
         while True:
             await asyncio.sleep(settings.proxy_health_check_interval)
-            for entry in list(self._entries):
-                check_url = random.choice(_HEALTH_CHECK_URLS)
-                t0 = time.monotonic()
-                try:
-                    from curl_cffi.requests import AsyncSession
-                    async with AsyncSession(proxy=entry.url, timeout=10) as session:
-                        resp = await session.get(check_url, timeout=10)
-                        if resp.status_code == 200:
-                            latency = time.monotonic() - t0
-                            entry.mark_success(speed=latency)
-                            logger.info("proxy_health_ok", url=entry.url, latency=round(latency, 3))
-                        else:
-                            entry.mark_failure(backoff_seconds=settings.proxy_backoff_seconds)
-                            logger.info("proxy_health_fail", url=entry.url, status=resp.status_code)
-                except Exception as exc:
-                    is_timeout = "timeout" in str(exc).lower()
-                    entry.mark_failure(is_timeout=is_timeout, backoff_seconds=settings.proxy_backoff_seconds)
-                    logger.info("proxy_health_error", url=entry.url, error=str(exc))
+            entries = list(self._entries)
+            if entries:
+                await asyncio.gather(*[self._check_one_proxy(e) for e in entries], return_exceptions=True)
