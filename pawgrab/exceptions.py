@@ -36,3 +36,23 @@ class PawgrabError(Exception):
         self.message = message
         self.details = details
         super().__init__(message)
+
+    @classmethod
+    def not_found(cls, resource: str) -> PawgrabError:
+        return cls(404, ErrorCode.RESOURCE_NOT_FOUND, f"Job not found: {resource}")
+
+    @classmethod
+    def queue_unavailable(cls) -> PawgrabError:
+        return cls(503, ErrorCode.QUEUE_UNAVAILABLE, "Queue service unavailable — is Redis running?")
+
+    @classmethod
+    def timeout(cls, timeout_ms: int) -> PawgrabError:
+        return cls(504, ErrorCode.TIMEOUT, f"Request timed out after {timeout_ms}ms")
+
+    @classmethod
+    def fetch_failed(cls, exc: Exception) -> PawgrabError:
+        return cls(502, ErrorCode.FETCH_FAILED, f"Failed to fetch URL: {type(exc).__name__}")
+
+    @classmethod
+    def invalid_job_id(cls) -> PawgrabError:
+        return cls(400, ErrorCode.VALIDATION_ERROR, "Invalid job ID format — must be a 12-character hex string")

@@ -46,3 +46,17 @@ async def shutdown_proxy_pool():
     if _proxy_pool is not None:
         await _proxy_pool.stop()
         _proxy_pool = None
+
+
+async def try_browser_pool() -> BrowserPool | None:
+    try:
+        return await get_browser_pool()
+    except Exception:
+        return None
+
+
+async def try_proxy_pool() -> ProxyPool | None:
+    try:
+        return await get_proxy_pool()
+    except Exception:
+        return None

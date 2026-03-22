@@ -41,6 +41,7 @@ dependencies = [
     "duckduckgo-search>=7.0",
     "pymupdf>=1.24",
     "orjson>=3.10",
+    "croniter>=2.0",
 ]
 
 [project.optional-dependencies]
