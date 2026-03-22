@@ -50,7 +50,6 @@ def convert(html: str, fmt: OutputFormat) -> str:
 def html_to_markdown(html_str: str) -> str:
     """Convert HTML to Markdown via lxml tree walking (~10x faster than html2text)."""
     tree = lxml_html.fromstring(html_str)
-    # Strip non-visible elements once
     for el in tree.xpath("//script|//style|//noscript|//svg|//template"):
         if el.getparent() is not None:
             el.getparent().remove(el)
@@ -158,7 +157,6 @@ def html_to_markdown(html_str: str) -> str:
             _emit_tail(el)
             return
 
-        # Block elements: emit text + recurse into children
         text = (el.text or "").strip()
         if tag == "blockquote":
             _nl()
@@ -182,7 +180,6 @@ def html_to_markdown(html_str: str) -> str:
 
     _walk(tree)
     md = "".join(parts)
-    # Collapse runs of whitespace on each line, then collapse blank lines
     lines = (re.sub(r"[ \t]+", " ", line).strip() for line in md.splitlines())
     return _BLANK_COLLAPSE_RE.sub("\n\n", "\n".join(lines)).strip()
 
@@ -190,7 +187,6 @@ def html_to_markdown(html_str: str) -> str:
 def html_to_text(html: str) -> str:
     tree = lxml_html.fromstring(html)
     text = tree.text_content()
-    # Strip each line then collapse consecutive blank lines
     lines = (line.strip() for line in text.splitlines())
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
@@ -233,7 +229,6 @@ def html_to_csv(html: str) -> str:
                 writer.writerow([(c.text_content() or "").strip() for c in cells])
             writer.writerow([])  # blank line between tables
     else:
-        # Fallback: structured content as heading,content rows
         writer.writerow(["section", "content"])
         for el in tree.iter("h1", "h2", "h3", "h4", "h5", "h6", "p", "li"):
             tag = el.tag
@@ -308,14 +303,12 @@ def fit_markdown(markdown: str, query: str, *, top_k: int = 5, min_score: float 
     scored = _bm25_score(sections, query_terms)
     scored.sort(key=lambda x: x[1], reverse=True)
 
-    # Keep top-k sections that meet the minimum score
     kept = [(idx, score, text) for idx, (text, score) in enumerate(scored) if score > min_score]
     kept = kept[:top_k]
 
     if not kept:
         return markdown
 
-    # Re-sort by original position to maintain document order
     kept.sort(key=lambda x: x[0])
     return "\n\n".join(text for _, _, text in kept)
 
@@ -350,7 +343,6 @@ def _bm25_score(
     tokenized = [tokenize(s) for s in sections]
     avg_dl = sum(len(t) for t in tokenized) / max(n, 1)
 
-    # Document frequency for IDF
     df: Counter[str] = Counter()
     for tokens in tokenized:
         for term in set(tokens):

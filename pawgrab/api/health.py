@@ -4,7 +4,7 @@ import asyncio
 
 from fastapi import APIRouter
 
-from pawgrab import __version__
+from pawgrab._version import __version__
 
 router = APIRouter(tags=["Health"])
 

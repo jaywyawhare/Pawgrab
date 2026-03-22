@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from pawgrab.api import batch, crawl, extract, health, map, proxy, scrape, search
+from pawgrab.api import batch, crawl, extract, health, map, proxy, scrape, search, session
+from pawgrab.api import metrics as metrics_api
+from pawgrab.api import schedule
 from pawgrab.config import settings
 from pawgrab.dependencies import shutdown_browser_pool, shutdown_proxy_pool
 from pawgrab.engine.fetcher import close_sessions
@@ -24,7 +28,7 @@ from pawgrab.exceptions import ErrorCode, PawgrabError
 from pawgrab.models.common import ErrorResponse
 from pawgrab.queue.manager import close_redis
 
-from pawgrab import __version__
+from pawgrab._version import __version__
 
 _is_production = settings.log_level.lower() not in ("debug",)
 
@@ -84,9 +88,23 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration_ms = round((time.perf_counter() - start) * 1000, 1)
 
+        from pawgrab.engine.metrics import metrics
+        metrics.request_duration.observe(duration_ms / 1000)
+
+        from pawgrab.engine.analytics import usage_tracker
+        raw_key = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        client_key = hashlib.sha256(raw_key.encode()).hexdigest()[:16] if raw_key else "anonymous"
+        content_length = int(response.headers.get("content-length", "0") or "0")
+        is_error = response.status_code >= 400
+        usage_tracker.record_request(client_key, request.url.path, response_size=content_length, is_error=is_error)
+
         response.headers["X-Request-ID"] = request_id
         response.headers["X-API-Version"] = __version__
         response.headers["X-Response-Time"] = f"{duration_ms}ms"
+
+        if request.url.path.startswith("/v1/"):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Vary"] = "Authorization"
 
         logger.info(
             "request_completed",
@@ -99,7 +117,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    SKIP_PATHS = {"/health", "/status", "/docs", "/openapi.json", "/redoc"}
+    SKIP_PATHS = {"/health", "/status", "/docs", "/openapi.json", "/redoc", "/dashboard", "/metrics"}
 
     async def dispatch(self, request: Request, call_next):
         if not settings.api_key:
@@ -215,6 +233,15 @@ def create_app() -> FastAPI:
     app.include_router(map.router, prefix="/v1")
     app.include_router(search.router, prefix="/v1")
     app.include_router(proxy.router, prefix="/v1")
+    app.include_router(session.router, prefix="/v1")
+    app.include_router(metrics_api.router)
+    app.include_router(schedule.router, prefix="/v1")
+
+    dashboard_dir = Path(__file__).resolve().parent.parent / "dashboard"
+    if dashboard_dir.is_dir():
+        @app.get("/dashboard", include_in_schema=False)
+        async def dashboard():
+            return FileResponse(dashboard_dir / "index.html")
 
     return app
 

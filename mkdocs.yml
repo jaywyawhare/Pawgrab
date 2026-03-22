@@ -44,10 +44,16 @@ theme:
 
 nav:
   - Home: index.md
+  - Quick Start: quickstart.md
+  - Guides:
+    - Scraping: scraping.md
+    - Crawling: crawling.md
+    - Extraction: extraction.md
   - API Reference: api.md
   - CLI: cli.md
   - Configuration: configuration.md
   - Architecture: architecture.md
+  - Deployment: deployment.md
 
 plugins:
   - search

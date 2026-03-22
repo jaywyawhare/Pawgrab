@@ -28,7 +28,6 @@ class FixedLengthChunker:
             words = len(sentence.split())
             if current_words + words > self.chunk_size and current:
                 chunks.append(" ".join(current))
-                # Overlap: keep last N words from previous chunk
                 if self.overlap > 0:
                     overlap_sentences: list[str] = []
                     overlap_words = 0
@@ -92,7 +91,6 @@ class SemanticChunker:
         self.chunk_size = chunk_size
 
     def chunk(self, text: str) -> list[str]:
-        # Split on double newlines (paragraphs) and markdown headings
         paragraphs = re.split(r"\n\s*\n|(?=^#{1,6}\s)", text, flags=re.MULTILINE)
         paragraphs = [p.strip() for p in paragraphs if p.strip()]
 
@@ -105,7 +103,6 @@ class SemanticChunker:
 
         for para in paragraphs:
             words = len(para.split())
-            # Start new chunk if this is a heading and we have content
             is_heading = para.startswith("#")
             if is_heading and current and current_words > 0:
                 chunks.append("\n\n".join(current))
@@ -145,6 +142,5 @@ def get_chunker(
 
 def _split_sentences(text: str) -> list[str]:
     """Split text into sentences at period/question/exclamation boundaries."""
-    # Simple sentence splitter that handles common abbreviations
     sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", text)
     return [s.strip() for s in sentences if s.strip()]

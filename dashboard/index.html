@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pawgrab Dashboard</title>
+<style>
+:root {
+  --bg: #0c0c0c;
+  --bg-subtle: #131314;
+  --bg-card: #151516;
+  --bg-hover: #1e1e20;
+  --bg-code: #111112;
+  --border: rgba(255,255,255,0.07);
+  --border-strong: rgba(255,255,255,0.14);
+  --text: #f0f0f0;
+  --text-2: #9a9a9e;
+  --text-3: #737378;
+  --accent: #F54E00;
+  --accent-hover: #FF6B2C;
+  --accent-subtle: rgba(245,78,0,0.1);
+  --accent-secondary: #F7A501;
+  --green: #22c55e;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --sidebar-w: 220px;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--accent); color: var(--bg); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 3px; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+.app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
+
+.sidebar {
+  background: var(--bg-subtle);
+  border-right: 1px solid var(--border);
+  padding: 1rem 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem 1rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.nav { display: flex; flex-direction: column; gap: 2px; padding: 0 0.5rem; }
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-2);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.nav-link:hover { color: var(--text); background: var(--bg-hover); }
+.nav-link.active { color: var(--accent); background: var(--accent-subtle); }
+
+.nav-link svg { flex-shrink: 0; }
+
+.main { padding: 2rem; max-width: 960px; overflow-x: hidden; }
+
+.mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 101;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { display: none; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; width: 260px; }
+  .sidebar.open { display: flex; flex-direction: column; }
+  .mobile-toggle { display: flex; }
+  .main { padding: 1.25rem; padding-top: 3.5rem; }
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.25rem;
+}
+
+.page-desc { font-size: 0.85rem; color: var(--text-2); margin-bottom: 1.5rem; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+  transition: border-color 0.2s;
+}
+.card:hover { border-color: var(--border-strong); }
+
+.card-label {
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.4rem;
+}
+
+.card-value {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.card-footer { font-size: 0.7rem; color: var(--text-3); margin-top: 0.35rem; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+}
+
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+.badge-ok, .badge-completed, .badge-healthy { background: rgba(34,197,94,0.1); color: var(--green); border: 1px solid rgba(34,197,94,0.2); }
+.badge-ok .badge-dot, .badge-completed .badge-dot, .badge-healthy .badge-dot { background: var(--green); }
+
+.badge-degraded, .badge-in_progress, .badge-running, .badge-queued { background: rgba(245,158,11,0.1); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+.badge-degraded .badge-dot, .badge-in_progress .badge-dot, .badge-running .badge-dot, .badge-queued .badge-dot { background: var(--amber); }
+
+.badge-unhealthy, .badge-failed, .badge-error { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+.badge-unhealthy .badge-dot, .badge-failed .badge-dot, .badge-error .badge-dot { background: var(--red); }
+
+.badge-unknown { background: rgba(115,115,120,0.1); color: var(--text-3); border: 1px solid rgba(115,115,120,0.2); }
+.badge-unknown .badge-dot { background: var(--text-3); }
+
+.field { margin-bottom: 1rem; }
+.field-label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.3rem; }
+.field-desc { font-size: 0.7rem; color: var(--text-3); margin-bottom: 0.3rem; }
+
+.input, .select, .textarea {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.85rem;
+  transition: border-color 0.2s;
+}
+
+.input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--accent); }
+.input::placeholder, .textarea::placeholder { color: var(--text-3); }
+
+.select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23737378' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2rem;
+}
+
+.textarea { font-family: var(--font-mono); font-size: 0.78rem; resize: vertical; min-height: 80px; }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+@media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+
+.form-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; margin-bottom: 1.5rem; }
+
+.checkbox-group { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.checkbox-label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: var(--text-2); cursor: pointer; }
+.checkbox-label input { accent-color: var(--accent); }
+
+.toggle-group { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1.15rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-family: var(--font);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  color: var(--text-2);
+  background: var(--bg-card);
+}
+.btn:hover { color: var(--text); border-color: var(--border-strong); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: var(--bg); border-color: transparent; }
+.btn-primary:hover { background: var(--accent-hover); color: var(--bg); }
+.btn-sm { padding: 0.3rem 0.65rem; font-size: 0.75rem; }
+
+.table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+}
+
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+
+th {
+  text-align: left;
+  padding: 0.6rem 1rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+td { padding: 0.55rem 1rem; border-top: 1px solid var(--border); color: var(--text-2); }
+tbody tr:hover { background: var(--bg-subtle); }
+.mono { font-family: var(--font-mono); font-size: 0.75rem; }
+
+.code-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.75rem;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+}
+
+.code-label { font-size: 0.7rem; font-family: var(--font-mono); color: var(--text-3); text-transform: uppercase; }
+
+.code-copy {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.code-copy:hover { color: var(--text); background: var(--bg); }
+
+.code-body {
+  padding: 1rem;
+  background: var(--bg-code);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--text-2);
+  max-height: 500px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-3);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.tab:hover { color: var(--text-2); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.progress-bar { height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; margin-bottom: 0.75rem; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
+
+.sse-log {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  max-height: 250px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.8;
+  color: var(--text-2);
+  margin-bottom: 1rem;
+}
+
+.sse-event { color: var(--accent); margin-right: 0.5rem; }
+
+.error-box {
+  padding: 0.7rem 1rem;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: var(--radius-sm);
+  color: var(--red);
+  font-size: 0.82rem;
+  margin-bottom: 1rem;
+}
+
+.empty { text-align: center; padding: 3rem 1rem; color: var(--text-3); font-size: 0.9rem; }
+
+.section { margin-bottom: 2rem; }
+.section-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.quick-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.action-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.action-card:hover { color: var(--text); border-color: var(--accent); }
+
+.hidden { display: none !important; }
+
+.collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.35rem 0;
+  margin-bottom: 0.75rem;
+  font-family: var(--font);
+}
+.collapse-toggle:hover { color: var(--text-2); }
+
+.spinner {
+  width: 24px; height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin: 2rem auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.img-preview { max-width: 100%; border-radius: var(--radius); border: 1px solid var(--border); margin-top: 0.5rem; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')" aria-label="Toggle menu">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-brand">Pawgrab</span>
+      <span id="health-badge"></span>
+    </div>
+    <nav class="nav">
+      <button class="nav-link active" data-page="overview">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Overview
+      </button>
+      <button class="nav-link" data-page="scrape">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        Scrape
+      </button>
+      <button class="nav-link" data-page="crawl">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        Crawl
+      </button>
+      <button class="nav-link" data-page="jobs">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M3 9h6"/><path d="M3 15h6"/></svg>
+        Jobs
+      </button>
+      <button class="nav-link" data-page="proxies">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Proxies
+      </button>
+      <button class="nav-link" data-page="settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </button>
+    </nav>
+  </aside>
+
+  <main class="main" id="main"></main>
+</div>
+
+<script>
+function getSettings() {
+  return {
+    url: localStorage.getItem('pawgrab_api_url') || 'http://localhost:8000',
+    key: localStorage.getItem('pawgrab_api_key') || ''
+  };
+}
+
+function apiHeaders() {
+  const { key } = getSettings();
+  const h = { 'Content-Type': 'application/json' };
+  if (key) h['Authorization'] = 'Bearer ' + key;
+  return h;
+}
+
+async function api(method, path, body) {
+  const { url } = getSettings();
+  const res = await fetch(url + path, {
+    method,
+    headers: apiHeaders(),
+    body: body ? JSON.stringify(body) : undefined
+  });
+  return res.json();
+}
+
+function badge(status) {
+  const cls = ['ok','completed','healthy'].includes(status) ? status
+    : ['degraded','in_progress','running','queued'].includes(status) ? status
+    : ['unhealthy','failed','error'].includes(status) ? status
+    : 'unknown';
+  return `<span class="badge badge-${cls}"><span class="badge-dot"></span>${status}</span>`;
+}
+
+function jsonBlock(data, label = 'JSON') {
+  const text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const id = 'code-' + Math.random().toString(36).slice(2, 8);
+  return `<div class="code-wrap"><div class="code-header"><span class="code-label">${label}</span><button class="code-copy" onclick="navigator.clipboard.writeText(document.getElementById('${id}').textContent);this.textContent='Copied';setTimeout(()=>this.textContent='Copy',1500)">Copy</button></div><pre class="code-body" id="${id}">${escHtml(text)}</pre></div>`;
+}
+
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+let healthInterval;
+function startHealthPoll() {
+  clearInterval(healthInterval);
+  const update = () => {
+    api('GET', '/health')
+      .then(d => { document.getElementById('health-badge').innerHTML = badge(d.status || 'ok'); })
+      .catch(() => { document.getElementById('health-badge').innerHTML = badge('unhealthy'); });
+  };
+  update();
+  healthInterval = setInterval(update, 15000);
+}
+startHealthPoll();
+
+const pages = {};
+let currentPage = null;
+
+function navigate(page) {
+  if (currentPage === page) return;
+  currentPage = page;
+  document.querySelectorAll('.nav-link').forEach(el => {
+    el.classList.toggle('active', el.dataset.page === page);
+  });
+  document.querySelector('.sidebar').classList.remove('open');
+  const render = pages[page];
+  if (render) render();
+}
+
+document.querySelectorAll('.nav-link').forEach(el => {
+  el.addEventListener('click', () => navigate(el.dataset.page));
+});
+
+pages.overview = async function() {
+  const $ = document.getElementById('main');
+  $.innerHTML = '<h1 class="page-title">Overview</h1><p class="page-desc">API health and quick actions.</p><div class="spinner"></div>';
+
+  let health;
+  try {
+    health = await api('GET', '/health');
+  } catch(e) {
+    $.innerHTML = `<h1 class="page-title">Overview</h1><p class="page-desc">API health and quick actions.</p><div class="error-box">Cannot connect to API — ${escHtml(e.message)}. Check <a href="#" onclick="navigate('settings');return false">Settings</a>.</div>`;
+    return;
+  }
+
+  let cardsHtml = '';
+  cardsHtml += `<div class="card"><div class="card-label">Status</div><div class="card-value">${badge(health.status || 'ok')}</div></div>`;
+  if (health.components) {
+    for (const [k, v] of Object.entries(health.components)) {
+      const st = typeof v === 'object' ? (v.status || (v.ok ? 'ok' : 'unhealthy')) : 'ok';
+      const detail = typeof v === 'object' && v.detail ? `<div class="card-footer">${escHtml(v.detail)}</div>` : '';
+      cardsHtml += `<div class="card"><div class="card-label">${escHtml(k.replace(/_/g,' '))}</div><div class="card-value">${badge(st)}</div>${detail}</div>`;
+    }
+  }
+  if (health.memory_usage_pct != null) {
+    cardsHtml += `<div class="card"><div class="card-label">Memory</div><div class="card-value">${health.memory_usage_pct.toFixed(1)}%</div></div>`;
+  }
+
+  const { url, key } = getSettings();
+  $.innerHTML = `
+    <h1 class="page-title">Overview</h1>
+    <p class="page-desc">API health and quick actions.</p>
+    <div class="section"><h2 class="section-title">Service Health</h2><div class="cards">${cardsHtml}</div></div>
+    <div class="section"><h2 class="section-title">Quick Actions</h2>
+      <div class="quick-actions">
+        <button class="action-card" onclick="navigate('scrape')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/></svg> Scrape a URL</button>
+        <button class="action-card" onclick="navigate('crawl')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg> Start a Crawl</button>
+        <button class="action-card" onclick="navigate('jobs')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg> View Jobs</button>
+        <button class="action-card" onclick="navigate('proxies')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Proxy Status</button>
+      </div>
+    </div>
+    <div class="section"><h2 class="section-title">Connection</h2>
+      <div class="cards">
+        <div class="card"><div class="card-label">API URL</div><div class="card-value mono" style="font-size:0.82rem;word-break:break-all">${escHtml(url)}</div></div>
+        <div class="card"><div class="card-label">Auth</div><div class="card-value" style="font-size:0.85rem">${key ? 'API Key set' : 'No authentication'}</div></div>
+      </div>
+    </div>`;
+};
+
+pages.scrape = function() {
+  const $ = document.getElementById('main');
+  $.innerHTML = `
+    <h1 class="page-title">Scrape</h1>
+    <p class="page-desc">Extract content from any URL.</p>
+    <form id="scrape-form">
+      <div class="field"><label class="field-label">URL</label><input class="input" id="s-url" type="url" placeholder="https://example.com" required></div>
+      <div class="field"><label class="field-label">Output Formats</label>
+        <div class="checkbox-group">
+          <label class="checkbox-label"><input type="checkbox" value="markdown" checked> markdown</label>
+          <label class="checkbox-label"><input type="checkbox" value="html"> html</label>
+          <label class="checkbox-label"><input type="checkbox" value="text"> text</label>
+          <label class="checkbox-label"><input type="checkbox" value="json"> json</label>
+          <label class="checkbox-label"><input type="checkbox" value="csv"> csv</label>
+          <label class="checkbox-label"><input type="checkbox" value="xml"> xml</label>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label class="field-label">Timeout (ms)</label><input class="input" id="s-timeout" type="number" value="30000" min="1000" max="120000"></div>
+        <div class="field"><label class="field-label">JS Rendering</label>
+          <select class="select" id="s-js"><option value="auto">Auto-detect</option><option value="true">Force browser</option><option value="false">Skip JS</option></select>
+        </div>
+      </div>
+      <div class="toggle-group">
+        <label class="checkbox-label"><input type="checkbox" id="s-meta" checked> Metadata</label>
+        <label class="checkbox-label"><input type="checkbox" id="s-screenshot"> Screenshot</label>
+        <label class="checkbox-label"><input type="checkbox" id="s-pdf"> PDF</label>
+      </div>
+      <button type="button" class="collapse-toggle" onclick="document.getElementById('s-advanced').classList.toggle('hidden');this.querySelector('svg').classList.toggle('rotated')">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="transition:transform .2s"><path d="M3 1l4 4-4 4"/></svg> Advanced Options
+      </button>
+      <div id="s-advanced" class="hidden">
+        <div class="field"><label class="field-label">CSS Selector</label><input class="input" id="s-css" placeholder="article, main, .content"></div>
+        <div class="field"><label class="field-label">Excluded Tags</label><input class="input" id="s-excluded" placeholder="nav, footer, aside"></div>
+      </div>
+      <div class="form-actions"><button type="submit" class="btn btn-primary" id="s-submit">Scrape</button></div>
+    </form>
+    <div id="scrape-result"></div>`;
+
+  document.getElementById('scrape-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('s-submit');
+    const out = document.getElementById('scrape-result');
+    btn.disabled = true; btn.textContent = 'Scraping...';
+    out.innerHTML = '<div class="spinner"></div>';
+
+    const formats = [...document.querySelectorAll('#scrape-form .checkbox-group input:checked')].map(i => i.value);
+    const jsVal = document.getElementById('s-js').value;
+    const body = {
+      url: document.getElementById('s-url').value,
+      formats,
+      timeout: parseInt(document.getElementById('s-timeout').value),
+      include_metadata: document.getElementById('s-meta').checked,
+      screenshot: document.getElementById('s-screenshot').checked,
+      pdf: document.getElementById('s-pdf').checked,
+    };
+    if (jsVal !== 'auto') body.wait_for_js = jsVal === 'true';
+    const css = document.getElementById('s-css').value.trim();
+    if (css) body.css_selector = css;
+    const excl = document.getElementById('s-excluded').value.trim();
+    if (excl) body.excluded_tags = excl.split(',').map(s => s.trim()).filter(Boolean);
+
+    try {
+      const data = await api('POST', '/v1/scrape', body);
+      btn.disabled = false; btn.textContent = 'Scrape';
+
+      if (data.error && !data.success) {
+        out.innerHTML = `<div class="error-box">${escHtml(data.error)}</div>`;
+        return;
+      }
+
+      let metaHtml = '';
+      if (data.metadata) {
+        metaHtml = '<div class="cards">';
+        if (data.metadata.title) metaHtml += `<div class="card"><div class="card-label">Title</div><div class="card-value" style="font-size:0.82rem">${escHtml(data.metadata.title)}</div></div>`;
+        metaHtml += `<div class="card"><div class="card-label">Status</div><div class="card-value">${data.metadata.status_code || '—'}</div></div>`;
+        metaHtml += `<div class="card"><div class="card-label">Words</div><div class="card-value">${data.metadata.word_count || '—'}</div></div>`;
+        metaHtml += '</div>';
+      }
+
+      const tabKeys = [...formats, 'raw'];
+      let tabsHtml = '<div class="tabs">';
+      tabKeys.forEach((t, i) => {
+        tabsHtml += `<button class="tab${i === 0 ? ' active' : ''}" data-tab="${t}">${t}</button>`;
+      });
+      tabsHtml += '</div>';
+
+      let contentHtml = '';
+      tabKeys.forEach((t, i) => {
+        let val = '';
+        if (t === 'raw') val = JSON.stringify(data, null, 2);
+        else if (t === 'json') val = data.json_data ? JSON.stringify(data.json_data, null, 2) : '';
+        else if (t === 'csv') val = data.csv_data || '';
+        else if (t === 'xml') val = data.xml_data || '';
+        else val = data[t] || '';
+        contentHtml += `<pre class="code-body${i > 0 ? ' hidden' : ''}" data-tab-content="${t}">${escHtml(val || 'No content for this format.')}</pre>`;
+      });
+
+      let screenshotHtml = '';
+      if (data.screenshot_base64) {
+        screenshotHtml = `<div class="section"><h2 class="section-title">Screenshot</h2><img class="img-preview" src="data:image/png;base64,${data.screenshot_base64}" alt="Screenshot"></div>`;
+      }
+
+      out.innerHTML = `<div class="section"><h2 class="section-title">Response</h2>${metaHtml}${tabsHtml}${contentHtml}${screenshotHtml}</div>`;
+
+      out.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          out.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          out.querySelectorAll('[data-tab-content]').forEach(c => c.classList.add('hidden'));
+          out.querySelector(`[data-tab-content="${tab.dataset.tab}"]`).classList.remove('hidden');
+        });
+      });
+    } catch(err) {
+      btn.disabled = false; btn.textContent = 'Scrape';
+      out.innerHTML = `<div class="error-box">${escHtml(err.message)}</div>`;
+    }
+  });
+};
+
+pages.crawl = function() {
+  const $ = document.getElementById('main');
+  $.innerHTML = `
+    <h1 class="page-title">Crawl</h1>
+    <p class="page-desc">Crawl an entire site with real-time progress.</p>
+    <form id="crawl-form">
+      <div class="field"><label class="field-label">Start URL</label><input class="input" id="c-url" type="url" placeholder="https://docs.example.com" required></div>
+      <div class="form-row">
+        <div class="field"><label class="field-label">Max Pages: <span id="c-pages-val">10</span></label><input type="range" id="c-pages" min="1" max="500" value="10" style="width:100%;accent-color:var(--accent)"></div>
+        <div class="field"><label class="field-label">Max Depth: <span id="c-depth-val">3</span></label><input type="range" id="c-depth" min="1" max="10" value="3" style="width:100%;accent-color:var(--accent)"></div>
+      </div>
+      <div class="field"><label class="field-label">Strategy</label>
+        <select class="select" id="c-strategy"><option value="bfs">Breadth-First (BFS)</option><option value="dfs">Depth-First (DFS)</option><option value="bestfirst">Best-First</option></select>
+      </div>
+      <div class="field"><label class="field-label">Output Formats</label>
+        <div class="checkbox-group" id="c-formats">
+          <label class="checkbox-label"><input type="checkbox" value="markdown" checked> markdown</label>
+          <label class="checkbox-label"><input type="checkbox" value="html"> html</label>
+          <label class="checkbox-label"><input type="checkbox" value="text"> text</label>
+        </div>
+      </div>
+      <div class="field"><label class="field-label">Include Paths</label><input class="input" id="c-include" placeholder="/docs/*, /blog/*"></div>
+      <div class="field"><label class="field-label">Exclude Paths</label><input class="input" id="c-exclude" placeholder="/login, /admin/*"></div>
+      <div class="form-actions"><button type="submit" class="btn btn-primary" id="c-submit">Start Crawl</button></div>
+    </form>
+    <div id="crawl-monitor"></div>`;
+
+  document.getElementById('c-pages').addEventListener('input', e => document.getElementById('c-pages-val').textContent = e.target.value);
+  document.getElementById('c-depth').addEventListener('input', e => document.getElementById('c-depth-val').textContent = e.target.value);
+
+  document.getElementById('crawl-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('c-submit');
+    const mon = document.getElementById('crawl-monitor');
+    btn.disabled = true; btn.textContent = 'Starting...';
+
+    const formats = [...document.querySelectorAll('#c-formats input:checked')].map(i => i.value);
+    const body = {
+      url: document.getElementById('c-url').value,
+      max_pages: parseInt(document.getElementById('c-pages').value),
+      max_depth: parseInt(document.getElementById('c-depth').value),
+      strategy: document.getElementById('c-strategy').value,
+      formats,
+    };
+    const inc = document.getElementById('c-include').value.trim();
+    if (inc) body.include_path_patterns = inc.split(',').map(s => s.trim()).filter(Boolean);
+    const exc = document.getElementById('c-exclude').value.trim();
+    if (exc) body.exclude_path_patterns = exc.split(',').map(s => s.trim()).filter(Boolean);
+
+    try {
+      const data = await api('POST', '/v1/crawl', body);
+      btn.disabled = false; btn.textContent = 'Start Crawl';
+
+      if (!data.job_id) {
+        mon.innerHTML = `<div class="error-box">${escHtml(data.error || 'No job ID returned')}</div>`;
+        return;
+      }
+
+      const tracked = JSON.parse(localStorage.getItem('pawgrab_tracked_jobs') || '[]');
+      tracked.unshift({ id: data.job_id, type: 'crawl', url: body.url, created: new Date().toISOString() });
+      localStorage.setItem('pawgrab_tracked_jobs', JSON.stringify(tracked.slice(0, 50)));
+
+      document.getElementById('crawl-form').classList.add('hidden');
+      mon.innerHTML = `
+        <div class="section">
+          <h2 class="section-title">Job: <span class="mono">${escHtml(data.job_id)}</span></h2>
+          <div class="cards"><div class="card"><div class="card-label">Status</div><div class="card-value" id="cm-status">${badge(data.status || 'queued')}</div></div><div class="card"><div class="card-label">Pages</div><div class="card-value" id="cm-pages">0 / ${body.max_pages}</div></div></div>
+          <div class="progress-bar"><div class="progress-fill" id="cm-bar" style="width:0%"></div></div>
+          <div class="sse-log" id="cm-log"></div>
+          <div class="form-actions">
+            <button class="btn" id="cm-results">Load Results</button>
+            <button class="btn" onclick="navigate('crawl')">New Crawl</button>
+          </div>
+          <div id="cm-results-area"></div>
+        </div>`;
+
+      const { url: apiUrl } = getSettings();
+      try {
+        const res = await fetch(apiUrl + '/v1/crawl/' + data.job_id + '/stream', { headers: apiHeaders() });
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        const log = document.getElementById('cm-log');
+
+        async function read() {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            let evtName = null;
+            for (const line of lines) {
+              if (line.startsWith('event: ')) evtName = line.slice(7).trim();
+              else if (line.startsWith('data: ')) {
+                const raw = line.slice(6);
+                let parsed;
+                try { parsed = JSON.parse(raw); } catch { parsed = raw; }
+                log.innerHTML += `<div><span class="sse-event">[${evtName || 'message'}]</span>${escHtml(typeof parsed === 'string' ? parsed : JSON.stringify(parsed))}</div>`;
+                log.scrollTop = log.scrollHeight;
+                if (parsed && parsed.pages_scraped != null) {
+                  const total = parsed.total_pages || body.max_pages;
+                  const pct = Math.round((parsed.pages_scraped / total) * 100);
+                  document.getElementById('cm-bar').style.width = pct + '%';
+                  document.getElementById('cm-pages').textContent = parsed.pages_scraped + ' / ' + total;
+                }
+                if (parsed && parsed.status) {
+                  document.getElementById('cm-status').innerHTML = badge(parsed.status);
+                }
+                evtName = null;
+              }
+            }
+          }
+        }
+        read().catch(() => {});
+      } catch { /* SSE not available */ }
+
+      document.getElementById('cm-results').addEventListener('click', async () => {
+        const area = document.getElementById('cm-results-area');
+        area.innerHTML = '<div class="spinner"></div>';
+        try {
+          const res = await api('GET', '/v1/crawl/' + data.job_id + '?page=1&limit=50');
+          let html = `<h2 class="section-title">Results (${res.total_results || (res.results || []).length} pages)</h2>`;
+          if (res.results && res.results.length) {
+            html += '<div class="table-wrap"><table><thead><tr><th>URL</th><th>Status</th><th>Words</th></tr></thead><tbody>';
+            for (const r of res.results) {
+              html += `<tr><td class="mono" style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.url || r.metadata?.url || '—')}</td><td>${r.metadata?.status_code || '—'}</td><td>${r.metadata?.word_count || '—'}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+          }
+          html += jsonBlock(res);
+          area.innerHTML = html;
+        } catch(err) {
+          area.innerHTML = `<div class="error-box">${escHtml(err.message)}</div>`;
+        }
+      });
+
+    } catch(err) {
+      btn.disabled = false; btn.textContent = 'Start Crawl';
+      mon.innerHTML = `<div class="error-box">${escHtml(err.message)}</div>`;
+    }
+  });
+};
+
+pages.jobs = function() {
+  const $ = document.getElementById('main');
+  const jobs = JSON.parse(localStorage.getItem('pawgrab_tracked_jobs') || '[]');
+
+  $.innerHTML = `
+    <h1 class="page-title">Jobs</h1>
+    <p class="page-desc">Track crawl and batch jobs.</p>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:200px"><label class="field-label">Track a Job</label><input class="input" id="j-add-id" placeholder="Job ID"></div>
+      <select class="select" id="j-add-type" style="width:120px"><option value="crawl">Crawl</option><option value="batch">Batch</option></select>
+      <button class="btn" id="j-add">Add</button>
+      <button class="btn" id="j-refresh">Refresh All</button>
+    </div>
+    <div id="jobs-table"></div>
+    <div id="jobs-detail"></div>`;
+
+  const renderTable = () => {
+    const jobs = JSON.parse(localStorage.getItem('pawgrab_tracked_jobs') || '[]');
+    const area = document.getElementById('jobs-table');
+    if (jobs.length === 0) { area.innerHTML = '<div class="empty">No tracked jobs. Start a crawl or add a job ID above.</div>'; return; }
+    let html = '<div class="table-wrap"><table><thead><tr><th>Job ID</th><th>Type</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+    for (const j of jobs) {
+      const st = j._status ? badge(j._status) : '—';
+      const created = j.created ? new Date(j.created).toLocaleString() : '—';
+      html += `<tr><td class="mono">${escHtml(j.id)}</td><td>${j.type}</td><td>${st}</td><td class="mono" style="font-size:0.7rem">${created}</td>
+        <td><div style="display:flex;gap:0.3rem"><button class="btn btn-sm" onclick="viewJob('${escHtml(j.id)}','${j.type}')">View</button><button class="btn btn-sm" onclick="removeJob('${escHtml(j.id)}')">Remove</button></div></td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    area.innerHTML = html;
+  };
+
+  window.removeJob = (id) => {
+    let jobs = JSON.parse(localStorage.getItem('pawgrab_tracked_jobs') || '[]');
+    jobs = jobs.filter(j => j.id !== id);
+    localStorage.setItem('pawgrab_tracked_jobs', JSON.stringify(jobs));
+    renderTable();
+    document.getElementById('jobs-detail').innerHTML = '';
+  };
+
+  window.viewJob = async (id, type) => {
+    const area = document.getElementById('jobs-detail');
+    area.innerHTML = '<div class="spinner"></div>';
+    try {
+      const path = type === 'batch' ? '/v1/batch/' : '/v1/crawl/';
+      const data = await api('GET', path + id + '?page=1&limit=20');
+      area.innerHTML = `<div class="section"><h2 class="section-title">Job: ${escHtml(id)}</h2>${jsonBlock(data)}</div>`;
+    } catch(e) {
+      area.innerHTML = `<div class="error-box">${escHtml(e.message)}</div>`;
+    }
+  };
+
+  document.getElementById('j-add').addEventListener('click', () => {
+    const id = document.getElementById('j-add-id').value.trim();
+    if (!id) return;
+    const type = document.getElementById('j-add-type').value;
+    let jobs = JSON.parse(localStorage.getItem('pawgrab_tracked_jobs') || '[]');
+    jobs.unshift({ id, type, url: '', created: new Date().toISOString() });
+    localStorage.setItem('pawgrab_tracked_jobs', JSON.stringify(jobs.slice(0, 50)));
+    document.getElementById('j-add-id').value = '';
+    renderTable();
+  });
+
+  document.getElementById('j-refresh').addEventListener('click', async () => {
+    const btn = document.getElementById('j-refresh');
+    btn.disabled = true; btn.textContent = 'Refreshing...';
+    let jobs = JSON.parse(localStorage.getItem('pawgrab_tracked_jobs') || '[]');
+    for (const j of jobs) {
+      try {
+        const path = j.type === 'batch' ? '/v1/batch/' : '/v1/crawl/';
+        const data = await api('GET', path + j.id + '?page=1&limit=1');
+        j._status = data.status || 'unknown';
+      } catch { j._status = 'error'; }
+    }
+    localStorage.setItem('pawgrab_tracked_jobs', JSON.stringify(jobs));
+    btn.disabled = false; btn.textContent = 'Refresh All';
+    renderTable();
+  });
+
+  renderTable();
+};
+
+pages.proxies = async function() {
+  const $ = document.getElementById('main');
+  $.innerHTML = '<h1 class="page-title">Proxies</h1><p class="page-desc">Proxy pool health and statistics.</p><div class="spinner"></div>';
+
+  let proxies, stats;
+  try {
+    [proxies, stats] = await Promise.all([
+      api('GET', '/v1/proxy/pool').catch(() => null),
+      api('GET', '/v1/proxy/pool/stats').catch(() => null)
+    ]);
+  } catch(e) {
+    $.innerHTML += `<div class="error-box">${escHtml(e.message)}</div>`;
+    return;
+  }
+
+  let statsHtml = '';
+  if (stats) {
+    statsHtml = '<div class="cards">';
+    if (stats.total != null) statsHtml += `<div class="card"><div class="card-label">Total</div><div class="card-value">${stats.total}</div></div>`;
+    if (stats.healthy != null) statsHtml += `<div class="card"><div class="card-label">Healthy</div><div class="card-value" style="color:var(--green)">${stats.healthy}</div></div>`;
+    if (stats.unhealthy != null) statsHtml += `<div class="card"><div class="card-label">Unhealthy</div><div class="card-value" style="color:var(--red)">${stats.unhealthy}</div></div>`;
+    if (stats.policy) statsHtml += `<div class="card"><div class="card-label">Policy</div><div class="card-value" style="font-size:0.9rem">${escHtml(stats.policy)}</div></div>`;
+    if (stats.avg_speed_ms != null) statsHtml += `<div class="card"><div class="card-label">Avg Speed</div><div class="card-value">${Math.round(stats.avg_speed_ms)}ms</div></div>`;
+    statsHtml += '</div>';
+  }
+
+  let tableHtml = '';
+  if (Array.isArray(proxies) && proxies.length > 0) {
+    tableHtml = '<div class="table-wrap"><table><thead><tr><th>Proxy</th><th>Health</th><th>Speed</th><th>Success</th><th>Timeouts</th><th>Failures</th></tr></thead><tbody>';
+    for (const p of proxies) {
+      let masked = p.url;
+      try { const u = new URL(p.url); const usr = u.username ? u.username.slice(0,3) + '***@' : ''; masked = u.protocol + '//' + usr + u.hostname + ':' + (u.port || '—'); } catch {}
+      const total = (p.succeed||0) + (p.timeouts||0) + (p.failures||0);
+      const rate = total > 0 ? ((p.succeed/total)*100).toFixed(0) + '%' : '—';
+      tableHtml += `<tr><td class="mono">${escHtml(masked)}</td><td>${badge(p.ok ? 'ok' : 'unhealthy')}</td><td class="mono">${p.speed ? Math.round(p.speed) + 'ms' : '—'}</td><td class="mono">${rate}</td><td class="mono">${p.timeouts ?? 0}</td><td class="mono">${p.failures ?? 0}</td></tr>`;
+    }
+    tableHtml += '</tbody></table></div>';
+  } else {
+    tableHtml = '<div class="empty">No proxies configured. Add proxies via the API or environment variables.</div>';
+  }
+
+  $.innerHTML = `
+    <h1 class="page-title">Proxies</h1>
+    <p class="page-desc">Proxy pool health and statistics.</p>
+    ${statsHtml}${tableHtml}
+    <div class="form-actions"><button class="btn" onclick="navigate('proxies')">Refresh</button></div>`;
+};
+
+pages.settings = function() {
+  const { url, key } = getSettings();
+  const $ = document.getElementById('main');
+  $.innerHTML = `
+    <h1 class="page-title">Settings</h1>
+    <p class="page-desc">Configure your API connection.</p>
+    <div style="max-width:500px">
+      <div class="field"><label class="field-label">API URL</label><p class="field-desc">The base URL of your Pawgrab API server.</p><input class="input" id="set-url" value="${escHtml(url)}" placeholder="http://localhost:8000"></div>
+      <div class="field"><label class="field-label">API Key</label><p class="field-desc">Optional. Set if your server requires authentication.</p>
+        <div style="position:relative"><input class="input" id="set-key" type="password" value="${escHtml(key)}" placeholder="Leave empty for no auth" style="padding-right:3.5rem">
+        <button type="button" id="set-toggle" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-3);font-size:0.72rem;cursor:pointer;font-family:var(--font-mono)">Show</button></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="set-save">Save</button>
+        <button class="btn" id="set-test">Test Connection</button>
+      </div>
+      <div id="set-result"></div>
+    </div>`;
+
+  document.getElementById('set-toggle').addEventListener('click', function() {
+    const inp = document.getElementById('set-key');
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    this.textContent = show ? 'Hide' : 'Show';
+  });
+
+  document.getElementById('set-save').addEventListener('click', () => {
+    localStorage.setItem('pawgrab_api_url', document.getElementById('set-url').value.replace(/\/+$/, ''));
+    localStorage.setItem('pawgrab_api_key', document.getElementById('set-key').value);
+    startHealthPoll();
+    const btn = document.getElementById('set-save');
+    btn.textContent = 'Saved'; setTimeout(() => btn.textContent = 'Save', 2000);
+  });
+
+  document.getElementById('set-test').addEventListener('click', async () => {
+    const btn = document.getElementById('set-test');
+    const out = document.getElementById('set-result');
+    btn.disabled = true; btn.textContent = 'Testing...';
+    const testUrl = document.getElementById('set-url').value.replace(/\/+$/, '');
+    const testKey = document.getElementById('set-key').value;
+    const h = { 'Content-Type': 'application/json' };
+    if (testKey) h['Authorization'] = 'Bearer ' + testKey;
+    try {
+      const res = await fetch(testUrl + '/health', { headers: h });
+      const data = await res.json();
+      out.innerHTML = `<div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem">${badge(data.status || 'ok')}<span style="font-size:0.82rem;color:var(--text-2)">Connection successful</span></div>`;
+    } catch(e) {
+      out.innerHTML = `<div class="error-box">Connection failed: ${escHtml(e.message)}</div>`;
+    }
+    btn.disabled = false; btn.textContent = 'Test Connection';
+  });
+};
+
+navigate('overview');
+</script>
+</body>
+</html>

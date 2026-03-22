@@ -158,7 +158,6 @@ export default function DocsPage() {
       })
   }, [activeSlug])
 
-  // Intersection observer for TOC highlighting
   useEffect(() => {
     if (!contentRef.current || toc.length === 0) return
     const observer = new IntersectionObserver(
@@ -180,7 +179,6 @@ export default function DocsPage() {
   const prev = currentIdx > 0 ? ALL_DOCS[currentIdx - 1] : null
   const next = currentIdx < ALL_DOCS.length - 1 ? ALL_DOCS[currentIdx + 1] : null
 
-  // Find section for breadcrumb
   const currentSection = DOC_SECTIONS.find((s) => s.items.some((i) => i.slug === activeSlug))
   const currentDoc = ALL_DOCS.find((d) => d.slug === activeSlug)
 
@@ -232,7 +230,6 @@ export default function DocsPage() {
       </aside>
 
       <main className="docs__content" ref={contentRef}>
-        {/* Breadcrumb */}
         <div className="docs__breadcrumb">
           <Link to="/docs" className="docs__breadcrumb-link">Docs</Link>
           {currentSection && (
@@ -322,7 +319,6 @@ export default function DocsPage() {
           </div>
         )}
 
-        {/* Prev / Next nav */}
         <div className="docs__nav-footer">
           {prev ? (
             <Link to={`/docs/${prev.slug}`} className="docs__nav-prev">
@@ -349,7 +345,6 @@ export default function DocsPage() {
         </div>
       </main>
 
-      {/* Table of Contents */}
       {toc.length > 0 && (
         <aside className="docs__toc">
           <h4 className="docs__toc-title">On this page</h4>

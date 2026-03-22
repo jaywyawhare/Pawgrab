@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pawgrab-sdk"
+version = "0.2.0"
+description = "Official Python SDK for the Pawgrab web scraping API"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "httpx>=0.25",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]

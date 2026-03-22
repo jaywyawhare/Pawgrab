@@ -20,13 +20,11 @@ export function useWebGraph() {
     camera.position.set(0, 12, 22)
     camera.lookAt(0, 0, 0)
 
-    // ── Colors ──
     const COL_ACCENT = new THREE.Color(0xF54E00)
     const COL_SECONDARY = new THREE.Color(0xF7A501)
     const COL_DIM = new THREE.Color(0x332820)
     const COL_GLOW = new THREE.Color(0xFF6B2C)
 
-    // ── Generate web graph nodes ──
     const NODE_COUNT = 40
     const nodes = []
     const SPREAD = 16
@@ -42,10 +40,8 @@ export function useWebGraph() {
       nodes.push({ pos: new THREE.Vector3(x, y, z), size, importance, phase: Math.random() * Math.PI * 2 })
     }
 
-    // Central hub node
     nodes.push({ pos: new THREE.Vector3(0, 0, 0), size: 0.3, importance: 1.0, phase: 0 })
 
-    // ── Build edges - connect nearby nodes ──
     const edges = []
     const MAX_EDGE_DIST = 8
     for (let i = 0; i < nodes.length; i++) {
@@ -63,7 +59,6 @@ export function useWebGraph() {
       }
     }
 
-    // ── Node spheres ──
     const nodeGeo = new THREE.SphereGeometry(1, 16, 16)
     const nodeMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -115,7 +110,6 @@ export function useWebGraph() {
       nodeMeshes.push(mesh)
     }
 
-    // ── Edge lines ──
     const edgePositions = []
     for (const [a, b] of edges) {
       edgePositions.push(nodes[a].pos.x, nodes[a].pos.y, nodes[a].pos.z)
@@ -149,7 +143,6 @@ export function useWebGraph() {
     const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat)
     scene.add(edgeMesh)
 
-    // ── Crawler ball - travels along edges ──
     const crawlerGeo = new THREE.SphereGeometry(0.25, 32, 32)
     const crawlerMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -193,7 +186,6 @@ export function useWebGraph() {
     crawler.renderOrder = 10
     scene.add(crawler)
 
-    // ── Build crawler path through graph ──
     const crawlPath = []
     const visited = new Set()
     let current = nodes.length - 1 // start at hub
@@ -215,7 +207,6 @@ export function useWebGraph() {
     const crawlCurve = new THREE.CatmullRomCurve3(crawlPath, true, 'centripetal', 0.3)
     const crawlPoints = crawlCurve.getPoints(crawlPath.length * 8)
 
-    // ── Trail ──
     const TRAIL_MAX = 80
     const trailHistory = []
     let trailMesh = null
@@ -252,7 +243,6 @@ export function useWebGraph() {
       return new THREE.Mesh(tGeo, tMat)
     }
 
-    // ── Ambient particles ──
     const PARTICLE_COUNT = 120
     const pPos = new Float32Array(PARTICLE_COUNT * 3)
     const pSizes = new Float32Array(PARTICLE_COUNT)
@@ -300,7 +290,6 @@ export function useWebGraph() {
     })
     scene.add(new THREE.Points(pGeo, pMat))
 
-    // ── Data pulse particles traveling along edges ──
     const PULSE_COUNT = 30
     const pulses = []
     for (let i = 0; i < PULSE_COUNT; i++) {
@@ -321,7 +310,6 @@ export function useWebGraph() {
       })
     }
 
-    // ── Mouse ──
     let mouseX = 0, mouseY = 0
     const onMove = (e) => {
       mouseX = (e.clientX / window.innerWidth - 0.5) * 2
@@ -329,7 +317,6 @@ export function useWebGraph() {
     }
     window.addEventListener('mousemove', onMove)
 
-    // Pause animation when canvas is off-screen
     let isVisible = true
     const visObserver = new IntersectionObserver(
       ([entry]) => { isVisible = entry.isIntersecting },
@@ -349,14 +336,12 @@ export function useWebGraph() {
       const dt = clock.getDelta()
       frameCount++
 
-      // Update uniforms
       nodeMat.uniforms.uTime.value = t
       edgeMat.uniforms.uTime.value = t
       crawlerMat.uniforms.uTime.value = t
       crawlerMat.uniforms.uCamPos.value.copy(camera.position)
       pMat.uniforms.uTime.value = t
 
-      // Camera - gentle orbit + mouse
       const camAngle = t * 0.04
       const tx = Math.sin(camAngle) * 2.5 + mouseX * 1.5
       const tz = 22 + Math.cos(camAngle * 0.7) * 2 + mouseY * 1.0
@@ -365,7 +350,6 @@ export function useWebGraph() {
       camera.position.z += (tz - camera.position.z) * 0.01
       camera.position.y += (ty - camera.position.y) * 0.01
 
-      // Crawler along path
       const totalPts = crawlPoints.length
       const rawT = (t * 0.025) % 1
       const pathIdx = rawT * totalPts
@@ -375,18 +359,15 @@ export function useWebGraph() {
       const cp = crawlPoints[i0].clone().lerp(crawlPoints[i1], frac)
       crawler.position.copy(cp)
 
-      // LookAt tracks crawler loosely
       const idealLook = new THREE.Vector3(cp.x * 0.3, cp.y * 0.2, cp.z * 0.3)
       lookTarget.lerp(idealLook, 0.015)
       camera.lookAt(lookTarget)
 
-      // Node gentle bob
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i]
         nodeMeshes[i].position.y = n.pos.y + Math.sin(t * 0.8 + n.phase) * 0.15
       }
 
-      // Pulse particles along edges
       for (const p of pulses) {
         p.t += p.speed * 0.008
         if (p.t > 1) {
@@ -400,7 +381,6 @@ export function useWebGraph() {
         p.mesh.material.opacity = Math.sin(p.t * Math.PI) * 0.6
       }
 
-      // Ambient particles drift
       const pp = pGeo.attributes.position.array
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         pp[i * 3 + 1] += Math.sin(t * 0.5 + pPhases[i]) * 0.001
@@ -408,7 +388,6 @@ export function useWebGraph() {
       }
       pGeo.attributes.position.needsUpdate = true
 
-      // Trail
       trailHistory.push(cp.clone())
       if (trailHistory.length > TRAIL_MAX) trailHistory.shift()
 

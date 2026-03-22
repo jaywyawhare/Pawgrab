@@ -40,7 +40,6 @@ _BOILERPLATE_XPATHS = (
 
 _SEMANTIC_CONTENT_XPATHS = ("//article", "//main", '//*[@role="main"]')
 
-# Minimum text chars for readability output to be considered useful.
 _MIN_CONTENT_CHARS = 200
 
 
@@ -101,17 +100,14 @@ def extract_content(
     if not html or not html.strip():
         return CleanedContent(title="", content_html="")
 
-    # Pre-process HTML before readability
     html = _preprocess(html, excluded_tags, excluded_selector, css_selector)
 
-    # Parse HTML once — reuse for metadata, readability, and fallback
     tree = None
     try:
         tree = lxml_html.fromstring(html)
     except Exception:
         pass
 
-    # Metadata + title fallback — extract BEFORE any tree mutations
     description = ""
     language = ""
     fallback_title = ""
@@ -133,10 +129,8 @@ def extract_content(
     title = ""
 
     if tree is not None:
-        # Strip boilerplate once — shared between all extraction paths
         _strip_boilerplate(tree)
 
-        # Fast path: semantic HTML tags (<main>, role="main", single <article>)
         for xpath in _SEMANTIC_CONTENT_XPATHS:
             els = tree.xpath(xpath)
             # For <article>, only use fast path if there's exactly one —
@@ -147,25 +141,21 @@ def extract_content(
                     content_html = candidate
                     break
 
-        # Standard path: readability on the pre-stripped tree (smaller DOM = faster)
-        # retry_length=0: skip the expensive lenient-mode retry when ruthless
-        # mode finds a short article — our own fallback handles that case.
+        # retry_length=0: skips readability's expensive lenient-mode retry; our fallback handles short articles.
         if not content_html:
             try:
                 doc = ReadabilityDocument(tree, url=url or None, retry_length=0)
                 content_html = doc.summary()
-                # Skip doc.short_title() — it triggers another _parse()+clean_html
-                # pass (~13ms). We already have fallback_title from <title> tag.
+                # doc.short_title() triggers another _parse()+clean_html (~13ms); fallback_title is sufficient.
             except Exception:
                 logger.warning("readability_failed", url=url, exc_info=True)
 
-        # Fallback: reuse already-stripped tree body (no re-parse)
         if _text_length(content_html) < _MIN_CONTENT_CHARS:
             body_html = _serialize_body(tree)
             if _text_length(body_html) >= _MIN_CONTENT_CHARS:
                 content_html = body_html
             else:
-                # Last resort: trafilatura on original HTML (~100-170ms)
+                # Last resort: trafilatura (~100-170 ms on cold path)
                 try:
                     import trafilatura
 
@@ -181,15 +171,12 @@ def extract_content(
                 except Exception:
                     pass
 
-    # Use readability's title, fall back to raw <title> tag
     if not title:
         title = fallback_title
 
-    # Post-process: word count threshold
     if word_count_threshold and word_count_threshold > 0:
         content_html = _apply_word_count_threshold(content_html, word_count_threshold)
 
-    # Post-process: content filters
     if content_filter:
         content_html = _apply_content_filter(
             content_html, content_filter, content_filter_query
@@ -215,18 +202,15 @@ def _preprocess(
 
     soup = make_soup(html)
 
-    # Strip excluded tags
     if excluded_tags:
         for tag_name in excluded_tags:
             for el in soup.find_all(tag_name.lower()):
                 el.decompose()
 
-    # Strip elements matching CSS selector
     if excluded_selector:
         for el in soup.select(excluded_selector):
             el.decompose()
 
-    # Scope to CSS selector — keep only matching elements
     if css_selector:
         matches = soup.select(css_selector)
         if matches:

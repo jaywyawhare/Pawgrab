@@ -6,7 +6,6 @@ import asyncio
 import random
 
 import orjson
-from urllib.parse import urlparse
 
 import structlog
 from bs4 import BeautifulSoup
@@ -41,7 +40,6 @@ from pawgrab.utils.url import is_same_domain, normalize_url, resolve_url
 
 logger = structlog.get_logger()
 
-# Cap frontier to prevent memory blowup on link-heavy sites
 _MAX_QUEUE_SIZE = 5000
 
 
@@ -74,9 +72,20 @@ def _is_hidden_link(tag) -> bool:
 
 
 def _is_noindex_page(html: str) -> bool:
-    """Check if a page has noindex meta tag (AI Labyrinth pages often do)."""
-    lower = html[:5000].lower()
-    return "noindex" in lower and ("robots" in lower)
+    """Check if a page has a noindex robots meta tag (AI Labyrinth pages often do).
+
+    Parses the actual <meta name="robots"> tag instead of doing a naive string
+    search, which false-positives on documentation pages that mention robots.txt.
+    """
+    try:
+        soup = BeautifulSoup(html[:10_000], "html.parser")
+        for meta in soup.find_all("meta", attrs={"name": True}):
+            if meta.get("name", "").lower() in ("robots", "googlebot"):
+                if "noindex" in meta.get("content", "").lower():
+                    return True
+    except Exception:
+        pass
+    return False
 
 
 def _extract_links(
@@ -217,7 +226,6 @@ async def crawl_job(
                 continue
             visited.add(normalized)
 
-            # Random think-time between requests
             if pages_scraped > 0:
                 await asyncio.sleep(random.uniform(0.5, 2.5))
 
@@ -235,8 +243,8 @@ async def crawl_job(
                 continue
 
             try:
-                from pawgrab.engine.scrape_service import _build_response
-                response = _build_response(raw_result, formats=formats, include_metadata=True)
+                from pawgrab.engine.scrape_service import build_response
+                response = build_response(raw_result, formats=formats, include_metadata=True)
             except Exception as exc:
                 logger.warning("crawl_build_failed", url=current_url, error=str(exc))
                 continue
@@ -263,7 +271,6 @@ async def crawl_job(
                 )
                 logger.debug("crawl_checkpoint_saved", job_id=job_id, pages=pages_scraped)
 
-            # Extract links — skip noindex pages
             if _is_noindex_page(raw_result.html):
                 logger.debug("skipping_links_noindex_page", url=current_url)
                 continue
@@ -309,7 +316,7 @@ async def crawl_job(
 
 
 async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json: str):
-    """Scrape a list of URLs sequentially, storing results as they complete."""
+    """Scrape a list of URLs concurrently, storing results as they complete."""
     urls = orjson.loads(urls_json)
     formats = [OutputFormat(f) for f in orjson.loads(formats_json)]
     browser_pool = ctx.get("browser_pool")
@@ -319,9 +326,12 @@ async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json:
 
     urls_scraped = 0
     job_error: str | None = None
+    _counter_lock = asyncio.Lock()
+    sem = asyncio.Semaphore(settings.worker_max_jobs)
 
-    try:
-        for url in urls:
+    async def _scrape_one(url: str) -> None:
+        nonlocal urls_scraped
+        async with sem:
             try:
                 response = await scrape_url(
                     url,
@@ -330,22 +340,18 @@ async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json:
                     browser_pool=browser_pool,
                     proxy_pool=proxy_pool,
                 )
-                await append_batch_result(job_id, response.model_dump())
-                urls_scraped += 1
-                await update_batch_job(job_id, urls_scraped=urls_scraped)
+                result = response.model_dump()
             except Exception as exc:
                 logger.warning("batch_url_failed", url=url, error=str(exc))
-                await append_batch_result(job_id, {
-                    "success": False,
-                    "url": url,
-                    "error": str(exc),
-                })
+                result = {"success": False, "url": url, "error": str(exc)}
+
+            async with _counter_lock:
+                await append_batch_result(job_id, result)
                 urls_scraped += 1
                 await update_batch_job(job_id, urls_scraped=urls_scraped)
 
-            if urls_scraped < len(urls):
-                await asyncio.sleep(random.uniform(0.3, 1.0))
-
+    try:
+        await asyncio.gather(*[_scrape_one(url) for url in urls])
         await update_batch_job(job_id, status=CrawlStatus.COMPLETED)
 
     except Exception as exc:
@@ -363,6 +369,71 @@ async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json:
             pages_scraped=urls_scraped,
             total_pages=len(urls),
             error=job_error,
+        )
+
+
+async def batch_extract_job(
+    ctx: dict, job_id: str, urls_json: str, strategy: str,
+    prompt: str, schema_hint_json: str, json_schema_json: str,
+    selectors_json: str, xpath_json: str, patterns_raw: str,
+):
+    """Extract structured data from a list of URLs."""
+    from pawgrab.ai.extractor import extract_from_url
+    from pawgrab.engine.extractors import get_extractor
+    from pawgrab.models.extract import ExtractResponse
+    from pawgrab.queue.manager import (
+        append_batch_extract_result,
+        get_batch_extract_webhook_url,
+        update_batch_extract_job,
+    )
+
+    urls = orjson.loads(urls_json)
+    browser_pool = ctx.get("browser_pool")
+
+    schema_hint = orjson.loads(schema_hint_json) if schema_hint_json else None
+    json_schema = orjson.loads(json_schema_json) if json_schema_json else None
+    selectors = orjson.loads(selectors_json) if selectors_json else None
+    xpath_queries = orjson.loads(xpath_json) if xpath_json else None
+
+    await update_batch_extract_job(job_id, status=CrawlStatus.IN_PROGRESS)
+
+    urls_extracted = 0
+    job_error: str | None = None
+
+    try:
+        for url in urls:
+            try:
+                if strategy == "llm":
+                    data = await extract_from_url(
+                        url, prompt=prompt, schema_hint=schema_hint,
+                        json_schema=json_schema, browser_pool=browser_pool,
+                    )
+                else:
+                    result = await fetch_page(url, browser_pool=browser_pool)
+                    extractor = get_extractor(strategy, selectors=selectors, xpath_queries=xpath_queries, patterns=patterns_raw or None)
+                    data = extractor.extract(result.html)
+                result_dict = ExtractResponse(success=True, url=url, data=data).model_dump()
+            except Exception as exc:
+                logger.warning("batch_extract_url_failed", url=url, error=str(exc))
+                result_dict = {"success": False, "url": url, "error": str(exc), "data": None}
+
+            await append_batch_extract_result(job_id, result_dict)
+            urls_extracted += 1
+            await update_batch_extract_job(job_id, urls_extracted=urls_extracted)
+
+        await update_batch_extract_job(job_id, status=CrawlStatus.COMPLETED)
+
+    except Exception as exc:
+        job_error = str(exc)
+        logger.error("batch_extract_job_failed", job_id=job_id, error=job_error)
+        await update_batch_extract_job(job_id, status=CrawlStatus.FAILED, error=job_error)
+
+    webhook_url = await get_batch_extract_webhook_url(job_id)
+    if webhook_url:
+        await send_webhook(
+            webhook_url, job_id=job_id, job_type="batch_extract",
+            status=CrawlStatus.COMPLETED.value if not job_error else CrawlStatus.FAILED.value,
+            pages_scraped=urls_extracted, total_pages=len(urls), error=job_error,
         )
 
 
@@ -402,7 +473,7 @@ async def shutdown(ctx: dict):
 
 
 class WorkerSettings:
-    functions = [crawl_job, batch_scrape_job]
+    functions = [crawl_job, batch_scrape_job, batch_extract_job]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = None  # Set dynamically below

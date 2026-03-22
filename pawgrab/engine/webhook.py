@@ -17,12 +17,16 @@ _PRIVATE_NETWORKS = (
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fc00::/7"),
     ipaddress.ip_network("fe80::/10"),
 )
+
+_BLOCKED_HOSTNAMES = frozenset({"localhost", "metadata.google.internal"})
+_BLOCKED_SUFFIXES = (".internal", ".local", ".corp", ".home.arpa")
 
 
 def _is_safe_url(url: str) -> bool:
@@ -38,11 +42,10 @@ def _is_safe_url(url: str) -> bool:
         addr = ipaddress.ip_address(hostname)
         return not any(addr in net for net in _PRIVATE_NETWORKS)
     except ValueError:
-        # It's a hostname, not an IP — block obvious internal names
         lower = hostname.lower()
-        if lower in ("localhost", "metadata.google.internal"):
+        if lower in _BLOCKED_HOSTNAMES:
             return False
-        if lower.endswith(".internal") or lower.endswith(".local"):
+        if any(lower.endswith(s) for s in _BLOCKED_SUFFIXES):
             return False
         return True
 

@@ -40,7 +40,6 @@ class _RenderingCache:
         if time.monotonic() - ts > self._ttl:
             self._data.pop(domain, None)
             return None
-        # Move to end (most recently used)
         self._data.move_to_end(domain)
         return value
 
@@ -76,7 +75,6 @@ def _run_heuristics(html: str) -> bool:
         if pattern.search(html):
             return True
 
-    # Strip tags and check if there's meaningful content
     text = re.sub(r"<[^>]+>", " ", html)
     text = re.sub(r"\s+", " ", text).strip()
     if len(text) < _MINIMAL_CONTENT_THRESHOLD:

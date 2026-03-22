@@ -3,7 +3,7 @@
 import structlog
 from fastapi import APIRouter
 
-from pawgrab.dependencies import get_browser_pool, get_proxy_pool
+from pawgrab.dependencies import try_browser_pool, try_proxy_pool
 from pawgrab.engine.scrape_service import scrape_url
 from pawgrab.exceptions import ErrorCode, PawgrabError
 from pawgrab.models.common import ErrorResponse
@@ -28,16 +28,8 @@ async def scrape(req: ScrapeRequest):
     """Scrape a single URL and return content in the requested formats."""
     url = str(req.url)
     warnings: list[str] = []
-
-    try:
-        pool = await get_browser_pool()
-    except Exception:
-        pool = None
-
-    try:
-        proxy_pool = await get_proxy_pool()
-    except Exception:
-        proxy_pool = None
+    pool = await try_browser_pool()
+    proxy_pool = await try_proxy_pool()
 
     if (req.screenshot or req.pdf or req.actions) and pool is None:
         raise PawgrabError(
@@ -53,30 +45,19 @@ async def scrape(req: ScrapeRequest):
         response = await scrape_url(
             url,
             **req.model_dump(exclude={"url", "formats", "actions"}),
-            formats=req.formats,
-            actions=req.actions,
-            browser_pool=pool,
-            proxy_pool=proxy_pool,
+            formats=req.formats, actions=req.actions,
+            browser_pool=pool, proxy_pool=proxy_pool,
         )
         if warnings:
             response.warnings = warnings + response.warnings
         return response
     except PermissionError:
         raise PawgrabError(
-            status_code=403,
-            code=ErrorCode.ROBOTS_BLOCKED,
+            status_code=403, code=ErrorCode.ROBOTS_BLOCKED,
             message="Blocked by robots.txt",
         )
     except TimeoutError:
-        raise PawgrabError(
-            status_code=504,
-            code=ErrorCode.TIMEOUT,
-            message=f"Request timed out after {req.timeout}ms",
-        )
+        raise PawgrabError.timeout(req.timeout)
     except Exception as exc:
         logger.error("scrape_failed", url=url, error=str(exc))
-        raise PawgrabError(
-            status_code=502,
-            code=ErrorCode.FETCH_FAILED,
-            message=f"Failed to fetch URL: {type(exc).__name__}",
-        )
+        raise PawgrabError.fetch_failed(exc)

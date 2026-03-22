@@ -1,12 +1,14 @@
-"""Patchright browser pool with reusable persistent contexts and stealth evasions."""
+"""Patchright browser pool with stealth evasions, standby recycling, and session profiles."""
 
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import re
 import shutil
 import tempfile
+import time
 from urllib.parse import urlparse
 
 import structlog
@@ -336,21 +338,18 @@ if (navigator.permissions) {
     };
 }
 
-// Remove window.chrome (Chromium-only, absent in Safari)
+// Chromium-only — absent in Safari, so delete it to avoid detection
 delete window.chrome;
-// Prevent re-creation
 Object.defineProperty(window, 'chrome', {
     get: () => undefined,
     configurable: true,
 });
 
-// Override navigator.webdriver (headless flag)
 Object.defineProperty(navigator, 'webdriver', {
     get: () => false,
     configurable: true,
 });
 
-// Connection API
 if ('connection' in navigator) {
     Object.defineProperty(navigator, 'connection', {
         get: () => undefined,
@@ -374,7 +373,6 @@ if ('bluetooth' in navigator) {
     });
 }
 
-// USB API
 if ('usb' in navigator) {
     Object.defineProperty(navigator, 'usb', {
         get: () => undefined,
@@ -382,13 +380,11 @@ if ('usb' in navigator) {
     });
 }
 
-// Speech synthesis voices — return macOS-like voice list
 if (typeof speechSynthesis !== 'undefined') {
     const origGetVoices = speechSynthesis.getVoices;
     speechSynthesis.getVoices = function() {
         const voices = origGetVoices.call(this);
         if (voices.length === 0) {
-            // Return at least macOS default voices
             return [{name: 'Samantha', lang: 'en-US', localService: true, voiceURI: 'Samantha', default: true}];
         }
         return voices;
@@ -533,7 +529,6 @@ _IFRAME_INLINE_JS = """
 
 _OVERLAY_REMOVAL_JS = """
 (function removeOverlays() {
-    // Remove elements with common overlay/modal/cookie-banner patterns
     const selectors = [
         '[class*="cookie"]', '[id*="cookie"]',
         '[class*="consent"]', '[id*="consent"]',
@@ -556,7 +551,6 @@ _OVERLAY_REMOVAL_JS = """
         }
     }
 
-    // Remove any remaining fixed/sticky elements with high z-index (likely overlays)
     for (const el of document.querySelectorAll('*')) {
         const style = window.getComputedStyle(el);
         if ((style.position === 'fixed' || style.position === 'sticky')
@@ -566,7 +560,6 @@ _OVERLAY_REMOVAL_JS = """
         }
     }
 
-    // Re-enable scrolling on body (often disabled by modals)
     document.body.style.overflow = 'auto';
     document.documentElement.style.overflow = 'auto';
 })();
@@ -635,10 +628,8 @@ async def _route_handler(route, *, block_media: bool = False):
         hostname = urlparse(req.url).hostname or ""
     except Exception:
         hostname = ""
-    # Block known ad/tracker domains
     if any(hostname == d or hostname.endswith("." + d) for d in _AD_TRACKER_DOMAINS):
         return await route.abort()
-    # Optionally block media resources (images, fonts, video/audio)
     if block_media and req.resource_type in _BLOCKED_MEDIA_TYPES:
         return await route.abort()
     return await route.continue_()
@@ -702,7 +693,9 @@ async def solve_cloudflare(page, *, max_retries: int = 2) -> bool:
 
     for attempt in range(max_retries + 1):
         if cf_type == "non-interactive":
-            while "<title>Just a moment...</title>" in await _cf_page_content(page):
+            for _wait_iter in range(30):  # cap at 30 s to prevent infinite loop
+                if "<title>Just a moment...</title>" not in await _cf_page_content(page):
+                    break
                 try:
                     await page.wait_for_timeout(1_000)
                     await page.wait_for_load_state("load", timeout=5_000)
@@ -788,6 +781,68 @@ async def solve_cloudflare(page, *, max_retries: int = 2) -> bool:
     return False
 
 
+_PAGE_RESET_JS = """
+(async () => {
+    try { window.stop(); } catch(e) {}
+    try { localStorage.clear(); } catch(e) {}
+    try { sessionStorage.clear(); } catch(e) {}
+    try {
+        const dbs = await indexedDB.databases();
+        for (const db of dbs) { indexedDB.deleteDatabase(db.name); }
+    } catch(e) {}
+})();
+"""
+
+
+class PoolMetrics:
+    __slots__ = (
+        "total_acquires", "total_releases", "total_recycles",
+        "total_cold_creates", "recycle_failures",
+        "_acquire_times", "_last_reset",
+    )
+
+    def __init__(self):
+        self.total_acquires: int = 0
+        self.total_releases: int = 0
+        self.total_recycles: int = 0
+        self.total_cold_creates: int = 0
+        self.recycle_failures: int = 0
+        self._acquire_times: list[float] = []
+        self._last_reset = time.monotonic()
+
+    def record_acquire(self, duration_ms: float) -> None:
+        self.total_acquires += 1
+        self._acquire_times.append(duration_ms)
+        if len(self._acquire_times) > 1000:
+            self._acquire_times = self._acquire_times[-500:]
+
+    @property
+    def avg_acquire_ms(self) -> float:
+        if not self._acquire_times:
+            return 0.0
+        return sum(self._acquire_times) / len(self._acquire_times)
+
+    @property
+    def p95_acquire_ms(self) -> float:
+        if not self._acquire_times:
+            return 0.0
+        sorted_times = sorted(self._acquire_times)
+        idx = int(len(sorted_times) * 0.95)
+        return sorted_times[min(idx, len(sorted_times) - 1)]
+
+    def snapshot(self) -> dict:
+        return {
+            "total_acquires": self.total_acquires,
+            "total_releases": self.total_releases,
+            "total_recycles": self.total_recycles,
+            "total_cold_creates": self.total_cold_creates,
+            "recycle_failures": self.recycle_failures,
+            "avg_acquire_ms": round(self.avg_acquire_ms, 2),
+            "p95_acquire_ms": round(self.p95_acquire_ms, 2),
+            "uptime_seconds": round(time.monotonic() - self._last_reset, 1),
+        }
+
+
 class BrowserPool:
     def __init__(self, pool_size: int | None = None, browser_type: str | None = None):
         self._pool_size = pool_size or settings.browser_pool_size
@@ -801,6 +856,10 @@ class BrowserPool:
         self._user_data_dir: str | None = None
         self._persistent_ctx: BrowserContext | None = None
         self._proxy_browser: Browser | None = None
+        self.metrics = PoolMetrics()
+        self._session_contexts: dict[str, BrowserContext] = {}
+        self._session_dirs: dict[str, str] = {}
+        self._trace_dir: str | None = None
 
     def _context_kwargs(
         self,
@@ -941,6 +1000,21 @@ class BrowserPool:
             stealth=settings.stealth_mode,
         )
 
+    async def _close_page(self, page: Page) -> None:
+        """Close a page — close just the page if persistent, or the whole context otherwise.
+
+        For proxy pages, closing the context also frees the proxy browser context,
+        preventing unbounded context accumulation.
+        """
+        is_persistent = self._persistent_ctx is not None and page.context == self._persistent_ctx
+        try:
+            if is_persistent:
+                await page.close()
+            else:
+                await page.context.close()
+        except Exception:
+            pass
+
     async def replace_with_proxied_page(
         self,
         old_page: Page,
@@ -948,47 +1022,56 @@ class BrowserPool:
         geolocation: dict[str, float] | None = None,
     ) -> Page:
         """Close old_page and create a new stealth page with proxy."""
-        is_persistent_page = (
-            self._persistent_ctx is not None
-            and old_page.context == self._persistent_ctx
-        )
-        try:
-            if is_persistent_page:
-                await old_page.close()
-            else:
-                await old_page.context.close()
-        except Exception:
-            pass
+        await self._close_page(old_page)
         return await self._new_stealth_page(proxy_url=proxy_url, geolocation=geolocation)
 
     async def acquire(self) -> Page:
-        return await self._pages.get()
+        t0 = time.monotonic()
+        page = await self._pages.get()
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        self.metrics.record_acquire(elapsed_ms)
+        return page
 
-    async def release(self, page: Page):
-        is_persistent_page = (
-            self._persistent_ctx is not None
-            and page.context == self._persistent_ctx
-        )
-
-        if is_persistent_page:
+    async def _recycle_page(self, page: Page) -> Page | None:
+        """Reset a persistent-context page to about:blank instead of destroying it."""
+        if not settings.browser_standby_recycle:
+            return None
+        is_persistent = self._persistent_ctx is not None and page.context == self._persistent_ctx
+        if not is_persistent:
+            return None
+        try:
+            await page.goto("about:blank", timeout=5_000)
+            await page.evaluate(_PAGE_RESET_JS)
+            self.metrics.total_recycles += 1
+            return page
+        except Exception:
+            self.metrics.recycle_failures += 1
             try:
                 await page.close()
             except Exception:
-                logger.debug("page_close_failed_during_release")
-        else:
-            try:
-                await page.context.close()
-            except Exception:
-                logger.debug("context_close_failed_during_release")
+                pass
+            return None
+
+    async def release(self, page: Page):
+        self.metrics.total_releases += 1
 
         if self._degraded:
+            await self._close_page(page)
             return
         if not self._persistent_ctx and not self._browser:
+            await self._close_page(page)
             return
 
+        recycled = await self._recycle_page(page)
+        if recycled is not None:
+            await self._pages.put(recycled)
+            return
+
+        await self._close_page(page)
         new_page = None
         try:
             new_page = await self._new_stealth_page()
+            self.metrics.total_cold_creates += 1
         except Exception:
             logger.warning("stealth_page_creation_failed")
             try:
@@ -997,6 +1080,7 @@ class BrowserPool:
                 elif self._browser is not None:
                     ctx = await self._browser.new_context()
                     new_page = await ctx.new_page()
+                self.metrics.total_cold_creates += 1
             except Exception:
                 logger.error("page_creation_failed_pool_degraded")
                 self._degraded = True
@@ -1004,9 +1088,98 @@ class BrowserPool:
         if new_page is not None:
             await self._pages.put(new_page)
 
+    async def acquire_session_page(self, session_id: str) -> Page:
+        """Acquire a page bound to a persistent context for the given session."""
+        t0 = time.monotonic()
+
+        if session_id in self._session_contexts:
+            ctx = self._session_contexts[session_id]
+            page = await ctx.new_page()
+        else:
+            launcher = await self._get_browser_launcher()
+            is_chromium = self._browser_type == "chromium"
+            user_data_dir = tempfile.mkdtemp(prefix=f"pawgrab_session_{session_id[:8]}_")
+            self._session_dirs[session_id] = user_data_dir
+
+            ctx_kwargs = self._context_kwargs()
+            ctx_kwargs.pop("permissions", None)
+
+            if is_chromium:
+                ctx = await launcher.launch_persistent_context(
+                    user_data_dir,
+                    headless=True,
+                    args=list(_STEALTH_CHROMIUM_ARGS),
+                    ignore_default_args=list(_HARMFUL_DEFAULT_ARGS),
+                    **ctx_kwargs,
+                )
+            else:
+                if self._browser is None:
+                    self._browser = await launcher.launch(headless=True)
+                ctx = await self._browser.new_context(**ctx_kwargs)
+
+            if settings.stealth_mode:
+                await _apply_stealth(ctx)
+                evasion_js = _build_evasion_script(browser_type=self._browser_type)
+                await ctx.add_init_script(evasion_js)
+            await ctx.route("**/*", _route_handler)
+            self._session_contexts[session_id] = ctx
+            page = await ctx.new_page()
+            logger.info("session_context_created", session_id=session_id)
+
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        self.metrics.record_acquire(elapsed_ms)
+        return page
+
+    async def release_session_page(self, page: Page) -> None:
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+    async def close_session(self, session_id: str) -> None:
+        ctx = self._session_contexts.pop(session_id, None)
+        if ctx:
+            try:
+                await ctx.close()
+            except Exception:
+                pass
+        data_dir = self._session_dirs.pop(session_id, None)
+        if data_dir:
+            shutil.rmtree(data_dir, ignore_errors=True)
+        logger.info("session_context_closed", session_id=session_id)
+
+    async def start_trace(self, context: BrowserContext, *, name: str = "trace") -> None:
+        if self._trace_dir is None:
+            self._trace_dir = tempfile.mkdtemp(prefix="pawgrab_traces_")
+        try:
+            await context.tracing.start(
+                screenshots=True,
+                snapshots=True,
+                sources=False,
+            )
+            logger.debug("trace_started", name=name)
+        except Exception as exc:
+            logger.warning("trace_start_failed", error=str(exc))
+
+    async def stop_trace(self, context: BrowserContext, *, name: str = "trace") -> str | None:
+        if self._trace_dir is None:
+            return None
+        trace_path = os.path.join(self._trace_dir, f"{name}_{int(time.time() * 1000)}.zip")
+        try:
+            await context.tracing.stop(path=trace_path)
+            logger.info("trace_saved", path=trace_path, name=name)
+            return trace_path
+        except Exception as exc:
+            logger.warning("trace_stop_failed", error=str(exc))
+            return None
+
     async def stop(self):
         if not self._started:
             return
+
+        for sid in list(self._session_contexts):
+            await self.close_session(sid)
+
         for ctx in self._persistent_contexts.values():
             try:
                 await ctx.close()
@@ -1047,5 +1220,10 @@ class BrowserPool:
             shutil.rmtree(self._user_data_dir, ignore_errors=True)
             self._user_data_dir = None
 
+        if self._trace_dir:
+            shutil.rmtree(self._trace_dir, ignore_errors=True)
+            self._trace_dir = None
+
         self._started = False
-        logger.info("browser_pool_stopped")
+        final_metrics = self.metrics.snapshot()
+        logger.info("browser_pool_stopped", **final_metrics)

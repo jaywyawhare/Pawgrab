@@ -4,10 +4,9 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from .common import JobStatus, OutputFormat
+from .common import JobStatus, OutputFormat, PaginatedJobResult
 from .scrape import ScrapeResponse
 
-# Keep CrawlStatus as an alias for backward compatibility with imports
 CrawlStatus = JobStatus
 
 
@@ -17,15 +16,20 @@ class CrawlStrategyType(str, Enum):
     BEST_FIRST = "best_first"
 
 
-class CrawlRequest(BaseModel):
+class CrawlParamsBase(BaseModel):
+    """Shared crawl/schedule parameters."""
+
     url: HttpUrl
     max_pages: int = Field(default=10, ge=1, le=500, description="Maximum number of pages to crawl")
     max_depth: int = Field(default=3, ge=1, le=10, description="Maximum link depth from the start URL")
     formats: list[OutputFormat] = Field(default=[OutputFormat.MARKDOWN], description="Output formats for scraped content")
-    include_metadata: bool = Field(default=True, description="Include page metadata (title, description, language)")
-    webhook_url: HttpUrl | None = Field(default=None, description="URL to POST results to when crawl completes")
-    resume_job_id: str | None = Field(default=None, description="Job ID of a previous crawl to resume")
+    webhook_url: HttpUrl | None = Field(default=None, description="URL to POST results to when job completes")
     strategy: CrawlStrategyType = Field(default=CrawlStrategyType.BFS, description="Crawl strategy: bfs, dfs, or best_first")
+
+
+class CrawlRequest(CrawlParamsBase):
+    include_metadata: bool = Field(default=True, description="Include page metadata (title, description, language)")
+    resume_job_id: str | None = Field(default=None, description="Job ID of a previous crawl to resume")
     allowed_domains: list[str] | None = Field(default=None, description="Only follow links to these domains")
     blocked_domains: list[str] | None = Field(default=None, description="Never follow links to these domains")
     include_path_patterns: list[str] | None = Field(default=None, description="Only follow URLs matching these regex patterns")
@@ -39,14 +43,7 @@ class CrawlResponse(BaseModel):
     url: str
 
 
-class CrawlJobStatus(BaseModel):
-    job_id: str
-    status: JobStatus
+class CrawlJobStatus(PaginatedJobResult):
     pages_scraped: int = Field(default=0, description="Number of pages successfully scraped so far")
     total_pages: int | None = Field(default=None, description="Estimated total pages (known after sitemap discovery)")
     results: list[ScrapeResponse] = []
-    error: str | None = None
-    page: int | None = Field(default=None, description="Current results page number")
-    limit: int | None = Field(default=None, description="Results per page")
-    total_results: int | None = Field(default=None, description="Total number of result entries stored")
-    has_next: bool | None = Field(default=None, description="Whether more result pages are available")

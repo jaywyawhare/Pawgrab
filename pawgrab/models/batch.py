@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from .common import JobStatus, OutputFormat
+from .common import AsyncJobResponse, OutputFormat, PaginatedJobResult
 from .scrape import ScrapeResponse
 
 
@@ -14,20 +14,11 @@ class BatchScrapeRequest(BaseModel):
     webhook_url: HttpUrl | None = Field(default=None, description="URL to POST results to when batch completes")
 
 
-class BatchScrapeResponse(BaseModel):
-    job_id: str
-    status: JobStatus
-    total_urls: int
+class BatchScrapeResponse(AsyncJobResponse):
+    pass
 
 
-class BatchJobStatus(BaseModel):
-    job_id: str
-    status: JobStatus
+class BatchJobStatus(PaginatedJobResult):
     urls_scraped: int = Field(default=0, description="Number of URLs successfully scraped so far")
     total_urls: int = Field(default=0, description="Total number of URLs in the batch")
     results: list[ScrapeResponse] = []
-    error: str | None = None
-    page: int | None = Field(default=None, description="Current results page number")
-    limit: int | None = Field(default=None, description="Results per page")
-    total_results: int | None = Field(default=None, description="Total number of result entries stored")
-    has_next: bool | None = Field(default=None, description="Whether more result pages are available")

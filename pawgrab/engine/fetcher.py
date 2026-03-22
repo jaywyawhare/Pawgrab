@@ -54,30 +54,28 @@ def _sanitize_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
     return {k: v for k, v in headers.items() if k.lower() not in _BLOCKED_HEADERS}
 
 
-_MAX_SESSIONS = 12  # cap session pool size
+_MAX_SESSIONS = 12
 _MAX_HOST_TARGETS = 2000
 _sessions: dict[str, AsyncSession] = {}
 _session_lock = asyncio.Lock()
-_host_targets: dict[str, str] = {}  # host → impersonate target for connection reuse
+_host_targets: dict[str, str] = {}
+_host_targets_lock = asyncio.Lock()
 
 
-def _impersonate_for_host(host: str) -> str:
-    """Return a consistent impersonation target for a host.
+async def _impersonate_for_host(host: str) -> str:
+    """Pin a TLS fingerprint per-host for connection reuse.
 
-    Pins the TLS fingerprint per-host so repeated requests reuse
-    the same session → warm TCP/TLS connection.
-
-    Always starts with Safari so the TLS fingerprint matches the browser
-    fallback path (which uses Safari UA/evasion profile).  This prevents
-    anti-bot systems from seeing two different browser families from the
-    same IP when curl escalates to Playwright.
+    Starts with Safari so the fingerprint matches the Playwright fallback
+    path — prevents anti-bot systems from seeing two browser families
+    from the same IP when curl escalates to headless.
     """
-    if host not in _host_targets:
-        if len(_host_targets) >= _MAX_HOST_TARGETS:
-            oldest = next(iter(_host_targets))
-            del _host_targets[oldest]
-        _host_targets[host] = random.choice(SAFARI_TARGETS)
-    return _host_targets[host]
+    async with _host_targets_lock:
+        if host not in _host_targets:
+            if len(_host_targets) >= _MAX_HOST_TARGETS:
+                oldest = next(iter(_host_targets))
+                del _host_targets[oldest]
+            _host_targets[host] = random.choice(SAFARI_TARGETS)
+        return _host_targets[host]
 
 
 async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSession:
@@ -113,13 +111,15 @@ async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSessi
 
 async def close_sessions():
     """Close all persistent sessions. Called on shutdown."""
-    for session in _sessions.values():
-        try:
-            await session.close()
-        except Exception:
-            pass
-    _sessions.clear()
-    _host_targets.clear()
+    async with _session_lock:
+        for session in _sessions.values():
+            try:
+                await session.close()
+            except Exception:
+                pass
+        _sessions.clear()
+    async with _host_targets_lock:
+        _host_targets.clear()
 
 
 class FetchResult:
@@ -128,6 +128,7 @@ class FetchResult:
         "resp_headers", "cookies", "screenshot_bytes", "pdf_bytes",
         "content_bytes", "action_warnings",
         "network_requests", "console_logs", "mhtml_data", "ssl_info",
+        "retry_count", "websocket_messages", "trace_path",
     )
 
     def __init__(
@@ -148,6 +149,9 @@ class FetchResult:
         console_logs: list[dict] | None = None,
         mhtml_data: bytes | None = None,
         ssl_info: dict | None = None,
+        retry_count: int = 0,
+        websocket_messages: list[dict] | None = None,
+        trace_path: str | None = None,
     ):
         self.html = html
         self.status_code = status_code
@@ -164,6 +168,9 @@ class FetchResult:
         self.console_logs = console_logs
         self.mhtml_data = mhtml_data
         self.ssl_info = ssl_info
+        self.retry_count = retry_count
+        self.websocket_messages = websocket_messages
+        self.trace_path = trace_path
 
 
 async def fetch_page(
@@ -179,16 +186,17 @@ async def fetch_page(
     screenshot_fullpage: bool = True,
     capture_pdf: bool = False,
     actions: list | None = None,
-    # Browser enhancements
     browser_type: str | None = None,
     geolocation: dict[str, float] | None = None,
     text_mode: bool = False,
     scroll_to_bottom: bool = False,
-    # Capture options
     capture_network: bool = False,
     capture_console: bool = False,
     capture_mhtml: bool = False,
     capture_ssl: bool = False,
+    capture_websocket: bool = False,
+    session_id: str | None = None,
+    enable_trace: bool = False,
 ) -> FetchResult:
     """Fetch a page via curl_cffi (with TLS impersonation) or Playwright.
 
@@ -222,6 +230,9 @@ async def fetch_page(
         capture_console=capture_console,
         capture_mhtml=capture_mhtml,
         capture_ssl=capture_ssl,
+        capture_websocket=capture_websocket,
+        session_id=session_id,
+        enable_trace=enable_trace,
     )
 
     if actions and browser_pool is not None:
@@ -245,8 +256,10 @@ async def fetch_page(
         if ref:
             headers["Referer"] = ref
 
+    retries = 0
+
     host = urlparse(url).netloc
-    first_target = settings.impersonate or _impersonate_for_host(host)
+    first_target = settings.impersonate or await _impersonate_for_host(host)
     try:
         result = await _fetch_with_curl(
             url, timeout=timeout, impersonate=first_target,
@@ -277,6 +290,7 @@ async def fetch_page(
         merged_cookies = dict(cookies or {})
         merged_cookies.update(result.cookies)
         for attempt in range(2, settings.max_challenge_retries + 2):
+            retries += 1
             # Honor Retry-After header on 429s
             retry_delay = _parse_retry_after(result)
             if retry_delay and retry_delay <= 30:
@@ -307,8 +321,8 @@ async def fetch_page(
             merged_cookies.update(result.cookies)
             challenge = _check_challenge(result)
             if not challenge.detected:
-                # Pin the successful target so future requests reuse this session
-                _host_targets[host] = retry_target
+                async with _host_targets_lock:
+                    _host_targets[host] = retry_target
                 logger.info(
                     "challenge_bypassed",
                     url=url,
@@ -339,12 +353,12 @@ async def fetch_page(
             result.challenge = challenge
             return result
 
-    # Auto-detect: check if JS rendering is needed (skip for PDF responses)
     if wait_for_js is None and browser_pool is not None and result.content_bytes is None:
         if needs_js_rendering(result.html, url=url):
             logger.info("js_rendering_detected", url=url)
             return await _fetch_with_browser(url, **_browser_kwargs)
 
+    result.retry_count = retries
     return result
 
 
@@ -388,13 +402,12 @@ async def _fetch_with_curl(
         for k, v in resp.cookies.items():
             resp_cookies[k] = v
 
-    # Detect PDF responses — store raw bytes for extraction in scrape_service
     content_type = resp_headers.get("content-type", resp_headers.get("Content-Type", ""))
     content_bytes: bytes | None = None
     html_text = resp.text
     if is_pdf_content(content_type, str(resp.url)):
         content_bytes = resp.content
-        html_text = ""  # no HTML to parse for PDFs
+        html_text = ""
 
     return FetchResult(
         html=html_text,
@@ -404,6 +417,17 @@ async def _fetch_with_curl(
         cookies=resp_cookies,
         content_bytes=content_bytes,
     )
+
+
+def _setup_ws_capture(ws, messages: list[dict]):
+    """Attach handlers to capture WebSocket frames."""
+    ws_url = ws.url
+    def _on_frame_sent(payload):
+        messages.append({"direction": "sent", "url": ws_url, "data": str(payload)[:5000]})
+    def _on_frame_received(payload):
+        messages.append({"direction": "received", "url": ws_url, "data": str(payload)[:5000]})
+    ws.on("framesent", _on_frame_sent)
+    ws.on("framereceived", _on_frame_received)
 
 
 async def _execute_actions(page: object, actions: list, timeout: int) -> list[str]:
@@ -431,7 +455,36 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
                 case ActionType.SCREENSHOT:
                     await page.screenshot()
                 case ActionType.EXECUTE_JS:
-                    await page.evaluate(action.text)
+                    await asyncio.wait_for(
+                        page.evaluate(action.text),
+                        timeout=per_action_timeout / 1000,
+                    )
+                case ActionType.SELECT:
+                    await page.select_option(action.selector, action.text, timeout=per_action_timeout)
+                case ActionType.CHECK:
+                    await page.check(action.selector, timeout=per_action_timeout)
+                case ActionType.UNCHECK:
+                    await page.uncheck(action.selector, timeout=per_action_timeout)
+                case ActionType.FOCUS:
+                    await page.focus(action.selector, timeout=per_action_timeout)
+                case ActionType.HOVER:
+                    await page.hover(action.selector, timeout=per_action_timeout)
+                case ActionType.FILL_FORM:
+                    for field_selector, value in (action.form_data or {}).items():
+                        await page.fill(field_selector, value, timeout=per_action_timeout)
+                case ActionType.SUBMIT_FORM:
+                    form = page.locator(action.selector)
+                    submit_btn = form.locator('[type="submit"], button[type="submit"], input[type="submit"]')
+                    if await submit_btn.count() > 0:
+                        await submit_btn.first.click(timeout=per_action_timeout)
+                    else:
+                        # Pass selector as an argument to avoid JS injection via user-supplied strings
+                        await page.evaluate("(sel) => document.querySelector(sel).submit()", action.selector)
+                case ActionType.PRESS_KEY:
+                    if action.selector:
+                        await page.press(action.selector, action.text, timeout=per_action_timeout)
+                    else:
+                        await page.keyboard.press(action.text)
         except Exception as exc:
             msg = f"Action {i} ({action.type.value}) failed: {exc}"
             logger.warning("action_failed", action=action.type.value, index=i, error=str(exc))
@@ -479,25 +532,38 @@ async def _fetch_with_browser(
     capture_console: bool = False,
     capture_mhtml: bool = False,
     capture_ssl: bool = False,
+    capture_websocket: bool = False,
+    session_id: str | None = None,
+    enable_trace: bool = False,
 ) -> FetchResult:
-    """Fetch a page using the Playwright browser pool.
-
-    Waits for network-idle, then checks for challenges.  If a Cloudflare
-    interstitial is detected, waits for it to auto-resolve.
-
-    Supports: shadow DOM flattening, iframe inlining, overlay removal,
-    text-only mode, infinite scroll, network/console capture, MHTML snapshots.
-    """
+    """Fetch via Playwright with optional session profile and tracing."""
     if settings.solve_cloudflare and timeout < _CF_MIN_TIMEOUT:
         timeout = _CF_MIN_TIMEOUT
 
-    page = await pool.acquire()
+    use_session = (
+        session_id
+        and settings.browser_session_profiles
+        and hasattr(pool, "acquire_session_page")
+    )
+    if use_session:
+        page = await pool.acquire_session_page(session_id)
+    else:
+        page = await pool.acquire()
+
     try:
-        if proxy_url and hasattr(pool, "replace_with_proxied_page"):
+        if proxy_url and hasattr(pool, "replace_with_proxied_page") and not use_session:
             page = await pool.replace_with_proxied_page(page, proxy_url, geolocation=geolocation)
     except Exception:
-        await pool.release(page)
+        if use_session:
+            await pool.release_session_page(page)
+        else:
+            await pool.release(page)
         raise
+
+    tracing = enable_trace or settings.browser_trace_enabled
+    if tracing and hasattr(pool, "start_trace"):
+        trace_name = session_id or "anon"
+        await pool.start_trace(page.context, name=trace_name)
 
     network_requests: list[dict] = [] if capture_network else None
     console_logs: list[dict] = [] if capture_console else None
@@ -513,7 +579,6 @@ async def _fetch_with_browser(
             ]
             await page.context.add_cookies(cookie_list)
 
-        # Ad/tracker blocking is already active at context level
         if text_mode:
             from pawgrab.engine.browser import _BLOCKED_MEDIA_TYPES
             async def _media_block_handler(route):
@@ -541,6 +606,10 @@ async def _fetch_with_browser(
                 "text": msg.text,
                 "location": str(msg.location) if hasattr(msg, "location") else None,
             }))
+
+        websocket_messages: list[dict] = [] if capture_websocket else None
+        if capture_websocket:
+            page.on("websocket", lambda ws: _setup_ws_capture(ws, websocket_messages))
 
         response = await page.goto(url, timeout=timeout, wait_until="networkidle")
 
@@ -585,7 +654,6 @@ async def _fetch_with_browser(
             "cloudflare_js",
             "cloudflare_interstitial",
         ):
-            # Active Turnstile solver (when enabled)
             if settings.solve_cloudflare:
                 from pawgrab.engine.browser import solve_cloudflare as _solve_cf
 
@@ -625,7 +693,6 @@ async def _fetch_with_browser(
                     console_logs=console_logs,
                 )
 
-        # Capture screenshot/PDF before releasing the page
         screenshot_bytes = None
         pdf_bytes = None
         mhtml_data = None
@@ -642,21 +709,30 @@ async def _fetch_with_browser(
             except Exception as exc:
                 logger.warning("pdf_capture_failed", url=url, error=str(exc))
 
-        # MHTML snapshot via CDP
         if capture_mhtml:
+            cdp = None
             try:
                 cdp = await page.context.new_cdp_session(page)
-                result = await cdp.send("Page.captureSnapshot", {"format": "mhtml"})
-                mhtml_data = result.get("data", "").encode("utf-8")
-                await cdp.detach()
+                snap = await cdp.send("Page.captureSnapshot", {"format": "mhtml"})
+                mhtml_data = snap.get("data", "").encode("utf-8")
             except Exception as exc:
                 logger.warning("mhtml_capture_failed", url=url, error=str(exc))
+            finally:
+                if cdp:
+                    try:
+                        await cdp.detach()
+                    except Exception:
+                        pass
 
-        # SSL certificate info
         if capture_ssl and response:
             ssl_info = await _capture_ssl_info(page, url)
 
-        return FetchResult(
+        trace_path = None
+        if tracing and hasattr(pool, "stop_trace"):
+            trace_name = session_id or "anon"
+            trace_path = await pool.stop_trace(page.context, name=trace_name)
+
+        result = FetchResult(
             html=html,
             status_code=status,
             url=page.url,
@@ -670,19 +746,25 @@ async def _fetch_with_browser(
             console_logs=console_logs,
             mhtml_data=mhtml_data,
             ssl_info=ssl_info,
+            websocket_messages=websocket_messages,
         )
+        if trace_path:
+            result.trace_path = trace_path
+        return result
     finally:
-        await pool.release(page)
+        if use_session:
+            await pool.release_session_page(page)
+        else:
+            await pool.release(page)
 
 
 async def _capture_ssl_info(page, url: str) -> dict | None:
     """Capture SSL certificate details via CDP Security domain."""
+    cdp = None
     try:
         cdp = await page.context.new_cdp_session(page)
         await cdp.send("Security.enable")
-        # Get security state which includes certificate info
         state = await cdp.send("Security.getSecurityState", {})
-        await cdp.detach()
 
         if state and "securityState" in state:
             return {
@@ -692,6 +774,12 @@ async def _capture_ssl_info(page, url: str) -> dict | None:
             }
     except Exception:
         pass
+    finally:
+        if cdp:
+            try:
+                await cdp.detach()
+            except Exception:
+                pass
     return None
 
 
@@ -708,7 +796,6 @@ def _check_challenge(result: FetchResult) -> ChallengeDetection:
     if challenge.detected:
         return challenge
 
-    # Silent block detection: tiny body on 403/429 with no visible challenge
     if result.status_code in (403, 429) and len(result.html.strip()) < _SILENT_BLOCK_MAX_BODY:
         return ChallengeDetection(
             detected=True,
@@ -716,7 +803,6 @@ def _check_challenge(result: FetchResult) -> ChallengeDetection:
             detail=f"Silent block detected (HTTP {result.status_code}, body {len(result.html)} chars)",
         )
 
-    # Header-based detection: anti-bot systems send specific headers
     h = result.resp_headers
     if h.get("cf-mitigated") == "challenge":
         return ChallengeDetection(
@@ -729,7 +815,10 @@ def _check_challenge(result: FetchResult) -> ChallengeDetection:
 
 
 def _parse_retry_after(result: FetchResult) -> float | None:
-    """Parse Retry-After header from 429 responses."""
+    """Parse Retry-After header from 429 responses.
+
+    Handles both integer-seconds and HTTP-date formats (RFC 7231).
+    """
     if result.status_code != 429:
         return None
     retry_after = result.resp_headers.get("Retry-After") or result.resp_headers.get("retry-after")
@@ -738,4 +827,12 @@ def _parse_retry_after(result: FetchResult) -> float | None:
     try:
         return float(retry_after)
     except ValueError:
+        pass
+    try:  # HTTP-date format: e.g. "Wed, 21 Oct 2015 07:28:00 GMT"
+        from email.utils import parsedate_to_datetime
+        import time as _time
+        dt = parsedate_to_datetime(retry_after)
+        delay = dt.timestamp() - _time.time()
+        return max(0.0, delay)
+    except Exception:
         return None

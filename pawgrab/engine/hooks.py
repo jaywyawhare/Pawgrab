@@ -10,7 +10,6 @@ import structlog
 
 logger = structlog.get_logger()
 
-# Type alias for hook callables
 HookCallable = Callable[..., Coroutine[Any, Any, None]]
 
 VALID_HOOKS = frozenset({

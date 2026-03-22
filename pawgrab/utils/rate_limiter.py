@@ -20,7 +20,6 @@ def get_limiter(url: str) -> AsyncLimiter:
         _limiters.move_to_end(domain)
         return _limiters[domain]
 
-    # Evict oldest entries if at capacity
     while len(_limiters) >= _MAX_DOMAINS:
         _limiters.popitem(last=False)
 
@@ -33,3 +32,12 @@ async def wait_for_slot(url: str) -> None:
     """Wait until a rate limit slot is available for this domain."""
     limiter = get_limiter(url)
     await limiter.acquire()
+
+
+async def guard_url(url: str) -> None:
+    """Check robots.txt and wait for a rate limit slot. Raises PermissionError if blocked."""
+    from pawgrab.engine.robots import is_allowed
+
+    if not await is_allowed(url):
+        raise PermissionError(f"URL blocked by robots.txt: {url}")
+    await wait_for_slot(url)

@@ -22,7 +22,6 @@ class URLScorer:
       - Known high-value path patterns
     """
 
-    # Path patterns commonly associated with valuable content
     _HIGH_VALUE_PATTERNS = re.compile(
         r"/(article|blog|post|news|docs|guide|tutorial|product|page|category)",
         re.IGNORECASE,
@@ -42,29 +41,24 @@ class URLScorer:
         path = parsed.path.lower()
         score = 0.5  # base score
 
-        # Path depth: shorter paths are generally more important
         depth = path.count("/")
         if depth <= 2:
             score += 0.15
         elif depth >= 5:
             score -= 0.15
 
-        # Keyword presence in URL
         url_lower = url.lower()
         for keyword in self.keywords:
             if keyword in url_lower:
                 score += 0.2
                 break  # cap keyword bonus
 
-        # High-value path patterns
         if self._HIGH_VALUE_PATTERNS.search(path):
             score += 0.1
 
-        # Low-value path patterns
         if self._LOW_VALUE_PATTERNS.search(path):
             score -= 0.2
 
-        # Penalize URLs with too many query params (usually filters/pagination)
         query_params = parsed.query.count("&") + (1 if parsed.query else 0)
         if query_params > 3:
             score -= 0.1

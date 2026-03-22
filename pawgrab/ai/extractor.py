@@ -6,23 +6,22 @@ from typing import Any
 
 import structlog
 
-from pawgrab.ai.openai_provider import OpenAIProvider
 from pawgrab.engine.cleaner import extract_content
 from pawgrab.engine.converter import html_to_markdown
 from pawgrab.engine.fetcher import fetch_page
-from pawgrab.engine.robots import is_allowed
-from pawgrab.utils.rate_limiter import wait_for_slot
+from pawgrab.utils.rate_limiter import guard_url
 
 logger = structlog.get_logger()
 
-_provider: OpenAIProvider | None = None
+_provider = None
 
 
-def get_provider() -> OpenAIProvider:
-    """Get or create the OpenAI provider singleton."""
+def get_provider():
+    """Get or create the LLM provider based on configuration."""
     global _provider
     if _provider is None:
-        _provider = OpenAIProvider()
+        from pawgrab.ai.providers import get_llm_provider
+        _provider = get_llm_provider()
     return _provider
 
 
@@ -38,10 +37,7 @@ async def extract_from_url(
     chunk_overlap: int = 200,
 ) -> dict[str, Any]:
     """Full pipeline: fetch → clean → markdown → (chunk) → LLM extraction."""
-    if not await is_allowed(url):
-        raise PermissionError(f"URL blocked by robots.txt: {url}")
-
-    await wait_for_slot(url)
+    await guard_url(url)
     result = await fetch_page(url, timeout=timeout, browser_pool=browser_pool)
     cleaned = extract_content(result.html, url=result.url)
     markdown = html_to_markdown(cleaned.content_html)
@@ -64,7 +60,7 @@ async def extract_from_url(
 async def _chunked_extract(
     markdown: str,
     prompt: str,
-    provider: OpenAIProvider,
+    provider,
     *,
     schema_hint: dict[str, Any] | None = None,
     json_schema: dict[str, Any] | None = None,
@@ -83,7 +79,6 @@ async def _chunked_extract(
 
     logger.info("chunked_extraction", num_chunks=len(chunks), strategy=chunk_strategy)
 
-    # Extract from each chunk
     results: list[dict[str, Any]] = []
     for i, chunk in enumerate(chunks):
         try:
@@ -95,7 +90,6 @@ async def _chunked_extract(
     if not results:
         return {}
 
-    # Merge results
     return _merge_results(results)
 
 
@@ -116,7 +110,6 @@ def _merge_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             if key not in merged:
                 merged[key] = value
             elif isinstance(value, list) and isinstance(merged[key], list):
-                # Deduplicate list values
                 seen = set()
                 combined = []
                 for item in merged[key] + value:
@@ -126,7 +119,6 @@ def _merge_results(results: list[dict[str, Any]]) -> dict[str, Any]:
                         combined.append(item)
                 merged[key] = combined
             elif isinstance(value, dict) and isinstance(merged[key], dict):
-                # Merge dicts, preferring non-null values
                 for dk, dv in value.items():
                     if dk not in merged[key] or merged[key][dk] is None:
                         merged[key][dk] = dv
