@@ -1,8 +1,8 @@
 """Tests for HTML conversion."""
 
 from pawgrab.engine.converter import convert, html_to_markdown, html_to_text
-from pawgrab.utils.text import word_count
 from pawgrab.models.common import OutputFormat
+from pawgrab.utils.text import word_count
 
 
 def test_html_to_markdown():
