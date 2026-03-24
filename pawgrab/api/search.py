@@ -40,7 +40,7 @@ async def search(req: SearchRequest):
             status_code=502,
             code=ErrorCode.SEARCH_FAILED,
             message=f"Search provider error: {type(exc).__name__}",
-        )
+        ) from exc
 
     if not urls:
         return SearchResponse(success=True, query=req.query, results=[], total=0)
@@ -67,7 +67,7 @@ async def search(req: SearchRequest):
 
     results = []
     failed_urls = []
-    for url, response, error in outcomes:
+    for url, response, _error in outcomes:
         if response is not None:
             results.append(response)
         else:

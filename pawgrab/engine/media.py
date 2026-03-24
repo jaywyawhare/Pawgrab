@@ -6,6 +6,8 @@ import re
 from typing import Any
 from urllib.parse import urljoin
 
+from bs4 import BeautifulSoup
+
 from pawgrab.utils.text import make_soup
 
 

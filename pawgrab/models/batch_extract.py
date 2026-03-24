@@ -3,7 +3,7 @@
 from pydantic import BaseModel, Field, HttpUrl
 
 from .common import AsyncJobResponse, PaginatedJobResult
-from .extract import ExtractResponse, ExtractionStrategy
+from .extract import ExtractionStrategy, ExtractResponse
 
 
 class BatchExtractRequest(BaseModel):

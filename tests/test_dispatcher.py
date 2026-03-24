@@ -1,6 +1,5 @@
 """Tests for Phase 6: Memory-adaptive dispatcher."""
 
-import pytest
 
 from pawgrab.engine.dispatcher import MemoryAdaptiveDispatcher, _get_memory_percent
 

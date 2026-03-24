@@ -18,17 +18,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from pawgrab.api import batch, crawl, extract, health, map, proxy, scrape, search, session
+from pawgrab._version import __version__
+from pawgrab.api import batch, crawl, extract, health, map, proxy, schedule, scrape, search, session
 from pawgrab.api import metrics as metrics_api
-from pawgrab.api import schedule
 from pawgrab.config import settings
 from pawgrab.dependencies import shutdown_browser_pool, shutdown_proxy_pool
 from pawgrab.engine.fetcher import close_sessions
 from pawgrab.exceptions import ErrorCode, PawgrabError
 from pawgrab.models.common import ErrorResponse
 from pawgrab.queue.manager import close_redis
-
-from pawgrab._version import __version__
 
 _is_production = settings.log_level.lower() not in ("debug",)
 

@@ -3,22 +3,23 @@
 from __future__ import annotations
 
 import base64
+
 import orjson
 import structlog
 
+from pawgrab.config import settings
 from pawgrab.engine.cleaner import extract_content
 from pawgrab.engine.converter import (
     convert,
     fit_markdown,
     markdown_with_citations,
 )
-from pawgrab.utils.text import word_count
 from pawgrab.engine.fetcher import FetchResult, fetch_page
 from pawgrab.engine.pdf_extractor import extract_pdf_text, pdf_text_to_html
 from pawgrab.models.common import OutputFormat
 from pawgrab.models.scrape import PageMetadata, ScrapeResponse
-from pawgrab.config import settings
 from pawgrab.utils.rate_limiter import guard_url
+from pawgrab.utils.text import word_count
 
 logger = structlog.get_logger()
 

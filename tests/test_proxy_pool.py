@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -236,9 +235,9 @@ async def test_proxy_api_add_list_remove_stats():
     import pawgrab.dependencies as deps
     deps._proxy_pool = None
 
-    from pawgrab.main import app
-
     import httpx
+
+    from pawgrab.main import app
 
     with patch("pawgrab.engine.proxy_pool.settings") as mock_settings:
         mock_settings.proxy_urls = ""
@@ -298,7 +297,7 @@ async def test_fetch_page_uses_proxy_pool():
     mock_result = FetchResult(html="<html>OK</html>", status_code=200, url="https://example.com")
 
     with patch("pawgrab.engine.fetcher._fetch_with_curl", new_callable=AsyncMock, return_value=mock_result) as mock_curl:
-        result = await fetch_page("https://example.com", proxy_pool=mock_pool)
+        _result = await fetch_page("https://example.com", proxy_pool=mock_pool)
         # Verify proxy was passed to curl
         call_kwargs = mock_curl.call_args
         assert call_kwargs.kwargs.get("proxy") == "http://pool-proxy:8080"
@@ -331,6 +330,6 @@ async def test_fetch_page_works_without_proxy_pool():
 
     mock_result = FetchResult(html="<html>OK</html>", status_code=200, url="https://example.com")
     with patch("pawgrab.engine.fetcher._fetch_with_curl", new_callable=AsyncMock, return_value=mock_result) as mock_curl:
-        result = await fetch_page("https://example.com")
+        _result = await fetch_page("https://example.com")
         call_kwargs = mock_curl.call_args
         assert call_kwargs.kwargs.get("proxy") is None

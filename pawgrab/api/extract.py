@@ -11,7 +11,7 @@ from pawgrab.engine.fetcher import fetch_page
 from pawgrab.engine.table_extractor import extract_tables
 from pawgrab.exceptions import ErrorCode, PawgrabError
 from pawgrab.models.common import ErrorResponse
-from pawgrab.models.extract import ExtractRequest, ExtractResponse, ExtractionStrategy
+from pawgrab.models.extract import ExtractionStrategy, ExtractRequest, ExtractResponse
 from pawgrab.utils.rate_limiter import guard_url
 
 logger = structlog.get_logger()
@@ -54,13 +54,13 @@ async def _fetch_for_extraction(url: str, req: ExtractRequest, pool) -> object:
     try:
         await guard_url(url)
     except PermissionError as exc:
-        raise PawgrabError(status_code=403, code=ErrorCode.ROBOTS_BLOCKED, message=str(exc))
+        raise PawgrabError(status_code=403, code=ErrorCode.ROBOTS_BLOCKED, message=str(exc)) from exc
     try:
         return await fetch_page(url, timeout=req.timeout, browser_pool=pool)
     except TimeoutError:
-        raise PawgrabError.timeout(req.timeout)
+        raise PawgrabError.timeout(req.timeout) from None
     except Exception as exc:
-        raise PawgrabError.fetch_failed(exc)
+        raise PawgrabError.fetch_failed(exc) from exc
 
 
 async def _extract_table(req: ExtractRequest, url: str, pool) -> ExtractResponse:
@@ -90,13 +90,13 @@ async def _extract_llm(req: ExtractRequest, url: str, pool) -> ExtractResponse:
             chunk_overlap=req.chunk_overlap,
         )
     except PermissionError as exc:
-        raise PawgrabError(status_code=403, code=ErrorCode.ROBOTS_BLOCKED, message=str(exc))
+        raise PawgrabError(status_code=403, code=ErrorCode.ROBOTS_BLOCKED, message=str(exc)) from exc
     except Exception as exc:
         logger.error("extract_failed", url=url, error=str(exc))
         raise PawgrabError(
             status_code=502, code=ErrorCode.EXTRACTION_FAILED,
             message=f"Extraction failed: {type(exc).__name__}",
-        )
+        ) from exc
 
     resp = ExtractResponse(success=True, url=url, data=data)
     if req.auto_schema:
@@ -114,13 +114,13 @@ async def _extract_non_llm(req: ExtractRequest, url: str, pool) -> ExtractRespon
         )
         data = extractor.extract(result.html)
     except ValueError as exc:
-        raise PawgrabError(status_code=400, code=ErrorCode.VALIDATION_ERROR, message=str(exc))
+        raise PawgrabError(status_code=400, code=ErrorCode.VALIDATION_ERROR, message=str(exc)) from exc
     except Exception as exc:
         logger.error("extraction_failed", url=url, error=str(exc))
         raise PawgrabError(
             status_code=502, code=ErrorCode.EXTRACTION_FAILED,
             message=f"Extraction failed: {type(exc).__name__}",
-        )
+        ) from exc
 
     resp = ExtractResponse(success=True, url=url, data=data)
     if req.auto_schema:

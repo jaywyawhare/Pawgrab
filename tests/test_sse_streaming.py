@@ -37,6 +37,7 @@ class TestSSEEndpoint:
     def app(self):
         from fastapi import FastAPI, Request
         from fastapi.responses import JSONResponse
+
         from pawgrab.api.crawl import router
         from pawgrab.exceptions import PawgrabError
         app = FastAPI()

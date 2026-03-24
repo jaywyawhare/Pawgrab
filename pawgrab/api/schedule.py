@@ -33,7 +33,7 @@ async def create_scheduled_crawl(req: CreateScheduleRequest):
         return ScheduleInfo(**data)
     except Exception as exc:
         logger.error("schedule_create_failed", error=str(exc))
-        raise PawgrabError(status_code=503, code=ErrorCode.QUEUE_UNAVAILABLE, message="Failed to create schedule")
+        raise PawgrabError(status_code=503, code=ErrorCode.QUEUE_UNAVAILABLE, message="Failed to create schedule") from exc
 
 
 @router.get("/schedules", response_model=ScheduleListResponse)

@@ -76,8 +76,9 @@ class GeminiProvider(LLMProvider):
         return self._client
 
     async def extract(self, content: str, prompt: str, schema_hint: dict | None = None, json_schema: dict | None = None) -> dict[str, Any]:
-        from pawgrab.ai.prompts import SYSTEM_PROMPT, build_extraction_prompt
         import asyncio
+
+        from pawgrab.ai.prompts import SYSTEM_PROMPT, build_extraction_prompt
         user_message = build_extraction_prompt(content, prompt, schema_hint)
         if len(user_message) > 100_000:
             user_message = user_message[:100_000] + "\n\n[Content truncated]"

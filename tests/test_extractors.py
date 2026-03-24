@@ -10,7 +10,6 @@ from pawgrab.engine.extractors import (
     get_extractor,
 )
 
-
 SAMPLE_HTML = """
 <html><body>
 <div class="product">

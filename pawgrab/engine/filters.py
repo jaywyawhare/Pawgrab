@@ -151,7 +151,7 @@ class BM25ContentFilter:
         query_vec = {t: idf.get(t, 0) for t in self._query_terms}
         query_norm = math.sqrt(sum(v * v for v in query_vec.values())) or 1.0
 
-        for i, (block, tokens) in enumerate(zip(blocks, block_tokens)):
+        for i, (block, tokens) in enumerate(zip(blocks, block_tokens, strict=True)):
             tf_map = Counter(tokens)
             doc_vec: dict[str, float] = {}
             for term in self._query_terms:

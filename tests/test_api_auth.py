@@ -24,6 +24,7 @@ def auth_app():
 
         # Reimport to pick up patched settings
         import importlib
+
         import pawgrab.main
         importlib.reload(pawgrab.main)
         yield pawgrab.main.app

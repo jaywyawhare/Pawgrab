@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from pawgrab.engine.fetcher import (
-    FetchResult,
     _CF_MIN_TIMEOUT,
+    FetchResult,
     _backoff,
     _check_challenge,
     _parse_retry_after,

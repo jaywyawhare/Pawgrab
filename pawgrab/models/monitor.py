@@ -1,11 +1,11 @@
 """Models for change tracking / content monitoring."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel
 
 
-class ChangeType(str, Enum):
+class ChangeType(StrEnum):
     ADDED = "added"
     REMOVED = "removed"
     MODIFIED = "modified"

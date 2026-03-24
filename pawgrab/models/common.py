@@ -1,11 +1,11 @@
 """Shared models and enums."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(StrEnum):
     MARKDOWN = "markdown"
     HTML = "html"
     TEXT = "text"
@@ -14,7 +14,7 @@ class OutputFormat(str, Enum):
     XML = "xml"
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     """Status for async jobs (crawl, batch)."""
 
     QUEUED = "queued"

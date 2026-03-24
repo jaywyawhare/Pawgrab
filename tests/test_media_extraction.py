@@ -2,7 +2,6 @@
 
 from pawgrab.engine.media import extract_all_media
 
-
 SAMPLE_HTML = """
 <html><body>
 <img src="/img/photo.jpg" alt="A photo" width="800" height="600">
@@ -65,14 +64,14 @@ class TestMediaExtraction:
     def test_extracts_links(self):
         result = extract_all_media(SAMPLE_HTML, "https://example.com")
         links = result["links"]
-        hrefs = [l["href"] for l in links]
+        hrefs = [link["href"] for link in links]
         assert "https://example.com/about" in hrefs
         assert "https://external.com" in hrefs
 
     def test_skips_mailto_and_anchor_links(self):
         result = extract_all_media(SAMPLE_HTML, "https://example.com")
         links = result["links"]
-        hrefs = [l["href"] for l in links]
+        hrefs = [link["href"] for link in links]
         assert not any("mailto:" in h for h in hrefs)
         assert not any(h == "#section" for h in hrefs)
 

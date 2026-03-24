@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import orjson
-
 import structlog
 from openai import APIError, AsyncOpenAI
 

@@ -55,9 +55,9 @@ async def scrape(req: ScrapeRequest):
         raise PawgrabError(
             status_code=403, code=ErrorCode.ROBOTS_BLOCKED,
             message="Blocked by robots.txt",
-        )
+        ) from None
     except TimeoutError:
-        raise PawgrabError.timeout(req.timeout)
+        raise PawgrabError.timeout(req.timeout) from None
     except Exception as exc:
         logger.error("scrape_failed", url=url, error=str(exc))
-        raise PawgrabError.fetch_failed(exc)
+        raise PawgrabError.fetch_failed(exc) from exc

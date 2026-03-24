@@ -2,8 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from pawgrab.engine.sitemap import _parse_sitemap_xml
 
 

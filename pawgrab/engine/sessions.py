@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import uuid
 import time
+import uuid
 
 import orjson
 import structlog

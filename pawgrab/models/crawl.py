@@ -1,6 +1,6 @@
 """Models for the /v1/crawl endpoint."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -10,7 +10,7 @@ from .scrape import ScrapeResponse
 CrawlStatus = JobStatus
 
 
-class CrawlStrategyType(str, Enum):
+class CrawlStrategyType(StrEnum):
     BFS = "bfs"
     DFS = "dfs"
     BEST_FIRST = "best_first"

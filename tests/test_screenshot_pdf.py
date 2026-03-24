@@ -2,9 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from pawgrab.engine.fetcher import FetchResult, _fetch_with_browser
+from pawgrab.engine.fetcher import _fetch_with_browser
 
 
 async def test_screenshot_capture():

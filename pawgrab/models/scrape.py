@@ -1,6 +1,6 @@
 """Models for the /v1/scrape endpoint."""
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, HttpUrl, model_validator
 from .common import OutputFormat
 
 
-class ActionType(str, Enum):
+class ActionType(StrEnum):
     CLICK = "click"
     TYPE = "type"
     SCROLL = "scroll"

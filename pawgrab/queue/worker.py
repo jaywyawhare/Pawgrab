@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import random
+from urllib.parse import urlparse
 
 import orjson
-
 import structlog
 from bs4 import BeautifulSoup
 

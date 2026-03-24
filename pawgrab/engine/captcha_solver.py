@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 import structlog
 
@@ -197,25 +196,25 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
         if not token:
             return False
 
-        await page.evaluate(f"""(token) => {{
+        await page.evaluate("""(token) => {
             // reCAPTCHA
             const textarea = document.getElementById('g-recaptcha-response');
-            if (textarea) {{ textarea.value = token; textarea.style.display = 'block'; }}
+            if (textarea) { textarea.value = token; textarea.style.display = 'block'; }
             // hCaptcha
             const hTextarea = document.querySelector('[name="h-captcha-response"]');
-            if (hTextarea) {{ hTextarea.value = token; }}
+            if (hTextarea) { hTextarea.value = token; }
             // Turnstile
             const cfInput = document.querySelector('[name="cf-turnstile-response"]');
-            if (cfInput) {{ cfInput.value = token; }}
+            if (cfInput) { cfInput.value = token; }
             // Trigger callbacks
-            if (window.___grecaptcha_cfg) {{
+            if (window.___grecaptcha_cfg) {
                 const clients = window.___grecaptcha_cfg.clients;
-                for (const id in clients) {{
+                for (const id in clients) {
                     const client = clients[id];
                     if (client && client.callback) client.callback(token);
-                }}
-            }}
-        }}""", token)
+                }
+            }
+        }""", token)
 
         await asyncio.sleep(1)
         logger.info("captcha_solved_and_injected", url=url, type=captcha_type)

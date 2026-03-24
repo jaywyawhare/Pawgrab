@@ -101,7 +101,7 @@ class PawgrabClient:
                     details=body.get("details"),
                 )
             except (ValueError, KeyError):
-                raise PawgrabError(resp.status_code, resp.text)
+                raise PawgrabError(resp.status_code, resp.text) from None
         return resp.json()
 
     async def scrape(self, url: str, options: ScrapeOptions | None = None) -> ScrapeResponse:

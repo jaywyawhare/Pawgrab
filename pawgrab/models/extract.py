@@ -1,12 +1,12 @@
 """Models for the /v1/extract endpoint."""
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, HttpUrl
 
 
-class ExtractionStrategy(str, Enum):
+class ExtractionStrategy(StrEnum):
     LLM = "llm"
     CSS = "css"
     XPATH = "xpath"
@@ -14,7 +14,7 @@ class ExtractionStrategy(str, Enum):
     TABLE = "table"
 
 
-class ChunkStrategy(str, Enum):
+class ChunkStrategy(StrEnum):
     FIXED = "fixed"
     SLIDING = "sliding"
     SEMANTIC = "semantic"

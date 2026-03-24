@@ -104,7 +104,7 @@ class TestExecuteActions:
         from pawgrab.engine.fetcher import _execute_actions
 
         actions = [PageAction(type=ActionType.TYPE, selector="input", text="hello")]
-        warnings = await _execute_actions(mock_page, actions, 30000)
+        _warnings = await _execute_actions(mock_page, actions, 30000)
         mock_page.fill.assert_awaited_once_with("input", "hello", timeout=15000)
 
     async def test_scroll_down(self, mock_page):
@@ -184,7 +184,7 @@ class TestExecuteActions:
                 action_warnings=[],
             )
             with patch("pawgrab.engine.fetcher.needs_js_rendering", return_value=False):
-                result = await fetch_page(
+                _result = await fetch_page(
                     "https://example.com",
                     actions=actions,
                     # no browser_pool

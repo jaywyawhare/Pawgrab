@@ -31,7 +31,7 @@ async def create_new_session(req: CreateSessionRequest):
         return CreateSessionResponse(session_id=session_id)
     except Exception as exc:
         logger.error("session_create_failed", error=str(exc))
-        raise PawgrabError(status_code=503, code=ErrorCode.QUEUE_UNAVAILABLE, message="Failed to create session — is Redis running?")
+        raise PawgrabError(status_code=503, code=ErrorCode.QUEUE_UNAVAILABLE, message="Failed to create session — is Redis running?") from exc
 
 
 @router.get(

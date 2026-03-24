@@ -1,13 +1,12 @@
 """Tests for the smart rendering cache in detector.py."""
 
 import time
-from unittest.mock import patch
 
 from pawgrab.engine.detector import (
+    _cache,
     _RenderingCache,
     _run_heuristics,
     needs_js_rendering,
-    _cache,
 )
 
 

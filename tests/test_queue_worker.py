@@ -1,11 +1,8 @@
 """Tests for the crawl worker — BFS logic, link extraction, depth limits."""
 
-from unittest.mock import AsyncMock, patch
 from urllib.parse import urlparse
 
-import pytest
-
-from pawgrab.queue.worker import _extract_links, _is_hidden_link, _is_noindex_page
+from pawgrab.queue.worker import _extract_links, _is_noindex_page
 
 
 def test_extract_links_same_domain():
@@ -53,13 +50,13 @@ def test_extract_links_handles_malformed_href():
     html = '<html><body><a href="">Empty</a><a>No href</a></body></html>'
     links = _extract_links(html, "https://example.com", "https://example.com", set())
     # Empty href resolves to base URL which is same domain, but no-href tags are skipped
-    assert all(urlparse(l).scheme in ("http", "https") for l in links)
+    assert all(urlparse(link).scheme in ("http", "https") for link in links)
 
 
 def test_extract_links_relative_urls():
     html = '<html><body><a href="../other/page">Rel</a></body></html>'
     links = _extract_links(html, "https://example.com/dir/current", "https://example.com", set())
-    assert any("example.com" in l for l in links)
+    assert any("example.com" in link for link in links)
 
 
 def test_extract_links_skips_hidden_display_none():

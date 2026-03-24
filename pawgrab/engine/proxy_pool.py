@@ -260,7 +260,7 @@ class ProxyPool:
                     entry.reanimate_after = time.monotonic() + backoff
                     logger.info("proxy_evicted", url=entry.url, recent_failures=entry.recent_failures)
 
-    async def _check_one_proxy(self, entry: "ProxyEntry") -> None:
+    async def _check_one_proxy(self, entry: ProxyEntry) -> None:
         """Health-check a single proxy entry."""
         from curl_cffi.requests import AsyncSession
 

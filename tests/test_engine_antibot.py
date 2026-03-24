@@ -5,7 +5,6 @@ from pawgrab.engine.antibot import (
     EDGE_TARGETS,
     IMPERSONATE_TARGETS,
     SAFARI_TARGETS,
-    ChallengeDetection,
     _accept_language_for_tz,
     detect_challenge,
     fallback_impersonate,

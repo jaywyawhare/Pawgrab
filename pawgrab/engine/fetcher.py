@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import random
-
 from urllib.parse import urlparse
 
 import structlog
@@ -17,7 +16,6 @@ from pawgrab.engine.antibot import (
     ChallengeDetection,
     detect_challenge,
     fallback_impersonate,
-    random_impersonate,
     random_referer,
 )
 from pawgrab.engine.detector import needs_js_rendering
@@ -829,8 +827,8 @@ def _parse_retry_after(result: FetchResult) -> float | None:
     except ValueError:
         pass
     try:  # HTTP-date format: e.g. "Wed, 21 Oct 2015 07:28:00 GMT"
-        from email.utils import parsedate_to_datetime
         import time as _time
+        from email.utils import parsedate_to_datetime
         dt = parsedate_to_datetime(retry_after)
         delay = dt.timestamp() - _time.time()
         return max(0.0, delay)

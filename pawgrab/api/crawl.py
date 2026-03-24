@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
 from pawgrab.exceptions import PawgrabError
-from pawgrab.models.common import ErrorResponse, JOB_ID_RESPONSES, QUEUE_RESPONSES
+from pawgrab.models.common import JOB_ID_RESPONSES, QUEUE_RESPONSES
 from pawgrab.models.crawl import CrawlRequest, CrawlResponse, CrawlStatus
 from pawgrab.queue.manager import create_job, get_job, subscribe_events
 from pawgrab.queue.pool import JOB_ID_RE, get_arq_pool
@@ -66,7 +66,7 @@ async def start_crawl(req: CrawlRequest):
         )
     except Exception as exc:
         logger.error("crawl_enqueue_failed", error=str(exc))
-        raise PawgrabError.queue_unavailable()
+        raise PawgrabError.queue_unavailable() from exc
 
     return CrawlResponse(job_id=job_id, status=CrawlStatus.QUEUED, url=url)
 

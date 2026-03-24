@@ -6,15 +6,14 @@ import csv
 import io
 import math
 import re
-
-import orjson
 import xml.etree.ElementTree as ET
 from collections import Counter
 
+import orjson
 from lxml import html as lxml_html
 
 from pawgrab.models.common import OutputFormat
-from pawgrab.utils.text import tokenize, word_count
+from pawgrab.utils.text import tokenize
 
 _BLANK_COLLAPSE_RE = re.compile(r"\n{3,}")
 _BLOCK_TAGS = frozenset({
@@ -349,7 +348,7 @@ def _bm25_score(
             df[term] += 1
 
     results: list[tuple[str, float]] = []
-    for section, tokens in zip(sections, tokenized):
+    for section, tokens in zip(sections, tokenized, strict=True):
         tf_map: Counter[str] = Counter(tokens)
         dl = len(tokens)
         score = 0.0

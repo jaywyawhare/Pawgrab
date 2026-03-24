@@ -2,8 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 
 async def test_batch_scrape_missing_urls(client):
     resp = await client.post("/v1/batch/scrape", json={})

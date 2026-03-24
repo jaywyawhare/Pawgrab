@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import orjson
 import typer
 from rich.console import Console
@@ -44,10 +45,10 @@ def scrape(
         console.print(output, markup=False)
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted[/dim]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as exc:
         console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 @app.command()
@@ -66,10 +67,10 @@ def extract(
         console.print_json(orjson.dumps(data, option=orjson.OPT_INDENT_2).decode())
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted[/dim]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as exc:
         console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 @app.command()

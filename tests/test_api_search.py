@@ -2,8 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from pawgrab.models.scrape import ScrapeResponse
 
 

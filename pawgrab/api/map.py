@@ -46,4 +46,4 @@ async def map_site(req: MapRequest):
             status_code=502,
             code=ErrorCode.FETCH_FAILED,
             message=f"Failed to discover URLs: {type(exc).__name__}",
-        )
+        ) from exc

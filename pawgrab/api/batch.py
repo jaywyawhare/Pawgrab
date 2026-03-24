@@ -8,9 +8,18 @@ from fastapi import APIRouter, Query
 
 from pawgrab.exceptions import PawgrabError
 from pawgrab.models.batch import BatchJobStatus, BatchScrapeRequest, BatchScrapeResponse
-from pawgrab.models.batch_extract import BatchExtractJobStatus, BatchExtractRequest, BatchExtractResponse
-from pawgrab.models.common import JOB_ID_RESPONSES, JobStatus, QUEUE_RESPONSES
-from pawgrab.queue.manager import create_batch_extract_job, create_batch_job, get_batch_extract_job, get_batch_job
+from pawgrab.models.batch_extract import (
+    BatchExtractJobStatus,
+    BatchExtractRequest,
+    BatchExtractResponse,
+)
+from pawgrab.models.common import JOB_ID_RESPONSES, QUEUE_RESPONSES, JobStatus
+from pawgrab.queue.manager import (
+    create_batch_extract_job,
+    create_batch_job,
+    get_batch_extract_job,
+    get_batch_job,
+)
 from pawgrab.queue.pool import JOB_ID_RE, get_arq_pool
 
 
@@ -47,7 +56,7 @@ async def start_batch_scrape(req: BatchScrapeRequest):
         )
     except Exception as exc:
         logger.error("batch_enqueue_failed", error=str(exc))
-        raise PawgrabError.queue_unavailable()
+        raise PawgrabError.queue_unavailable() from exc
 
     return BatchScrapeResponse(job_id=job_id, status=JobStatus.QUEUED, total_urls=len(urls))
 
@@ -98,7 +107,7 @@ async def start_batch_extract(req: BatchExtractRequest):
         )
     except Exception as exc:
         logger.error("batch_extract_enqueue_failed", error=str(exc))
-        raise PawgrabError.queue_unavailable()
+        raise PawgrabError.queue_unavailable() from exc
 
     return BatchExtractResponse(job_id=job_id, status=JobStatus.QUEUED, total_urls=len(urls))
 

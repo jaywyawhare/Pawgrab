@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections import defaultdict
 from threading import Lock
 
@@ -143,8 +142,17 @@ class Metrics:
     def to_dict(self) -> dict:
         """Export metrics as a JSON-friendly dict."""
         return {
-            "scrape": {"total": self.scrape_total.value, "success": self.scrape_success.value, "failed": self.scrape_failed.value, "cached": self.scrape_cached.value},
-            "extract": {"total": self.extract_total.value, "success": self.extract_success.value, "failed": self.extract_failed.value},
+            "scrape": {
+                "total": self.scrape_total.value,
+                "success": self.scrape_success.value,
+                "failed": self.scrape_failed.value,
+                "cached": self.scrape_cached.value,
+            },
+            "extract": {
+                "total": self.extract_total.value,
+                "success": self.extract_success.value,
+                "failed": self.extract_failed.value,
+            },
             "crawl": {"total": self.crawl_total.value, "pages": self.crawl_pages.value},
             "batch": {"total": self.batch_total.value},
             "search": {"total": self.search_total.value},

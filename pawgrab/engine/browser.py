@@ -443,7 +443,7 @@ if ('presentation' in navigator) {
 
 def _pick_gpu_profile() -> tuple[str, int, int]:
     """Pick a weighted-random GPU profile. Returns (renderer, hw_concurrency, device_memory)."""
-    renderers, concurrencies, weights = zip(*_APPLE_GPU_PROFILES)
+    renderers, concurrencies, weights = zip(*_APPLE_GPU_PROFILES, strict=True)
     renderer = random.choices(renderers, weights=weights, k=1)[0]
     idx = renderers.index(renderer)
     hw = concurrencies[idx]
