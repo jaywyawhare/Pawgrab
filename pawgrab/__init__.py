@@ -29,6 +29,7 @@ def __getattr__(name: str):
     if name in _exports:
         module_path, attr = _exports[name]
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, attr)
     raise AttributeError(f"module 'pawgrab' has no attribute {name!r}")

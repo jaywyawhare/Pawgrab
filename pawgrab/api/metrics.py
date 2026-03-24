@@ -24,6 +24,7 @@ async def json_metrics():
 @router.get("/v1/metrics/browser-pool")
 async def browser_pool_metrics():
     from pawgrab.dependencies import try_browser_pool
+
     pool = await try_browser_pool()
     if pool is None:
         return {"status": "unavailable", "message": "Browser pool not initialized"}

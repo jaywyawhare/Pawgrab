@@ -16,6 +16,7 @@ async def health():
 
     try:
         from pawgrab.queue.manager import get_redis
+
         redis = await get_redis()
         await asyncio.wait_for(redis.ping(), timeout=3.0)
         checks["redis"] = "ok"
@@ -24,6 +25,7 @@ async def health():
 
     try:
         from pawgrab.dependencies import get_browser_pool
+
         await get_browser_pool()
         checks["browser_pool"] = "ok"
     except Exception:
@@ -31,6 +33,7 @@ async def health():
 
     try:
         from pawgrab.engine.dispatcher import _get_memory_percent
+
         checks["memory"] = f"{round(_get_memory_percent(), 1)}%"
     except Exception:
         checks["memory"] = "unknown"

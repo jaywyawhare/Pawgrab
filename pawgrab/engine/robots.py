@@ -78,9 +78,7 @@ async def _fetch_robots(base_url: str) -> Protego | None:
     robots_url = f"{base_url}/robots.txt"
     try:
         async with AsyncSession() as session:
-            resp = await session.get(
-                robots_url, timeout=settings.robots_fetch_timeout, impersonate="safari184"
-            )
+            resp = await session.get(robots_url, timeout=settings.robots_fetch_timeout, impersonate="safari184")
             if resp.status_code == 200:
                 return Protego.parse(resp.text)
     except Exception:

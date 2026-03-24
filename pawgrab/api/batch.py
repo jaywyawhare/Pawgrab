@@ -27,6 +27,7 @@ def _require_valid_job_id(job_id: str) -> None:
     if not JOB_ID_RE.match(job_id):
         raise PawgrabError.invalid_job_id()
 
+
 logger = structlog.get_logger()
 router = APIRouter(tags=["Batch"])
 
@@ -51,8 +52,10 @@ async def start_batch_scrape(req: BatchScrapeRequest):
     try:
         pool = await get_arq_pool()
         await pool.enqueue_job(
-            "batch_scrape_job", job_id,
-            orjson.dumps(urls).decode(), orjson.dumps(formats).decode(),
+            "batch_scrape_job",
+            job_id,
+            orjson.dumps(urls).decode(),
+            orjson.dumps(formats).decode(),
         )
     except Exception as exc:
         logger.error("batch_enqueue_failed", error=str(exc))
@@ -95,7 +98,8 @@ async def start_batch_extract(req: BatchExtractRequest):
     try:
         pool = await get_arq_pool()
         await pool.enqueue_job(
-            "batch_extract_job", job_id,
+            "batch_extract_job",
+            job_id,
             orjson.dumps(urls).decode(),
             req.strategy.value,
             req.prompt or "",

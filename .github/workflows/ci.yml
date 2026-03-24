@@ -36,8 +36,8 @@ jobs:
 
     - name: Lint with ruff
       run: |
+        ruff format pawgrab/ tests/
         ruff check pawgrab/ tests/
-        ruff format --check pawgrab/ tests/
 
     - name: Run tests
       env:

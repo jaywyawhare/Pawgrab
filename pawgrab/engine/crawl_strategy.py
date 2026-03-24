@@ -80,8 +80,7 @@ class CrawlStrategy(ABC):
         ...
 
     @abstractmethod
-    def __len__(self) -> int:
-        ...
+    def __len__(self) -> int: ...
 
     @property
     def is_empty(self) -> bool:

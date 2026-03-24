@@ -40,6 +40,7 @@ def _get_memory_percent() -> float:
 
     try:
         import psutil
+
         return psutil.virtual_memory().percent
     except ImportError:
         pass

@@ -60,10 +60,10 @@ def test_extract_links_relative_urls():
 
 
 def test_extract_links_skips_hidden_display_none():
-    html = '''<html><body>
+    html = """<html><body>
         <a href="/visible">Visible</a>
         <a href="/hidden" style="display:none">Hidden</a>
-    </body></html>'''
+    </body></html>"""
     links = _extract_links(html, "https://example.com", "https://example.com", set())
     assert "https://example.com/visible" in links
     assert "https://example.com/hidden" not in links
@@ -88,10 +88,10 @@ def test_extract_links_skips_aria_hidden():
 
 
 def test_extract_links_skips_hidden_parent():
-    html = '''<html><body>
+    html = """<html><body>
         <div style="display: none"><a href="/trap">Trap</a></div>
         <a href="/visible">Visible</a>
-    </body></html>'''
+    </body></html>"""
     links = _extract_links(html, "https://example.com", "https://example.com", set())
     assert "https://example.com/visible" in links
     assert "https://example.com/trap" not in links
@@ -103,5 +103,5 @@ def test_is_noindex_page_detects_noindex():
 
 
 def test_is_noindex_page_normal():
-    html = '<html><head><title>Normal</title></head><body>OK</body></html>'
+    html = "<html><head><title>Normal</title></head><body>OK</body></html>"
     assert _is_noindex_page(html) is False

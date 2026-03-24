@@ -76,15 +76,17 @@ def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[st
                 row_dict = {headers[i]: cell_texts[i] for i in range(len(headers)) if i < len(cell_texts)}
                 row_dicts.append(row_dict)
 
-        results.append({
-            "index": table_index if table_index is not None else idx,
-            "caption": caption,
-            "headers": headers,
-            "rows": row_dicts,
-            "raw_rows": raw_rows,
-            "row_count": len(raw_rows),
-            "column_count": len(headers),
-        })
+        results.append(
+            {
+                "index": table_index if table_index is not None else idx,
+                "caption": caption,
+                "headers": headers,
+                "rows": row_dicts,
+                "raw_rows": raw_rows,
+                "row_count": len(raw_rows),
+                "column_count": len(headers),
+            }
+        )
 
     return results
 

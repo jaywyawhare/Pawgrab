@@ -31,9 +31,11 @@ class APIRateLimitMiddleware(BaseHTTPMiddleware):
     def _load_key_limits(self):
         """Load per-key rate limits from config."""
         from pawgrab.config import settings
+
         if settings.api_rate_limits:
             try:
                 import orjson
+
                 self._key_limits = orjson.loads(settings.api_rate_limits)
             except Exception:
                 pass
@@ -45,6 +47,7 @@ class APIRateLimitMiddleware(BaseHTTPMiddleware):
         # Only trust X-Forwarded-For when the connecting IP is a configured trusted proxy.
         # Without this check, any client can spoof their IP to bypass rate limiting.
         from pawgrab.config import settings
+
         trusted = {ip.strip() for ip in settings.trusted_proxy_ips.split(",") if ip.strip()}
         client = request.client
         connecting_ip = client.host if client else None
@@ -78,11 +81,7 @@ class APIRateLimitMiddleware(BaseHTTPMiddleware):
 
             if now - self._last_cleanup > _CLEANUP_INTERVAL:
                 self._last_cleanup = now
-                stale = [
-                    k
-                    for k, (_, last_used) in self._limiters.items()
-                    if now - last_used > _LIMITER_IDLE_TTL
-                ]
+                stale = [k for k, (_, last_used) in self._limiters.items() if now - last_used > _LIMITER_IDLE_TTL]
                 for k in stale:
                     del self._limiters[k]
 

@@ -49,11 +49,16 @@ class PluginManager:
     def _register_default_hooks(self):
         """Register the standard pipeline hooks."""
         for name in (
-            "before_fetch", "after_fetch",
-            "before_extract", "after_extract",
-            "before_convert", "after_convert",
-            "on_error", "on_challenge",
-            "before_cache_store", "after_cache_hit",
+            "before_fetch",
+            "after_fetch",
+            "before_extract",
+            "after_extract",
+            "before_convert",
+            "after_convert",
+            "on_error",
+            "on_challenge",
+            "before_cache_store",
+            "after_cache_hit",
         ):
             self._hooks[name] = PluginHook(name)
 
@@ -111,6 +116,7 @@ plugin_manager = PluginManager()
 def load_plugins_from_config():
     """Load plugins specified in PAWGRAB_PLUGINS env var."""
     from pawgrab.config import settings
+
     if not settings.plugins:
         return
     for module_path in settings.plugins.split(","):

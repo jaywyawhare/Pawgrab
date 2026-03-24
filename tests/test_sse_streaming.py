@@ -40,6 +40,7 @@ class TestSSEEndpoint:
 
         from pawgrab.api.crawl import router
         from pawgrab.exceptions import PawgrabError
+
         app = FastAPI()
         app.include_router(router, prefix="/v1")
 
@@ -54,24 +55,22 @@ class TestSSEEndpoint:
 
     async def test_404_for_missing_job(self, app):
         import httpx
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             with patch("pawgrab.api.crawl.get_job", return_value=None):
                 resp = await client.get("/v1/crawl/abc123def456/stream")
                 assert resp.status_code == 404
 
     async def test_completed_job_returns_final_event(self, app):
         import httpx
+
         job = CrawlJobStatus(
             job_id="abc123def456",
             status=CrawlStatus.COMPLETED,
             pages_scraped=5,
             results=[],
         )
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             with patch("pawgrab.api.crawl.get_job", return_value=job):
                 resp = await client.get("/v1/crawl/abc123def456/stream")
                 assert resp.status_code == 200
@@ -81,29 +80,28 @@ class TestSSEEndpoint:
 
     async def test_content_type_is_event_stream(self, app):
         import httpx
+
         job = CrawlJobStatus(
             job_id="abc123def456",
             status=CrawlStatus.COMPLETED,
             pages_scraped=0,
             results=[],
         )
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             with patch("pawgrab.api.crawl.get_job", return_value=job):
                 resp = await client.get("/v1/crawl/abc123def456/stream")
                 assert "text/event-stream" in resp.headers["content-type"]
 
     async def test_invalid_job_id(self, app):
         import httpx
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/v1/crawl/invalid!/stream")
             assert resp.status_code == 400
 
     async def test_failed_job_includes_error(self, app):
         import httpx
+
         job = CrawlJobStatus(
             job_id="abc123def456",
             status=CrawlStatus.FAILED,
@@ -111,9 +109,7 @@ class TestSSEEndpoint:
             results=[],
             error="Connection timeout",
         )
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             with patch("pawgrab.api.crawl.get_job", return_value=job):
                 resp = await client.get("/v1/crawl/abc123def456/stream")
                 assert "event: failed" in resp.text

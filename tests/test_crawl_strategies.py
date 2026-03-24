@@ -170,10 +170,12 @@ class TestDuplicateFilter:
 
 class TestFilterChain:
     def test_all_must_pass(self):
-        chain = FilterChain([
-            DomainFilter(allowed_domains=["example.com"]),
-            PathFilter(exclude_patterns=[r"/admin"]),
-        ])
+        chain = FilterChain(
+            [
+                DomainFilter(allowed_domains=["example.com"]),
+                PathFilter(exclude_patterns=[r"/admin"]),
+            ]
+        )
         assert chain.accept("https://example.com/blog")
         assert not chain.accept("https://example.com/admin")
         assert not chain.accept("https://other.com/blog")

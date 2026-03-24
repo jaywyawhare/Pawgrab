@@ -10,10 +10,17 @@ from bs4 import BeautifulSoup, Tag
 
 from pawgrab.utils.text import make_soup, tokenize
 
-_BOILERPLATE_TAGS = frozenset({
-    "nav", "footer", "aside", "header",
-    "form", "noscript", "figcaption",
-})
+_BOILERPLATE_TAGS = frozenset(
+    {
+        "nav",
+        "footer",
+        "aside",
+        "header",
+        "form",
+        "noscript",
+        "figcaption",
+    }
+)
 
 _BOILERPLATE_PATTERNS = re.compile(
     r"(sidebar|footer|header|nav|menu|breadcrumb|widget|banner|advert|cookie|"
@@ -37,9 +44,7 @@ def _link_density(element: Tag) -> float:
     text = element.get_text(strip=True)
     if not text:
         return 0.0
-    link_text = "".join(
-        a.get_text(strip=True) for a in element.find_all("a")
-    )
+    link_text = "".join(a.get_text(strip=True) for a in element.find_all("a"))
     return len(link_text) / len(text)
 
 
@@ -122,10 +127,7 @@ class BM25ContentFilter:
         soup = make_soup(html)
 
         blocks: list[Tag] = []
-        for el in soup.find_all(
-            ["p", "div", "section", "article", "li", "td", "th",
-             "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre"]
-        ):
+        for el in soup.find_all(["p", "div", "section", "article", "li", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre"]):
             text = el.get_text(strip=True)
             if text and len(text) > 20:
                 blocks.append(el)
@@ -166,7 +168,7 @@ class BM25ContentFilter:
                 scored.append((i, similarity, block))
 
         scored.sort(key=lambda x: x[1], reverse=True)
-        kept = scored[:self.top_k]
+        kept = scored[: self.top_k]
 
         if not kept:
             return html

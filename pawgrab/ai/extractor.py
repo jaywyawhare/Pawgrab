@@ -21,6 +21,7 @@ def get_provider():
     global _provider
     if _provider is None:
         from pawgrab.ai.providers import get_llm_provider
+
         _provider = get_llm_provider()
     return _provider
 
@@ -46,7 +47,9 @@ async def extract_from_url(
 
     if chunk_strategy:
         return await _chunked_extract(
-            markdown, prompt, provider,
+            markdown,
+            prompt,
+            provider,
             schema_hint=schema_hint,
             json_schema=json_schema,
             chunk_strategy=chunk_strategy,

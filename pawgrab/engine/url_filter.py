@@ -67,14 +67,47 @@ class PathFilter(URLFilter):
 class ContentTypeFilter(URLFilter):
     """Filter URLs by file extension as a proxy for MIME type."""
 
-    _DEFAULT_BLOCKED = frozenset({
-        ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico", ".bmp",
-        ".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm",
-        ".zip", ".tar", ".gz", ".rar", ".7z",
-        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-        ".exe", ".dmg", ".apk", ".msi",
-        ".css", ".js", ".woff", ".woff2", ".ttf", ".eot",
-    })
+    _DEFAULT_BLOCKED = frozenset(
+        {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".svg",
+            ".webp",
+            ".ico",
+            ".bmp",
+            ".mp3",
+            ".mp4",
+            ".avi",
+            ".mov",
+            ".wmv",
+            ".flv",
+            ".webm",
+            ".zip",
+            ".tar",
+            ".gz",
+            ".rar",
+            ".7z",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".ppt",
+            ".pptx",
+            ".exe",
+            ".dmg",
+            ".apk",
+            ".msi",
+            ".css",
+            ".js",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+        }
+    )
 
     def __init__(
         self,

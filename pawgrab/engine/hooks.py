@@ -13,13 +13,15 @@ logger = structlog.get_logger()
 
 HookCallable = Callable[..., Coroutine[Any, Any, None]]
 
-VALID_HOOKS = frozenset({
-    "before_fetch",
-    "after_fetch",
-    "before_extract",
-    "after_extract",
-    "on_error",
-})
+VALID_HOOKS = frozenset(
+    {
+        "before_fetch",
+        "after_fetch",
+        "before_extract",
+        "after_extract",
+        "on_error",
+    }
+)
 
 
 class HookManager:

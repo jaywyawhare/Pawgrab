@@ -137,6 +137,7 @@ async def test_fetch_page_no_proxy_pool():
 async def test_backoff_no_delay_first_attempt():
     """First attempt should not backoff."""
     import time
+
     start = time.monotonic()
     await _backoff(1)
     elapsed = time.monotonic() - start
@@ -147,6 +148,7 @@ async def test_backoff_no_delay_first_attempt():
 async def test_backoff_delays_on_retry():
     """Second+ attempt should delay."""
     import time
+
     start = time.monotonic()
     await _backoff(2)
     elapsed = time.monotonic() - start
@@ -236,6 +238,7 @@ def test_is_proxy_error_false_for_normal_timeout():
 def test_is_proxy_error_false_for_generic_error():
     exc = Exception("Page crashed")
     assert is_proxy_error(exc) is False
+
 
 def test_cf_min_timeout_value():
     assert _CF_MIN_TIMEOUT == 60_000

@@ -79,10 +79,12 @@ class ConsoleCapture:
 
     def on_console(self, message) -> None:
         """Handle a Playwright console event."""
-        self._messages.append({
-            "type": message.type,
-            "text": message.text,
-        })
+        self._messages.append(
+            {
+                "type": message.type,
+                "text": message.text,
+            }
+        )
 
     def get_results(self) -> list[dict]:
         return self._messages.copy()

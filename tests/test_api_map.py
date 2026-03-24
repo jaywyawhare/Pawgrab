@@ -62,9 +62,7 @@ def test_parse_sitemap_xml_invalid():
 
 
 def test_parse_sitemap_xml_limit():
-    entries = "\n".join(
-        f"<url><loc>https://example.com/p{i}</loc></url>" for i in range(100)
-    )
+    entries = "\n".join(f"<url><loc>https://example.com/p{i}</loc></url>" for i in range(100))
     xml = f"""<?xml version="1.0"?>
     <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
         {entries}

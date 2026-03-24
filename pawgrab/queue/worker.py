@@ -50,13 +50,20 @@ def _is_hidden_link(tag) -> bool:
     into infinite crawl loops filled with AI-generated garbage.
     """
     style = (tag.get("style") or "").lower()
-    if any(pattern in style for pattern in (
-        "display:none", "display: none",
-        "visibility:hidden", "visibility: hidden",
-        "opacity:0", "opacity: 0",
-        "left:-9999", "top:-9999",
-        "position:absolute",
-    )):
+    if any(
+        pattern in style
+        for pattern in (
+            "display:none",
+            "display: none",
+            "visibility:hidden",
+            "visibility: hidden",
+            "opacity:0",
+            "opacity: 0",
+            "left:-9999",
+            "top:-9999",
+            "position:absolute",
+        )
+    ):
         return True
 
     parent = tag.parent
@@ -137,16 +144,20 @@ def _build_filter_chain(
     chain = FilterChain()
 
     if allowed_domains or blocked_domains:
-        chain.add(DomainFilter(
-            allowed_domains=allowed_domains,
-            blocked_domains=blocked_domains,
-        ))
+        chain.add(
+            DomainFilter(
+                allowed_domains=allowed_domains,
+                blocked_domains=blocked_domains,
+            )
+        )
 
     if include_path_patterns or exclude_path_patterns:
-        chain.add(PathFilter(
-            include_patterns=include_path_patterns,
-            exclude_patterns=exclude_path_patterns,
-        ))
+        chain.add(
+            PathFilter(
+                include_patterns=include_path_patterns,
+                exclude_patterns=exclude_path_patterns,
+            )
+        )
 
     chain.add(ContentTypeFilter())
     chain.add(DuplicateFilter())
@@ -244,6 +255,7 @@ async def crawl_job(
 
             try:
                 from pawgrab.engine.scrape_service import build_response
+
                 response = build_response(raw_result, formats=formats, include_metadata=True)
             except Exception as exc:
                 logger.warning("crawl_build_failed", url=current_url, error=str(exc))
@@ -255,11 +267,15 @@ async def crawl_job(
             pages_scraped += 1
             await append_result(job_id, response.model_dump())
             await update_job(job_id, pages_scraped=pages_scraped)
-            await publish_event(job_id, "page_scraped", {
-                "url": current_url,
-                "pages_scraped": pages_scraped,
-                "max_pages": max_pages,
-            })
+            await publish_event(
+                job_id,
+                "page_scraped",
+                {
+                    "url": current_url,
+                    "pages_scraped": pages_scraped,
+                    "max_pages": max_pages,
+                },
+            )
 
             if pages_scraped % checkpoint_interval == 0:
                 await save_checkpoint(
@@ -276,7 +292,10 @@ async def crawl_job(
                 continue
             if depth < max_depth and len(strategy) < _MAX_QUEUE_SIZE:
                 links = _extract_links(
-                    raw_result.html, raw_result.url, url, visited,
+                    raw_result.html,
+                    raw_result.url,
+                    url,
+                    visited,
                     url_filter=filter_chain,
                 )
                 for href in links:
@@ -304,6 +323,7 @@ async def crawl_job(
     webhook_url = await get_webhook_url(job_id)
     if webhook_url:
         from pawgrab.queue.manager import get_job as _get_job
+
         job_data = await _get_job(job_id)
         await send_webhook(
             webhook_url,
@@ -373,9 +393,16 @@ async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json:
 
 
 async def batch_extract_job(
-    ctx: dict, job_id: str, urls_json: str, strategy: str,
-    prompt: str, schema_hint_json: str, json_schema_json: str,
-    selectors_json: str, xpath_json: str, patterns_raw: str,
+    ctx: dict,
+    job_id: str,
+    urls_json: str,
+    strategy: str,
+    prompt: str,
+    schema_hint_json: str,
+    json_schema_json: str,
+    selectors_json: str,
+    xpath_json: str,
+    patterns_raw: str,
 ):
     """Extract structured data from a list of URLs."""
     from pawgrab.ai.extractor import extract_from_url
@@ -405,8 +432,11 @@ async def batch_extract_job(
             try:
                 if strategy == "llm":
                     data = await extract_from_url(
-                        url, prompt=prompt, schema_hint=schema_hint,
-                        json_schema=json_schema, browser_pool=browser_pool,
+                        url,
+                        prompt=prompt,
+                        schema_hint=schema_hint,
+                        json_schema=json_schema,
+                        browser_pool=browser_pool,
                     )
                 else:
                     result = await fetch_page(url, browser_pool=browser_pool)
@@ -431,9 +461,13 @@ async def batch_extract_job(
     webhook_url = await get_batch_extract_webhook_url(job_id)
     if webhook_url:
         await send_webhook(
-            webhook_url, job_id=job_id, job_type="batch_extract",
+            webhook_url,
+            job_id=job_id,
+            job_type="batch_extract",
             status=CrawlStatus.COMPLETED.value if not job_error else CrawlStatus.FAILED.value,
-            pages_scraped=urls_extracted, total_pages=len(urls), error=job_error,
+            pages_scraped=urls_extracted,
+            total_pages=len(urls),
+            error=job_error,
         )
 
 
@@ -442,6 +476,7 @@ async def startup(ctx: dict):
     logger.info("worker_started")
     try:
         from pawgrab.engine.browser import BrowserPool
+
         pool = BrowserPool()
         await pool.start()
         ctx["browser_pool"] = pool
@@ -451,6 +486,7 @@ async def startup(ctx: dict):
 
     try:
         from pawgrab.engine.proxy_pool import ProxyPool
+
         proxy_pool = ProxyPool()
         await proxy_pool.start()
         ctx["proxy_pool"] = proxy_pool
@@ -468,6 +504,7 @@ async def shutdown(ctx: dict):
     if pool:
         await pool.stop()
     from pawgrab.engine.fetcher import close_sessions
+
     await close_sessions()
     logger.info("worker_stopped")
 
@@ -483,6 +520,7 @@ class WorkerSettings:
 
 try:
     from arq.connections import RedisSettings
+
     WorkerSettings.redis_settings = RedisSettings.from_dsn(settings.redis_url)
 except Exception as exc:
     logger.warning("worker_redis_settings_failed", error=str(exc), redis_url=settings.redis_url)

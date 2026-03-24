@@ -35,14 +35,16 @@ class TestCSSExtractor:
         assert results[0]["first_title"] == "Widget A"
 
     def test_repeated_extraction(self):
-        ext = CSSExtractor({
-            "container": "div.product",
-            "fields": {
-                "name": "h2.title",
-                "price": "span.price",
-                "link": {"selector": "a", "attribute": "href"},
-            },
-        })
+        ext = CSSExtractor(
+            {
+                "container": "div.product",
+                "fields": {
+                    "name": "h2.title",
+                    "price": "span.price",
+                    "link": {"selector": "a", "attribute": "href"},
+                },
+            }
+        )
         results = ext.extract(SAMPLE_HTML)
         assert len(results) == 2
         assert results[0]["name"] == "Widget A"
@@ -58,16 +60,20 @@ class TestCSSExtractor:
 
 class TestXPathExtractor:
     def test_basic_xpath(self):
-        ext = XPathExtractor({
-            "titles": "//h2[@class='title']/text()",
-        })
+        ext = XPathExtractor(
+            {
+                "titles": "//h2[@class='title']/text()",
+            }
+        )
         results = ext.extract(SAMPLE_HTML)
         assert results[0]["titles"] == ["Widget A", "Widget B"]
 
     def test_single_result(self):
-        ext = XPathExtractor({
-            "first_price": "(//span[@class='price'])[1]/text()",
-        })
+        ext = XPathExtractor(
+            {
+                "first_price": "(//span[@class='price'])[1]/text()",
+            }
+        )
         results = ext.extract(SAMPLE_HTML)
         assert results[0]["first_price"] == "$29.99"
 
@@ -79,9 +85,11 @@ class TestXPathExtractor:
 
 class TestRegexExtractor:
     def test_named_patterns(self):
-        ext = RegexExtractor({
-            "emails": r"[\w.]+@[\w.]+\.\w+",
-        })
+        ext = RegexExtractor(
+            {
+                "emails": r"[\w.]+@[\w.]+\.\w+",
+            }
+        )
         results = ext.extract(SAMPLE_HTML)
         assert len(results[0]["emails"]) == 2
         assert "support@example.com" in results[0]["emails"]

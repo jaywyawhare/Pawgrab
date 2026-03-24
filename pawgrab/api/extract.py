@@ -72,21 +72,28 @@ async def _extract_table(req: ExtractRequest, url: str, pool) -> ExtractResponse
 async def _extract_llm(req: ExtractRequest, url: str, pool) -> ExtractResponse:
     if not req.prompt:
         raise PawgrabError(
-            status_code=400, code=ErrorCode.VALIDATION_ERROR,
+            status_code=400,
+            code=ErrorCode.VALIDATION_ERROR,
             message="LLM strategy requires the 'prompt' field — describe what data to extract",
         )
     key_getter = _PROVIDER_KEY_MAP.get(settings.llm_provider)
     if not key_getter or not key_getter():
         raise PawgrabError(
-            status_code=503, code=ErrorCode.LLM_UNAVAILABLE,
+            status_code=503,
+            code=ErrorCode.LLM_UNAVAILABLE,
             message=f"LLM provider '{settings.llm_provider}' not configured. Set the corresponding API key.",
         )
 
     try:
         data = await extract_from_url(
-            url, prompt=req.prompt, schema_hint=req.schema_hint,
-            json_schema=req.json_schema, timeout=req.timeout, browser_pool=pool,
-            chunk_strategy=req.chunk_strategy, chunk_size=req.chunk_size,
+            url,
+            prompt=req.prompt,
+            schema_hint=req.schema_hint,
+            json_schema=req.json_schema,
+            timeout=req.timeout,
+            browser_pool=pool,
+            chunk_strategy=req.chunk_strategy,
+            chunk_size=req.chunk_size,
             chunk_overlap=req.chunk_overlap,
         )
     except PermissionError as exc:
@@ -94,7 +101,8 @@ async def _extract_llm(req: ExtractRequest, url: str, pool) -> ExtractResponse:
     except Exception as exc:
         logger.error("extract_failed", url=url, error=str(exc))
         raise PawgrabError(
-            status_code=502, code=ErrorCode.EXTRACTION_FAILED,
+            status_code=502,
+            code=ErrorCode.EXTRACTION_FAILED,
             message=f"Extraction failed: {type(exc).__name__}",
         ) from exc
 
@@ -109,8 +117,10 @@ async def _extract_non_llm(req: ExtractRequest, url: str, pool) -> ExtractRespon
 
     try:
         extractor = get_extractor(
-            req.strategy.value, selectors=req.selectors,
-            xpath_queries=req.xpath_queries, patterns=req.patterns,
+            req.strategy.value,
+            selectors=req.selectors,
+            xpath_queries=req.xpath_queries,
+            patterns=req.patterns,
         )
         data = extractor.extract(result.html)
     except ValueError as exc:
@@ -118,7 +128,8 @@ async def _extract_non_llm(req: ExtractRequest, url: str, pool) -> ExtractRespon
     except Exception as exc:
         logger.error("extraction_failed", url=url, error=str(exc))
         raise PawgrabError(
-            status_code=502, code=ErrorCode.EXTRACTION_FAILED,
+            status_code=502,
+            code=ErrorCode.EXTRACTION_FAILED,
             message=f"Extraction failed: {type(exc).__name__}",
         ) from exc
 

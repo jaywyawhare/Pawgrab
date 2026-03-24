@@ -56,8 +56,13 @@ async def start_crawl(req: CrawlRequest):
         pool = await get_arq_pool()
         await pool.enqueue_job(
             "crawl_job",
-            job_id, url, req.max_pages, req.max_depth,
-            orjson.dumps(formats).decode(), resume, req.strategy.value,
+            job_id,
+            url,
+            req.max_pages,
+            req.max_depth,
+            orjson.dumps(formats).decode(),
+            resume,
+            req.strategy.value,
             orjson.dumps(req.allowed_domains).decode() if req.allowed_domains else None,
             orjson.dumps(req.blocked_domains).decode() if req.blocked_domains else None,
             orjson.dumps(req.include_path_patterns).decode() if req.include_path_patterns else None,
@@ -96,11 +101,13 @@ async def stream_crawl_events(job_id: str):
 
     if job.status in (CrawlStatus.COMPLETED, CrawlStatus.FAILED):
         event_type = job.status.value
-        data = orjson.dumps({
-            "type": event_type,
-            "pages_scraped": job.pages_scraped,
-            **({"error": job.error} if job.error else {}),
-        }).decode()
+        data = orjson.dumps(
+            {
+                "type": event_type,
+                "pages_scraped": job.pages_scraped,
+                **({"error": job.error} if job.error else {}),
+            }
+        ).decode()
 
         async def _final():
             yield f"event: {event_type}\ndata: {data}\n\n"

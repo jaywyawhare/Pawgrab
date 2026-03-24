@@ -70,7 +70,7 @@ class SlidingWindowChunker:
         step = max(self.chunk_size - self.overlap, 1)
         chunks: list[str] = []
         for i in range(0, len(words), step):
-            chunk_words = words[i:i + self.chunk_size]
+            chunk_words = words[i : i + self.chunk_size]
             if chunk_words:
                 chunks.append(" ".join(chunk_words))
             if i + self.chunk_size >= len(words):

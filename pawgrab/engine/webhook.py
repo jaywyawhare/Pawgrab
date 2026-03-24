@@ -109,6 +109,6 @@ async def send_webhook(
             )
 
         if attempt < max_attempts:
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
 
     return False

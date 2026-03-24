@@ -145,11 +145,13 @@ async def compare_screenshots(url: str, current_screenshot: bytes, *, ttl: int |
 
     try:
         from pawgrab.queue.manager import get_redis
+
         redis = await get_redis()
     except Exception:
         return None
 
     import base64
+
     previous_b64 = await redis.get(key)
 
     # Store current screenshot
@@ -194,7 +196,7 @@ def _pixel_diff_percentage(img1_bytes: bytes, img2_bytes: bytes) -> float:
 
     # Byte-level comparison (rough but dependency-free)
     min_len = min(len(img1_bytes), len(img2_bytes))
-    diff_count = sum(1 for i in range(0, min_len, 4) if img1_bytes[i:i+4] != img2_bytes[i:i+4])
+    diff_count = sum(1 for i in range(0, min_len, 4) if img1_bytes[i : i + 4] != img2_bytes[i : i + 4])
     total_chunks = min_len // 4
 
     if total_chunks == 0:

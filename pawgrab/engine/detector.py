@@ -9,12 +9,12 @@ from urllib.parse import urlparse
 
 _SPA_INDICATORS = [
     re.compile(r'<div\s+id=["\'](?:root|app|__next|__nuxt)["\']>\s*</div>', re.IGNORECASE),
-    re.compile(r'<noscript>.*?enable javascript', re.IGNORECASE | re.DOTALL),
+    re.compile(r"<noscript>.*?enable javascript", re.IGNORECASE | re.DOTALL),
 ]
 
 _FRAMEWORK_INDICATORS = [
-    re.compile(r'__NEXT_DATA__', re.IGNORECASE),
-    re.compile(r'window\.__NUXT__', re.IGNORECASE),
+    re.compile(r"__NEXT_DATA__", re.IGNORECASE),
+    re.compile(r"window\.__NUXT__", re.IGNORECASE),
     re.compile(r'<div\s+id=["\']gatsby-', re.IGNORECASE),
 ]
 

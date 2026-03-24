@@ -44,16 +44,12 @@ def _compile_rules() -> dict[str, _ChallengeRule]:
         "cloudflare_js": _ChallengeRule(
             status_codes=frozenset({403, 429, 503}),
             server_prefix="cloudflare",
-            body_pattern=re.compile(
-                r"cdn-cgi/challenge-platform/\S+orchestrate/jsch/v1", re.I
-            ),
+            body_pattern=re.compile(r"cdn-cgi/challenge-platform/\S+orchestrate/jsch/v1", re.I),
         ),
         "cloudflare_managed": _ChallengeRule(
             status_codes=frozenset({403, 503}),
             server_prefix="cloudflare",
-            body_pattern=re.compile(
-                r"cdn-cgi/challenge-platform/\S+orchestrate/(captcha|managed)/v1", re.I
-            ),
+            body_pattern=re.compile(r"cdn-cgi/challenge-platform/\S+orchestrate/(captcha|managed)/v1", re.I),
         ),
         "cloudflare_turnstile": _ChallengeRule(
             status_codes=frozenset({403, 503}),
@@ -68,9 +64,7 @@ def _compile_rules() -> dict[str, _ChallengeRule]:
         "recaptcha": _ChallengeRule(
             status_codes=None,
             server_prefix=None,
-            body_pattern=re.compile(
-                r"(google\.com/recaptcha|g-recaptcha|grecaptcha)", re.I
-            ),
+            body_pattern=re.compile(r"(google\.com/recaptcha|g-recaptcha|grecaptcha)", re.I),
         ),
         "hcaptcha": _ChallengeRule(
             status_codes=None,
@@ -80,51 +74,37 @@ def _compile_rules() -> dict[str, _ChallengeRule]:
         "aws_waf": _ChallengeRule(
             status_codes=frozenset({403, 405}),
             server_prefix=None,
-            body_pattern=re.compile(
-                r"(awswaf|aws-waf-token|captcha\.awswaf\.com)", re.I
-            ),
+            body_pattern=re.compile(r"(awswaf|aws-waf-token|captcha\.awswaf\.com)", re.I),
         ),
         "akamai": _ChallengeRule(
             status_codes=frozenset({403, 429, 503}),
             server_prefix=None,
-            body_pattern=re.compile(
-                r"(/_sec/cp_challenge|akamai.*bot.*manager|akam/\d+/)", re.I
-            ),
+            body_pattern=re.compile(r"(/_sec/cp_challenge|akamai.*bot.*manager|akam/\d+/)", re.I),
         ),
         "imperva": _ChallengeRule(
             status_codes=frozenset({403, 429}),
             server_prefix=None,
-            body_pattern=re.compile(
-                r"(incapsula|visid_incap|_incap_ses|reese84)", re.I
-            ),
+            body_pattern=re.compile(r"(incapsula|visid_incap|_incap_ses|reese84)", re.I),
         ),
         "datadome": _ChallengeRule(
             status_codes=frozenset({403}),
             server_prefix=None,
-            body_pattern=re.compile(
-                r"(datadome\.co|dd\.js|api\.datadome\.co)", re.I
-            ),
+            body_pattern=re.compile(r"(datadome\.co|dd\.js|api\.datadome\.co)", re.I),
         ),
         "perimeterx": _ChallengeRule(
             status_codes=frozenset({403, 429}),
             server_prefix=None,
-            body_pattern=re.compile(
-                r"(perimeterx|px-captcha|captcha\.px-cdn\.net|human-challenge)", re.I
-            ),
+            body_pattern=re.compile(r"(perimeterx|px-captcha|captcha\.px-cdn\.net|human-challenge)", re.I),
         ),
         "sucuri": _ChallengeRule(
             status_codes=frozenset({403}),
             server_prefix="sucuri",
-            body_pattern=re.compile(
-                r"(sucuri\.net|cloudproxy|access denied.*sucuri)", re.I
-            ),
+            body_pattern=re.compile(r"(sucuri\.net|cloudproxy|access denied.*sucuri)", re.I),
         ),
         "meta_refresh": _ChallengeRule(
             status_codes=None,
             server_prefix=None,
-            body_pattern=re.compile(
-                r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+url=', re.I
-            ),
+            body_pattern=re.compile(r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+url=', re.I),
         ),
         "generic_block": _ChallengeRule(
             status_codes=frozenset({403, 429}),
@@ -166,12 +146,12 @@ def detect_challenge(
 
 
 SAFARI_TARGETS = [
-    "safari184",       # Safari 18.4 macOS (current stable)
-    "safari180",       # Safari 18.0 macOS
-    "safari170",       # Safari 17.0 macOS
-    "safari184_ios",   # Safari 18.4 iOS
-    "safari180_ios",   # Safari 18.0 iOS
-    "safari172_ios",   # Safari 17.2 iOS
+    "safari184",  # Safari 18.4 macOS (current stable)
+    "safari180",  # Safari 18.0 macOS
+    "safari170",  # Safari 17.0 macOS
+    "safari184_ios",  # Safari 18.4 iOS
+    "safari180_ios",  # Safari 18.0 iOS
+    "safari172_ios",  # Safari 17.2 iOS
 ]
 
 CHROME_TARGETS = [
@@ -239,11 +219,7 @@ _SAFARI_VERSIONS = [
     ("18.4", "605.1.15", "18.4"),
 ]
 
-_SAFARI_UA_TEMPLATE = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/{webkit} (KHTML, like Gecko) "
-    "Version/{version} Safari/{webkit}"
-)
+_SAFARI_UA_TEMPLATE = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/{webkit} (KHTML, like Gecko) Version/{version} Safari/{webkit}"
 
 
 def random_user_agent() -> str:

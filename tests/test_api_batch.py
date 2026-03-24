@@ -35,9 +35,12 @@ async def test_batch_scrape_creation(client):
         pool.enqueue_job = AsyncMock()
         mock_pool.return_value = pool
 
-        resp = await client.post("/v1/batch/scrape", json={
-            "urls": ["https://example.com", "https://example.org"],
-        })
+        resp = await client.post(
+            "/v1/batch/scrape",
+            json={
+                "urls": ["https://example.com", "https://example.org"],
+            },
+        )
 
     assert resp.status_code == 202
     data = resp.json()
@@ -85,8 +88,11 @@ async def test_batch_queue_unavailable(client):
         mock_create.return_value = "abcdef123456"
         mock_pool.side_effect = Exception("Redis down")
 
-        resp = await client.post("/v1/batch/scrape", json={
-            "urls": ["https://example.com"],
-        })
+        resp = await client.post(
+            "/v1/batch/scrape",
+            json={
+                "urls": ["https://example.com"],
+            },
+        )
 
     assert resp.status_code == 503

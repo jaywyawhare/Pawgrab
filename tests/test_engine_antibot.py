@@ -226,7 +226,7 @@ def test_detect_perimeterx():
 
 
 def test_detect_sucuri():
-    body = '<p>Access denied by sucuri.net firewall</p>'
+    body = "<p>Access denied by sucuri.net firewall</p>"
     result = detect_challenge(403, {"server": "sucuri/cloudproxy"}, body)
     assert result.detected is True
     assert result.challenge_type == "sucuri"

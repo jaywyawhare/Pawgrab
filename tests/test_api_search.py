@@ -38,10 +38,13 @@ async def test_search_with_results(client):
         mock_scrape.return_value = mock_response
         mock_pool.side_effect = Exception("no browser")
 
-        resp = await client.post("/v1/search", json={
-            "query": "test query",
-            "num_results": 3,
-        })
+        resp = await client.post(
+            "/v1/search",
+            json={
+                "query": "test query",
+                "num_results": 3,
+            },
+        )
 
     assert resp.status_code == 200
     data = resp.json()

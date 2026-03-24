@@ -27,13 +27,21 @@ class CaptchaSolver:
         if not self.available:
             return None
         if self._provider == "2captcha":
-            return await self._solve_2captcha("recaptcha", {
-                "googlekey": site_key, "pageurl": page_url,
-            })
+            return await self._solve_2captcha(
+                "recaptcha",
+                {
+                    "googlekey": site_key,
+                    "pageurl": page_url,
+                },
+            )
         elif self._provider == "capsolver":
-            return await self._solve_capsolver("ReCaptchaV2TaskProxyLess", {
-                "websiteKey": site_key, "websiteURL": page_url,
-            })
+            return await self._solve_capsolver(
+                "ReCaptchaV2TaskProxyLess",
+                {
+                    "websiteKey": site_key,
+                    "websiteURL": page_url,
+                },
+            )
         return None
 
     async def solve_hcaptcha(self, site_key: str, page_url: str) -> str | None:
@@ -41,13 +49,21 @@ class CaptchaSolver:
         if not self.available:
             return None
         if self._provider == "2captcha":
-            return await self._solve_2captcha("hcaptcha", {
-                "sitekey": site_key, "pageurl": page_url,
-            })
+            return await self._solve_2captcha(
+                "hcaptcha",
+                {
+                    "sitekey": site_key,
+                    "pageurl": page_url,
+                },
+            )
         elif self._provider == "capsolver":
-            return await self._solve_capsolver("HCaptchaTaskProxyLess", {
-                "websiteKey": site_key, "websiteURL": page_url,
-            })
+            return await self._solve_capsolver(
+                "HCaptchaTaskProxyLess",
+                {
+                    "websiteKey": site_key,
+                    "websiteURL": page_url,
+                },
+            )
         return None
 
     async def solve_turnstile(self, site_key: str, page_url: str) -> str | None:
@@ -55,19 +71,28 @@ class CaptchaSolver:
         if not self.available:
             return None
         if self._provider == "2captcha":
-            return await self._solve_2captcha("turnstile", {
-                "sitekey": site_key, "pageurl": page_url,
-            })
+            return await self._solve_2captcha(
+                "turnstile",
+                {
+                    "sitekey": site_key,
+                    "pageurl": page_url,
+                },
+            )
         elif self._provider == "capsolver":
-            return await self._solve_capsolver("AntiTurnstileTaskProxyLess", {
-                "websiteKey": site_key, "websiteURL": page_url,
-            })
+            return await self._solve_capsolver(
+                "AntiTurnstileTaskProxyLess",
+                {
+                    "websiteKey": site_key,
+                    "websiteURL": page_url,
+                },
+            )
         return None
 
     async def _solve_2captcha(self, method: str, params: dict) -> str | None:
         """Submit and poll 2Captcha API."""
         try:
             from curl_cffi.requests import AsyncSession
+
             async with AsyncSession() as session:
                 submit_data = {"key": self._api_key, "method": method, "json": 1, **params}
                 resp = await session.post("https://2captcha.com/in.php", data=submit_data)
@@ -80,9 +105,7 @@ class CaptchaSolver:
 
                 for _ in range(24):  # 24 × 5 s = 120 s max
                     await asyncio.sleep(5)
-                    resp = await session.get(
-                        f"https://2captcha.com/res.php?key={self._api_key}&action=get&id={task_id}&json=1"
-                    )
+                    resp = await session.get(f"https://2captcha.com/res.php?key={self._api_key}&action=get&id={task_id}&json=1")
                     result = resp.json()
                     if result.get("status") == 1:
                         logger.info("2captcha_solved", method=method)
@@ -101,6 +124,7 @@ class CaptchaSolver:
         """Submit and poll CapSolver API."""
         try:
             from curl_cffi.requests import AsyncSession
+
             async with AsyncSession() as session:
                 payload = {
                     "clientKey": self._api_key,
@@ -196,7 +220,8 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
         if not token:
             return False
 
-        await page.evaluate("""(token) => {
+        await page.evaluate(
+            """(token) => {
             // reCAPTCHA
             const textarea = document.getElementById('g-recaptcha-response');
             if (textarea) { textarea.value = token; textarea.style.display = 'block'; }
@@ -214,7 +239,9 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
                     if (client && client.callback) client.callback(token);
                 }
             }
-        }""", token)
+        }""",
+            token,
+        )
 
         await asyncio.sleep(1)
         logger.info("captcha_solved_and_injected", url=url, type=captcha_type)

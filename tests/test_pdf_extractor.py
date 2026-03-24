@@ -1,6 +1,5 @@
 """Tests for PDF content extraction."""
 
-
 from pawgrab.engine.pdf_extractor import (
     _MAX_PDF_SIZE,
     extract_pdf_text,

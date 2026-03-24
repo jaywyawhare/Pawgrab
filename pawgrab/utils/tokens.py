@@ -13,7 +13,7 @@ def estimate_tokens(text: str) -> int:
         return 0
 
     # Count code indicators
-    code_chars = text.count('{') + text.count('}') + text.count('(') + text.count(')')
+    code_chars = text.count("{") + text.count("}") + text.count("(") + text.count(")")
     text_len = len(text)
 
     if text_len == 0:

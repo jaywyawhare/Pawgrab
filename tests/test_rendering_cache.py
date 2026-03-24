@@ -70,7 +70,7 @@ class TestFrameworkDetection:
         assert _run_heuristics('<script id="__NEXT_DATA__">{}') is True
 
     def test_nuxt(self):
-        assert _run_heuristics('<script>window.__NUXT__={}') is True
+        assert _run_heuristics("<script>window.__NUXT__={}") is True
 
     def test_gatsby(self):
         assert _run_heuristics('<div id="gatsby-focus-wrapper">') is True

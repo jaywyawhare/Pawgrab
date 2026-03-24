@@ -101,5 +101,10 @@ async def test_webhook_payload_shape():
         )
 
     assert set(captured_payload.keys()) == {
-        "job_id", "job_type", "status", "pages_scraped", "total_pages", "error",
+        "job_id",
+        "job_type",
+        "status",
+        "pages_scraped",
+        "total_pages",
+        "error",
     }

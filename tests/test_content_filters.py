@@ -74,6 +74,7 @@ class TestBM25ContentFilter:
 class TestCleanerPreprocessing:
     def test_excluded_tags(self):
         from pawgrab.engine.cleaner import _preprocess
+
         html = "<html><body><nav>nav</nav><p>content</p><footer>foot</footer></body></html>"
         result = _preprocess(html, excluded_tags=["nav", "footer"], excluded_selector=None, css_selector=None)
         assert "<nav>" not in result
@@ -82,6 +83,7 @@ class TestCleanerPreprocessing:
 
     def test_excluded_selector(self):
         from pawgrab.engine.cleaner import _preprocess
+
         html = '<html><body><div class="ads">ad</div><p>real</p></body></html>'
         result = _preprocess(html, excluded_tags=None, excluded_selector=".ads", css_selector=None)
         assert "ad" not in result
@@ -89,18 +91,21 @@ class TestCleanerPreprocessing:
 
     def test_css_scoping(self):
         from pawgrab.engine.cleaner import _preprocess
+
         html = '<html><body><div class="main"><p>keep</p></div><div class="extra"><p>remove</p></div></body></html>'
         result = _preprocess(html, excluded_tags=None, excluded_selector=None, css_selector=".main")
         assert "keep" in result
 
     def test_no_filters_passthrough(self):
         from pawgrab.engine.cleaner import _preprocess
+
         html = "<p>untouched</p>"
         result = _preprocess(html, None, None, None)
         assert result == html
 
     def test_word_count_threshold(self):
         from pawgrab.engine.cleaner import _apply_word_count_threshold
+
         html = "<div><p>short</p><p>This paragraph has enough words to pass the threshold check easily.</p></div>"
         result = _apply_word_count_threshold(html, threshold=5)
         assert "enough words" in result

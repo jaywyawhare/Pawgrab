@@ -233,6 +233,7 @@ async def test_proxy_api_add_list_remove_stats():
     """Test the proxy pool REST endpoints via ASGI client."""
     # Reset the singleton so we get a fresh pool
     import pawgrab.dependencies as deps
+
     deps._proxy_pool = None
 
     import httpx

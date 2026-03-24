@@ -23,6 +23,7 @@ async def get_cached(url: str, params: dict) -> dict | None:
     """Return cached response dict or None."""
     try:
         from pawgrab.queue.manager import get_redis
+
         redis = await get_redis()
         raw = await redis.get(_cache_key(url, params))
         if raw:
@@ -39,6 +40,7 @@ async def set_cached(url: str, params: dict, response_dict: dict, ttl: int = _DE
         return
     try:
         from pawgrab.queue.manager import get_redis
+
         redis = await get_redis()
         key = _cache_key(url, params)
         await redis.set(key, orjson.dumps(response_dict).decode(), ex=ttl)

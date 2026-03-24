@@ -46,7 +46,6 @@ async def close_redis():
         _redis = None
 
 
-
 def _key(prefix: str, job_id: str) -> str:
     return f"pawgrab:{prefix}:{job_id}"
 
@@ -103,14 +102,25 @@ async def _get_webhook_url(prefix: str, job_id: str) -> str | None:
     return url if url else None
 
 
-
 async def create_job(
-    url: str, max_pages: int, max_depth: int, formats: list[str], *, webhook_url: str | None = None,
+    url: str,
+    max_pages: int,
+    max_depth: int,
+    formats: list[str],
+    *,
+    webhook_url: str | None = None,
 ) -> str:
-    return await _create_job("crawl", {
-        "url": url, "max_pages": max_pages, "max_depth": max_depth,
-        "formats": orjson.dumps(formats).decode(), "pages_scraped": 0,
-    }, webhook_url=webhook_url)
+    return await _create_job(
+        "crawl",
+        {
+            "url": url,
+            "max_pages": max_pages,
+            "max_depth": max_depth,
+            "formats": orjson.dumps(formats).decode(),
+            "pages_scraped": 0,
+        },
+        webhook_url=webhook_url,
+    )
 
 
 async def get_job(job_id: str, *, page: int = 1, limit: int = 50) -> CrawlJobStatus | None:
@@ -120,10 +130,15 @@ async def get_job(job_id: str, *, page: int = 1, limit: int = 50) -> CrawlJobSta
     data, results, total = row
     start = (page - 1) * limit
     return CrawlJobStatus(
-        job_id=data["job_id"], status=CrawlStatus(data["status"]),
-        pages_scraped=int(data.get("pages_scraped", 0)), results=results,
-        error=data.get("error") or None, page=page, limit=limit,
-        total_results=total, has_next=(start + len(results)) < total,
+        job_id=data["job_id"],
+        status=CrawlStatus(data["status"]),
+        pages_scraped=int(data.get("pages_scraped", 0)),
+        results=results,
+        error=data.get("error") or None,
+        page=page,
+        limit=limit,
+        total_results=total,
+        has_next=(start + len(results)) < total,
     )
 
 
@@ -139,12 +154,17 @@ async def get_webhook_url(job_id: str) -> str | None:
     return await _get_webhook_url("crawl", job_id)
 
 
-
 async def create_batch_job(urls: list[str], formats: list[str], *, webhook_url: str | None = None) -> str:
-    return await _create_job("batch", {
-        "urls": orjson.dumps(urls).decode(), "total_urls": len(urls),
-        "formats": orjson.dumps(formats).decode(), "urls_scraped": 0,
-    }, webhook_url=webhook_url)
+    return await _create_job(
+        "batch",
+        {
+            "urls": orjson.dumps(urls).decode(),
+            "total_urls": len(urls),
+            "formats": orjson.dumps(formats).decode(),
+            "urls_scraped": 0,
+        },
+        webhook_url=webhook_url,
+    )
 
 
 async def get_batch_job(job_id: str, *, page: int = 1, limit: int = 50) -> BatchJobStatus | None:
@@ -154,10 +174,16 @@ async def get_batch_job(job_id: str, *, page: int = 1, limit: int = 50) -> Batch
     data, results, total = row
     start = (page - 1) * limit
     return BatchJobStatus(
-        job_id=data["job_id"], status=CrawlStatus(data["status"]),
-        urls_scraped=int(data.get("urls_scraped", 0)), total_urls=int(data.get("total_urls", 0)),
-        results=results, error=data.get("error") or None, page=page, limit=limit,
-        total_results=total, has_next=(start + len(results)) < total,
+        job_id=data["job_id"],
+        status=CrawlStatus(data["status"]),
+        urls_scraped=int(data.get("urls_scraped", 0)),
+        total_urls=int(data.get("total_urls", 0)),
+        results=results,
+        error=data.get("error") or None,
+        page=page,
+        limit=limit,
+        total_results=total,
+        has_next=(start + len(results)) < total,
     )
 
 
@@ -174,24 +200,37 @@ async def get_batch_webhook_url(job_id: str) -> str | None:
 
 
 async def create_batch_extract_job(urls: list[str], strategy: str, *, webhook_url: str | None = None) -> str:
-    return await _create_job("batch_extract", {
-        "urls": orjson.dumps(urls).decode(), "total_urls": len(urls),
-        "strategy": strategy, "urls_extracted": 0,
-    }, webhook_url=webhook_url)
+    return await _create_job(
+        "batch_extract",
+        {
+            "urls": orjson.dumps(urls).decode(),
+            "total_urls": len(urls),
+            "strategy": strategy,
+            "urls_extracted": 0,
+        },
+        webhook_url=webhook_url,
+    )
 
 
 async def get_batch_extract_job(job_id: str, *, page: int = 1, limit: int = 50):
     from pawgrab.models.batch_extract import BatchExtractJobStatus
+
     row = await _get_job_data("batch_extract", job_id, page=page, limit=limit)
     if row is None:
         return None
     data, results, total = row
     start = (page - 1) * limit
     return BatchExtractJobStatus(
-        job_id=data["job_id"], status=CrawlStatus(data["status"]),
-        urls_extracted=int(data.get("urls_extracted", 0)), total_urls=int(data.get("total_urls", 0)),
-        results=results, error=data.get("error") or None, page=page, limit=limit,
-        total_results=total, has_next=(start + len(results)) < total,
+        job_id=data["job_id"],
+        status=CrawlStatus(data["status"]),
+        urls_extracted=int(data.get("urls_extracted", 0)),
+        total_urls=int(data.get("total_urls", 0)),
+        results=results,
+        error=data.get("error") or None,
+        page=page,
+        limit=limit,
+        total_results=total,
+        has_next=(start + len(results)) < total,
     )
 
 
@@ -207,16 +246,24 @@ async def get_batch_extract_webhook_url(job_id: str) -> str | None:
     return await _get_webhook_url("batch_extract", job_id)
 
 
-
 def _checkpoint_key(job_id: str) -> str:
     return f"pawgrab:crawl:{job_id}:checkpoint"
 
 
 async def save_checkpoint(job_id: str, *, visited: set[str], queue: list[tuple[str, int]], pages_scraped: int, cookie_jar: dict[str, str]) -> None:
     redis = await get_redis()
-    await redis.set(_checkpoint_key(job_id), orjson.dumps({
-        "visited": list(visited), "queue": queue, "pages_scraped": pages_scraped, "cookie_jar": cookie_jar,
-    }).decode(), ex=7200)
+    await redis.set(
+        _checkpoint_key(job_id),
+        orjson.dumps(
+            {
+                "visited": list(visited),
+                "queue": queue,
+                "pages_scraped": pages_scraped,
+                "cookie_jar": cookie_jar,
+            }
+        ).decode(),
+        ex=7200,
+    )
 
 
 async def load_checkpoint(job_id: str) -> dict | None:
@@ -236,7 +283,6 @@ async def load_checkpoint(job_id: str) -> dict | None:
 async def delete_checkpoint(job_id: str) -> None:
     redis = await get_redis()
     await redis.delete(_checkpoint_key(job_id))
-
 
 
 def _pubsub_channel(job_id: str) -> str:

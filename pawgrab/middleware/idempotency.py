@@ -35,6 +35,7 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
 
         try:
             from pawgrab.queue.manager import get_redis
+
             redis = await get_redis()
         except Exception:
             return await call_next(request)
@@ -59,10 +60,12 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
                 async for chunk in response.body_iterator:
                     body += chunk.encode() if isinstance(chunk, str) else chunk
 
-                cache_data = orjson.dumps({
-                    "status_code": response.status_code,
-                    "body": orjson.loads(body),
-                }).decode()
+                cache_data = orjson.dumps(
+                    {
+                        "status_code": response.status_code,
+                        "body": orjson.loads(body),
+                    }
+                ).decode()
                 await redis.set(cache_key, cache_data, ex=_CACHE_TTL)
             except Exception:
                 logger.warning("idempotency_cache_failed", key=idem_key)

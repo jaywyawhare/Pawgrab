@@ -78,9 +78,7 @@ class CSSExtractor(BaseExtractor):
                 results.append(row)
         return results
 
-    def _extract_fields(
-        self, element: BeautifulSoup | Tag, fields: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _extract_fields(self, element: BeautifulSoup | Tag, fields: dict[str, Any]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for name, selector in fields.items():
             if isinstance(selector, dict):
@@ -89,9 +87,7 @@ class CSSExtractor(BaseExtractor):
                 all_matches = selector.get("all", False)
                 els = element.select(css)
                 if all_matches:
-                    result[name] = [
-                        self._get_value(el, attr) for el in els
-                    ]
+                    result[name] = [self._get_value(el, attr) for el in els]
                 elif els:
                     result[name] = self._get_value(els[0], attr)
                 else:
@@ -152,9 +148,7 @@ class XPathExtractor(BaseExtractor):
         if hasattr(node, "text"):
             text = node.text or ""
             tail = node.tail or ""
-            children = "".join(
-                etree.tostring(c, encoding="unicode", method="text") for c in node
-            )
+            children = "".join(etree.tostring(c, encoding="unicode", method="text") for c in node)
             return (text + children + tail).strip()
         return str(node)
 

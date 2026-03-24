@@ -30,11 +30,13 @@ class AnthropicProvider(LLMProvider):
     def _get_client(self):
         if self._client is None:
             from anthropic import AsyncAnthropic
+
             self._client = AsyncAnthropic(api_key=self._api_key)
         return self._client
 
     async def extract(self, content: str, prompt: str, schema_hint: dict | None = None, json_schema: dict | None = None) -> dict[str, Any]:
         from pawgrab.ai.prompts import SYSTEM_PROMPT, build_extraction_prompt
+
         user_message = build_extraction_prompt(content, prompt, schema_hint)
         if len(user_message) > 100_000:
             user_message = user_message[:100_000] + "\n\n[Content truncated]"
@@ -71,6 +73,7 @@ class GeminiProvider(LLMProvider):
     def _get_client(self):
         if self._client is None:
             import google.generativeai as genai
+
             genai.configure(api_key=self._api_key)
             self._client = genai.GenerativeModel(self._model)
         return self._client
@@ -79,6 +82,7 @@ class GeminiProvider(LLMProvider):
         import asyncio
 
         from pawgrab.ai.prompts import SYSTEM_PROMPT, build_extraction_prompt
+
         user_message = build_extraction_prompt(content, prompt, schema_hint)
         if len(user_message) > 100_000:
             user_message = user_message[:100_000] + "\n\n[Content truncated]"
@@ -108,12 +112,14 @@ class OllamaProvider(LLMProvider):
 
     async def extract(self, content: str, prompt: str, schema_hint: dict | None = None, json_schema: dict | None = None) -> dict[str, Any]:
         from pawgrab.ai.prompts import SYSTEM_PROMPT, build_extraction_prompt
+
         user_message = build_extraction_prompt(content, prompt, schema_hint)
         if len(user_message) > 50_000:
             user_message = user_message[:50_000] + "\n\n[Content truncated]"
 
         try:
             from curl_cffi.requests import AsyncSession
+
             async with AsyncSession() as session:
                 resp = await session.post(
                     f"{self._base_url}/api/chat",
@@ -150,4 +156,5 @@ def get_llm_provider(provider: str | None = None) -> LLMProvider:
     else:
         # Default to OpenAI
         from pawgrab.ai.openai_provider import OpenAIProvider
+
         return OpenAIProvider()

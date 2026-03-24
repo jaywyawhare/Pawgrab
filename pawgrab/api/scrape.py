@@ -45,15 +45,18 @@ async def scrape(req: ScrapeRequest):
         response = await scrape_url(
             url,
             **req.model_dump(exclude={"url", "formats", "actions"}),
-            formats=req.formats, actions=req.actions,
-            browser_pool=pool, proxy_pool=proxy_pool,
+            formats=req.formats,
+            actions=req.actions,
+            browser_pool=pool,
+            proxy_pool=proxy_pool,
         )
         if warnings:
             response.warnings = warnings + response.warnings
         return response
     except PermissionError:
         raise PawgrabError(
-            status_code=403, code=ErrorCode.ROBOTS_BLOCKED,
+            status_code=403,
+            code=ErrorCode.ROBOTS_BLOCKED,
             message="Blocked by robots.txt",
         ) from None
     except TimeoutError:

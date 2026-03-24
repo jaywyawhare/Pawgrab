@@ -16,6 +16,7 @@ _SESSION_PREFIX = "pawgrab:session:"
 
 async def _get_redis():
     from pawgrab.queue.manager import get_redis
+
     return await get_redis()
 
 

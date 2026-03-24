@@ -1,6 +1,5 @@
 """Tests for the /v1/scrape endpoint."""
 
-
 from pawgrab import __version__
 
 

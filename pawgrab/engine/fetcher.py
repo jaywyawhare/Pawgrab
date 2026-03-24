@@ -23,6 +23,7 @@ from pawgrab.engine.pdf_extractor import is_pdf_content
 
 logger = structlog.get_logger()
 
+
 async def _backoff(attempt: int) -> None:
     """Exponential backoff with jitter between retry attempts."""
     if attempt <= 1:
@@ -30,19 +31,22 @@ async def _backoff(attempt: int) -> None:
     delay = min(2 ** (attempt - 1) + random.uniform(0, 1), 10.0)
     await asyncio.sleep(delay)
 
-_BLOCKED_HEADERS = frozenset({
-    "host",
-    "content-length",
-    "transfer-encoding",
-    "connection",
-    "keep-alive",
-    "expect",
-    "te",
-    "trailer",
-    "upgrade",
-    "proxy-authorization",
-    "proxy-connection",
-})
+
+_BLOCKED_HEADERS = frozenset(
+    {
+        "host",
+        "content-length",
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "expect",
+        "te",
+        "trailer",
+        "upgrade",
+        "proxy-authorization",
+        "proxy-connection",
+    }
+)
 
 
 def _sanitize_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
@@ -122,11 +126,24 @@ async def close_sessions():
 
 class FetchResult:
     __slots__ = (
-        "html", "status_code", "url", "used_browser", "challenge",
-        "resp_headers", "cookies", "screenshot_bytes", "pdf_bytes",
-        "content_bytes", "action_warnings",
-        "network_requests", "console_logs", "mhtml_data", "ssl_info",
-        "retry_count", "websocket_messages", "trace_path",
+        "html",
+        "status_code",
+        "url",
+        "used_browser",
+        "challenge",
+        "resp_headers",
+        "cookies",
+        "screenshot_bytes",
+        "pdf_bytes",
+        "content_bytes",
+        "action_warnings",
+        "network_requests",
+        "console_logs",
+        "mhtml_data",
+        "ssl_info",
+        "retry_count",
+        "websocket_messages",
+        "trace_path",
     )
 
     def __init__(
@@ -215,8 +232,10 @@ async def fetch_page(
             proxy_url = proxy_entry.url
 
     _browser_kwargs = dict(
-        timeout=timeout, pool=browser_pool,
-        headers=headers, cookies=cookies,
+        timeout=timeout,
+        pool=browser_pool,
+        headers=headers,
+        cookies=cookies,
         capture_screenshot=capture_screenshot,
         screenshot_fullpage=screenshot_fullpage,
         capture_pdf=capture_pdf,
@@ -236,11 +255,7 @@ async def fetch_page(
     if actions and browser_pool is not None:
         return await _fetch_with_browser(url, actions=actions, **_browser_kwargs)
 
-    needs_browser = (
-        capture_screenshot or capture_pdf or text_mode
-        or scroll_to_bottom or capture_network or capture_console
-        or capture_mhtml or geolocation
-    )
+    needs_browser = capture_screenshot or capture_pdf or text_mode or scroll_to_bottom or capture_network or capture_console or capture_mhtml or geolocation
     if needs_browser and browser_pool is not None:
         return await _fetch_with_browser(url, **_browser_kwargs)
 
@@ -260,8 +275,12 @@ async def fetch_page(
     first_target = settings.impersonate or await _impersonate_for_host(host)
     try:
         result = await _fetch_with_curl(
-            url, timeout=timeout, impersonate=first_target,
-            headers=headers, cookies=cookies, proxy=proxy_url,
+            url,
+            timeout=timeout,
+            impersonate=first_target,
+            headers=headers,
+            cookies=cookies,
+            proxy=proxy_url,
         )
         if proxy_entry is not None:
             proxy_entry.mark_success()
@@ -304,8 +323,12 @@ async def fetch_page(
                     retry_proxy = retry_entry.url
             try:
                 result = await _fetch_with_curl(
-                    url, timeout=timeout, impersonate=retry_target,
-                    headers=headers, cookies=merged_cookies or None, proxy=retry_proxy,
+                    url,
+                    timeout=timeout,
+                    impersonate=retry_target,
+                    headers=headers,
+                    cookies=merged_cookies or None,
+                    proxy=retry_proxy,
                 )
                 if retry_entry is not None:
                     retry_entry.mark_success()
@@ -420,10 +443,13 @@ async def _fetch_with_curl(
 def _setup_ws_capture(ws, messages: list[dict]):
     """Attach handlers to capture WebSocket frames."""
     ws_url = ws.url
+
     def _on_frame_sent(payload):
         messages.append({"direction": "sent", "url": ws_url, "data": str(payload)[:5000]})
+
     def _on_frame_received(payload):
         messages.append({"direction": "received", "url": ws_url, "data": str(payload)[:5000]})
+
     ws.on("framesent", _on_frame_sent)
     ws.on("framereceived", _on_frame_received)
 
@@ -495,21 +521,24 @@ _CF_WAIT_MS = 10_000
 _CF_SETTLE_MS = 6_000
 _CF_MIN_TIMEOUT = 60_000
 
-_PROXY_ERROR_INDICATORS = frozenset({
-    "net::err_proxy",
-    "net::err_tunnel",
-    "connection refused",
-    "connection reset",
-    "connection timed out",
-    "failed to connect",
-    "could not resolve proxy",
-})
+_PROXY_ERROR_INDICATORS = frozenset(
+    {
+        "net::err_proxy",
+        "net::err_tunnel",
+        "connection refused",
+        "connection reset",
+        "connection timed out",
+        "failed to connect",
+        "could not resolve proxy",
+    }
+)
 
 
 def is_proxy_error(exc: Exception) -> bool:
     """Check if an exception is a proxy-related error."""
     msg = str(exc).lower()
     return any(indicator in msg for indicator in _PROXY_ERROR_INDICATORS)
+
 
 async def _fetch_with_browser(
     url: str,
@@ -538,11 +567,7 @@ async def _fetch_with_browser(
     if settings.solve_cloudflare and timeout < _CF_MIN_TIMEOUT:
         timeout = _CF_MIN_TIMEOUT
 
-    use_session = (
-        session_id
-        and settings.browser_session_profiles
-        and hasattr(pool, "acquire_session_page")
-    )
+    use_session = session_id and settings.browser_session_profiles and hasattr(pool, "acquire_session_page")
     if use_session:
         page = await pool.acquire_session_page(session_id)
     else:
@@ -571,39 +596,53 @@ async def _fetch_with_browser(
             await page.set_extra_http_headers(headers)
 
         if cookies:
-            cookie_list = [
-                {"name": k, "value": v, "url": url}
-                for k, v in cookies.items()
-            ]
+            cookie_list = [{"name": k, "value": v, "url": url} for k, v in cookies.items()]
             await page.context.add_cookies(cookie_list)
 
         if text_mode:
             from pawgrab.engine.browser import _BLOCKED_MEDIA_TYPES
+
             async def _media_block_handler(route):
                 if route.request.resource_type in _BLOCKED_MEDIA_TYPES:
                     return await route.abort()
                 return await route.continue_()
+
             await page.route("**/*", _media_block_handler)
 
         if capture_network:
-            page.on("request", lambda req: network_requests.append({
-                "url": req.url,
-                "method": req.method,
-                "resource_type": req.resource_type,
-                "headers": dict(req.headers),
-            }))
-            page.on("response", lambda resp: network_requests.append({
-                "url": resp.url,
-                "status": resp.status,
-                "headers": dict(resp.headers),
-            }))
+            page.on(
+                "request",
+                lambda req: network_requests.append(
+                    {
+                        "url": req.url,
+                        "method": req.method,
+                        "resource_type": req.resource_type,
+                        "headers": dict(req.headers),
+                    }
+                ),
+            )
+            page.on(
+                "response",
+                lambda resp: network_requests.append(
+                    {
+                        "url": resp.url,
+                        "status": resp.status,
+                        "headers": dict(resp.headers),
+                    }
+                ),
+            )
 
         if capture_console:
-            page.on("console", lambda msg: console_logs.append({
-                "type": msg.type,
-                "text": msg.text,
-                "location": str(msg.location) if hasattr(msg, "location") else None,
-            }))
+            page.on(
+                "console",
+                lambda msg: console_logs.append(
+                    {
+                        "type": msg.type,
+                        "text": msg.text,
+                        "location": str(msg.location) if hasattr(msg, "location") else None,
+                    }
+                ),
+            )
 
         websocket_messages: list[dict] = [] if capture_websocket else None
         if capture_websocket:
@@ -618,24 +657,28 @@ async def _fetch_with_browser(
         if scroll_to_bottom:
             try:
                 from pawgrab.engine.browser import _SCROLL_TO_BOTTOM_JS
+
                 await page.evaluate(_SCROLL_TO_BOTTOM_JS)
             except Exception as exc:
                 logger.warning("scroll_to_bottom_failed", url=url, error=str(exc))
 
         try:
             from pawgrab.engine.browser import _OVERLAY_REMOVAL_JS
+
             await page.evaluate(_OVERLAY_REMOVAL_JS)
         except Exception:
             pass
 
         try:
             from pawgrab.engine.browser import _SHADOW_DOM_FLATTEN_JS
+
             await page.evaluate(_SHADOW_DOM_FLATTEN_JS)
         except Exception:
             pass
 
         try:
             from pawgrab.engine.browser import _IFRAME_INLINE_JS
+
             await page.evaluate(_IFRAME_INLINE_JS)
         except Exception:
             pass
@@ -660,7 +703,10 @@ async def _fetch_with_browser(
                 if solved:
                     html = await page.content()
                     return FetchResult(
-                        html=html, status_code=200, url=page.url, used_browser=True,
+                        html=html,
+                        status_code=200,
+                        url=page.url,
+                        used_browser=True,
                         action_warnings=action_warnings,
                         network_requests=network_requests,
                         console_logs=console_logs,
@@ -685,7 +731,10 @@ async def _fetch_with_browser(
             challenge = detect_challenge(status, resp_headers, html)
             if not challenge.detected:
                 return FetchResult(
-                    html=html, status_code=200, url=final_url, used_browser=True,
+                    html=html,
+                    status_code=200,
+                    url=final_url,
+                    used_browser=True,
                     action_warnings=action_warnings,
                     network_requests=network_requests,
                     console_logs=console_logs,
@@ -829,6 +878,7 @@ def _parse_retry_after(result: FetchResult) -> float | None:
     try:  # HTTP-date format: e.g. "Wed, 21 Oct 2015 07:28:00 GMT"
         import time as _time
         from email.utils import parsedate_to_datetime
+
         dt = parsedate_to_datetime(retry_after)
         delay = dt.timestamp() - _time.time()
         return max(0.0, delay)

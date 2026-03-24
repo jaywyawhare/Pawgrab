@@ -7,6 +7,7 @@ import pytest
 def auth_app():
     """Create a fresh app with API key configured."""
     from unittest.mock import patch
+
     with patch("pawgrab.config.settings") as mock_settings:
         mock_settings.api_key = "test-secret-key"
         mock_settings.log_level = "debug"
@@ -26,6 +27,7 @@ def auth_app():
         import importlib
 
         import pawgrab.main
+
         importlib.reload(pawgrab.main)
         yield pawgrab.main.app
 

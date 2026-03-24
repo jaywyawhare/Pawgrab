@@ -190,6 +190,7 @@ def test_strip_section_no_match():
     text = "unchanged text"
     assert _strip_section(text, "BAR") == text
 
+
 def test_detect_cloudflare_non_interactive():
     html = "<html><script>cType: 'non-interactive'</script></html>"
     assert _detect_cloudflare(html) == "non-interactive"
@@ -214,6 +215,7 @@ def test_detect_cloudflare_none():
     assert _detect_cloudflare("<html>Normal page</html>") is None
     assert _detect_cloudflare("") is None
     assert _detect_cloudflare(None) is None
+
 
 def test_stealth_args_include_trust_tokens():
     joined = " ".join(_STEALTH_CHROMIUM_ARGS)

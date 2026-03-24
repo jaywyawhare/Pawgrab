@@ -16,17 +16,48 @@ from pawgrab.models.common import OutputFormat
 from pawgrab.utils.text import tokenize
 
 _BLANK_COLLAPSE_RE = re.compile(r"\n{3,}")
-_BLOCK_TAGS = frozenset({
-    "p", "div", "section", "article", "main", "blockquote",
-    "ul", "ol", "dl", "figure", "figcaption", "details", "summary",
-    "table", "thead", "tbody", "tfoot", "tr",
-})
+_BLOCK_TAGS = frozenset(
+    {
+        "p",
+        "div",
+        "section",
+        "article",
+        "main",
+        "blockquote",
+        "ul",
+        "ol",
+        "dl",
+        "figure",
+        "figcaption",
+        "details",
+        "summary",
+        "table",
+        "thead",
+        "tbody",
+        "tfoot",
+        "tr",
+    }
+)
 _SKIP_TAGS = frozenset({"script", "style", "noscript", "svg", "template"})
 _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
-_LEAF_TAGS = frozenset({
-    *_HEADING_TAGS, "a", "img", "li", "strong", "b",
-    "em", "i", "code", "pre", "br", "hr", "td", "th",
-})
+_LEAF_TAGS = frozenset(
+    {
+        *_HEADING_TAGS,
+        "a",
+        "img",
+        "li",
+        "strong",
+        "b",
+        "em",
+        "i",
+        "code",
+        "pre",
+        "br",
+        "hr",
+        "td",
+        "th",
+    }
+)
 
 
 def convert(html: str, fmt: OutputFormat) -> str:

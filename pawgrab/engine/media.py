@@ -28,7 +28,7 @@ def _extract_images(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
     for img in soup.find_all("img"):
         src = img.get("src", "")
         if not src:
-                src = img.get("data-src", "") or img.get("data-lazy-src", "")
+            src = img.get("data-src", "") or img.get("data-lazy-src", "")
         if not src:
             continue
 
@@ -51,12 +51,14 @@ def _extract_images(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
         if "url(" in style:
             urls = re.findall(r'url\(["\']?([^"\')\s]+)["\']?\)', style)
             for u in urls:
-                images.append({
-                    "src": urljoin(base_url, u) if base_url else u,
-                    "alt": "",
-                    "title": "",
-                    "source": "css-background",
-                })
+                images.append(
+                    {
+                        "src": urljoin(base_url, u) if base_url else u,
+                        "alt": "",
+                        "title": "",
+                        "source": "css-background",
+                    }
+                )
 
     return images
 
@@ -70,33 +72,41 @@ def _extract_videos(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
         for source in video.find_all("source"):
             src = source.get("src", "")
             if src:
-                sources.append({
-                    "src": urljoin(base_url, src) if base_url else src,
-                    "type": source.get("type", ""),
-                })
+                sources.append(
+                    {
+                        "src": urljoin(base_url, src) if base_url else src,
+                        "type": source.get("type", ""),
+                    }
+                )
         src = video.get("src", "")
         if src:
-            sources.append({
-                "src": urljoin(base_url, src) if base_url else src,
-                "type": "",
-            })
+            sources.append(
+                {
+                    "src": urljoin(base_url, src) if base_url else src,
+                    "type": "",
+                }
+            )
         if sources:
-            videos.append({
-                "sources": sources,
-                "poster": urljoin(base_url, video.get("poster", "")) if video.get("poster") else None,
-                "width": video.get("width"),
-                "height": video.get("height"),
-            })
+            videos.append(
+                {
+                    "sources": sources,
+                    "poster": urljoin(base_url, video.get("poster", "")) if video.get("poster") else None,
+                    "width": video.get("width"),
+                    "height": video.get("height"),
+                }
+            )
 
     for iframe in soup.find_all("iframe"):
         src = iframe.get("src", "")
         if any(domain in src for domain in ("youtube", "vimeo", "dailymotion", "wistia")):
-            videos.append({
-                "sources": [{"src": src, "type": "embed"}],
-                "width": iframe.get("width"),
-                "height": iframe.get("height"),
-                "embed": True,
-            })
+            videos.append(
+                {
+                    "sources": [{"src": src, "type": "embed"}],
+                    "width": iframe.get("width"),
+                    "height": iframe.get("height"),
+                    "embed": True,
+                }
+            )
 
     return videos
 
@@ -110,16 +120,20 @@ def _extract_audio(soup: BeautifulSoup, base_url: str) -> list[dict[str, Any]]:
         for source in audio.find_all("source"):
             src = source.get("src", "")
             if src:
-                sources.append({
-                    "src": urljoin(base_url, src) if base_url else src,
-                    "type": source.get("type", ""),
-                })
+                sources.append(
+                    {
+                        "src": urljoin(base_url, src) if base_url else src,
+                        "type": source.get("type", ""),
+                    }
+                )
         src = audio.get("src", "")
         if src:
-            sources.append({
-                "src": urljoin(base_url, src) if base_url else src,
-                "type": "",
-            })
+            sources.append(
+                {
+                    "src": urljoin(base_url, src) if base_url else src,
+                    "type": "",
+                }
+            )
         if sources:
             audios.append({"sources": sources})
 

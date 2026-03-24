@@ -65,8 +65,4 @@ def pdf_text_to_html(text: str) -> str:
 
 def _escape(text: str) -> str:
     """Minimal HTML escaping."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

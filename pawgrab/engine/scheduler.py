@@ -45,6 +45,7 @@ async def create_schedule(
 ) -> str:
     """Create a scheduled crawl. Returns schedule ID."""
     from pawgrab.queue.manager import get_redis
+
     schedule_id = uuid.uuid4().hex[:12]
     redis = await get_redis()
     data = {
@@ -71,6 +72,7 @@ async def create_schedule(
 
 async def get_schedule(schedule_id: str) -> dict | None:
     from pawgrab.queue.manager import get_redis
+
     redis = await get_redis()
     data = await redis.hgetall(f"{_SCHEDULE_PREFIX}{schedule_id}")
     return _deserialize_schedule(data) if data else None
@@ -78,6 +80,7 @@ async def get_schedule(schedule_id: str) -> dict | None:
 
 async def list_schedules() -> list[dict]:
     from pawgrab.queue.manager import get_redis
+
     redis = await get_redis()
     ids = await redis.smembers(_SCHEDULES_SET)
     if not ids:
@@ -101,6 +104,7 @@ async def list_schedules() -> list[dict]:
 
 async def delete_schedule(schedule_id: str) -> bool:
     from pawgrab.queue.manager import get_redis
+
     redis = await get_redis()
     deleted = await redis.delete(f"{_SCHEDULE_PREFIX}{schedule_id}")
     await redis.srem(_SCHEDULES_SET, schedule_id)
@@ -110,13 +114,17 @@ async def delete_schedule(schedule_id: str) -> bool:
 async def update_schedule_run(schedule_id: str, cron: str) -> None:
     """Update last_run and next_run after a scheduled crawl executes."""
     from pawgrab.queue.manager import get_redis
+
     redis = await get_redis()
     now = int(time.time())
     key = f"{_SCHEDULE_PREFIX}{schedule_id}"
-    await redis.hset(key, mapping={
-        "last_run": str(now),
-        "next_run": str(_next_cron_time(cron)),
-    })
+    await redis.hset(
+        key,
+        mapping={
+            "last_run": str(now),
+            "next_run": str(_next_cron_time(cron)),
+        },
+    )
     await redis.hincrby(key, "run_count", 1)
 
 
@@ -124,6 +132,7 @@ def _next_cron_time(cron_expr: str) -> int:
     """Calculate next run time from a cron expression using croniter."""
     try:
         from croniter import croniter
+
         it = croniter(cron_expr, time.time())
         return int(it.get_next(float))
     except Exception:

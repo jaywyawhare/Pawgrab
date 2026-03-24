@@ -87,9 +87,11 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         duration_ms = round((time.perf_counter() - start) * 1000, 1)
 
         from pawgrab.engine.metrics import metrics
+
         metrics.request_duration.observe(duration_ms / 1000)
 
         from pawgrab.engine.analytics import usage_tracker
+
         raw_key = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         client_key = hashlib.sha256(raw_key.encode()).hexdigest()[:16] if raw_key else "anonymous"
         content_length = int(response.headers.get("content-length", "0") or "0")
@@ -144,10 +146,7 @@ def _request_id(request: Request) -> str | None:
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Pawgrab",
-        description=(
-            "Fast, stealth web scraping API with content extraction, "
-            "crawling, structured data extraction, and search capabilities."
-        ),
+        description=("Fast, stealth web scraping API with content extraction, crawling, structured data extraction, and search capabilities."),
         version=__version__,
         lifespan=lifespan,
     )
@@ -179,11 +178,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
         errors = exc.errors()
-        fields = [
-            f"{'.'.join(str(p) for p in e['loc'][1:])}: {e['msg']}"
-            for e in errors
-            if len(e["loc"]) > 1
-        ]
+        fields = [f"{'.'.join(str(p) for p in e['loc'][1:])}: {e['msg']}" for e in errors if len(e["loc"]) > 1]
         return JSONResponse(
             status_code=422,
             content=ErrorResponse(
@@ -237,6 +232,7 @@ def create_app() -> FastAPI:
 
     dashboard_dir = Path(__file__).resolve().parent.parent / "dashboard"
     if dashboard_dir.is_dir():
+
         @app.get("/dashboard", include_in_schema=False)
         async def dashboard():
             return FileResponse(dashboard_dir / "index.html")

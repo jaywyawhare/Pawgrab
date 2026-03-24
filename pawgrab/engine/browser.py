@@ -54,13 +54,15 @@ _APPLE_GPU_PROFILES = [
 
 _APPLE_RENDERERS = [p[0] for p in _APPLE_GPU_PROFILES]
 
-_HARMFUL_DEFAULT_ARGS = frozenset({
-    "--enable-automation",
-    "--disable-popup-blocking",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-extensions",
-})
+_HARMFUL_DEFAULT_ARGS = frozenset(
+    {
+        "--enable-automation",
+        "--disable-popup-blocking",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-extensions",
+    }
+)
 
 _STEALTH_CHROMIUM_ARGS = (
     "--disable-blink-features=AutomationControlled",
@@ -80,18 +82,13 @@ _STEALTH_CHROMIUM_ARGS = (
     "--disable-backgrounding-occluded-windows",
     "--disable-renderer-backgrounding",
     "--homepage=about:blank",
-
     "--fingerprinting-canvas-image-data-noise",
     "--fingerprinting-canvas-measuretext-noise",
     "--fingerprinting-client-rects-noise",
-
     "--webrtc-ip-handling-policy=disable_non_proxied_udp",
     "--force-webrtc-ip-handling-policy",
     "--enforce-webrtc-ip-permission-check",
-
-    "--blink-settings=primaryHoverType=2,availableHoverTypes=2,"
-    "primaryPointerType=4,availablePointerTypes=4",
-
+    "--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4",
     "--disable-gpu-sandbox",
     "--disable-partial-raster",
     "--disable-skia-runtime-opts",
@@ -100,7 +97,6 @@ _STEALTH_CHROMIUM_ARGS = (
     "--force-color-profile=srgb",
     "--font-render-hinting=none",
     "--disable-font-subpixel-positioning",
-
     "--disable-domain-reliability",
     "--disable-client-side-phishing-detection",
     "--disable-sync",
@@ -114,12 +110,9 @@ _STEALTH_CHROMIUM_ARGS = (
     "--safebrowsing-disable-auto-update",
     "--no-proxy-server",
     "--disable-cookie-encryption",
-
     "--disable-crash-reporter",
     "--crash-dumps-dir=/tmp",
-    "--enable-features=NetworkService,NetworkServiceInProcess,"
-    "TrustTokens,TrustTokensAlwaysAllowIssuance",
-
+    "--enable-features=NetworkService,NetworkServiceInProcess,TrustTokens,TrustTokensAlwaysAllowIssuance",
     "--disable-dev-shm-usage",
     "--disable-session-crashed-bubble",
     "--disable-search-engine-choice-screen",
@@ -128,7 +121,6 @@ _STEALTH_CHROMIUM_ARGS = (
     "--disable-notifications",
     "--disable-logging",
     "--log-level=3",
-
     "--enable-async-dns",
     "--enable-tcp-fast-open",
     "--enable-web-bluetooth",
@@ -136,7 +128,6 @@ _STEALTH_CHROMIUM_ARGS = (
     "--enable-surface-synchronization",
     "--aggressive-cache-discard",
     "--ignore-gpu-blocklist",
-
     "--disable-threaded-animation",
     "--disable-threaded-scrolling",
     "--disable-checker-imaging",
@@ -146,7 +137,6 @@ _STEALTH_CHROMIUM_ARGS = (
     "--disable-layer-tree-host-memory-pressure",
     "--disable-background-timer-throttling",
     "--prerender-from-omnibox=disabled",
-
     "--autoplay-policy=user-gesture-required",
     "--disable-offer-upload-credit-cards",
     "--disable-offer-store-unmasked-wallet-cards",
@@ -154,16 +144,13 @@ _STEALTH_CHROMIUM_ARGS = (
     "--disable-print-preview",
     "--disable-gesture-typing",
     "--disable-wake-on-wifi",
-
     "--window-size=1920,1080",
     "--window-position=0,0",
     "--start-maximized",
     "--disable-popup-blocking",
-
     "--lang=en-US,en",
     "--accept-lang=en-US,en;q=0.9",
-    "--disable-features=IsolateOrigins,site-per-process,TranslateUI,"
-    "AutofillServerCommunication,AudioServiceOutOfProcess,BlinkGenPropertyTrees",
+    "--disable-features=IsolateOrigins,site-per-process,TranslateUI,AutofillServerCommunication,AudioServiceOutOfProcess,BlinkGenPropertyTrees",
 )
 
 _FINGERPRINT_EVASION_JS = """
@@ -589,34 +576,36 @@ async function scrollToBottom() {
 await scrollToBottom();
 """
 
-_AD_TRACKER_DOMAINS = frozenset({
-    "doubleclick.net",
-    "adservice.google.com",
-    "googlesyndication.com",
-    "googletagservices.com",
-    "googletagmanager.com",
-    "google-analytics.com",
-    "googleadservices.com",
-    "analytics.google.com",
-    "adsystem.com",
-    "adnxs.com",
-    "ads-twitter.com",
-    "facebook.net",
-    "fbcdn.net",
-    "amazon-adsystem.com",
-    "hotjar.com",
-    "clarity.ms",
-    "newrelic.com",
-    "nr-data.net",
-    "sentry.io",
-    "segment.com",
-    "mixpanel.com",
-    "quantserve.com",
-    "scorecardresearch.com",
-    "criteo.com",
-    "outbrain.com",
-    "taboola.com",
-})
+_AD_TRACKER_DOMAINS = frozenset(
+    {
+        "doubleclick.net",
+        "adservice.google.com",
+        "googlesyndication.com",
+        "googletagservices.com",
+        "googletagmanager.com",
+        "google-analytics.com",
+        "googleadservices.com",
+        "analytics.google.com",
+        "adsystem.com",
+        "adnxs.com",
+        "ads-twitter.com",
+        "facebook.net",
+        "fbcdn.net",
+        "amazon-adsystem.com",
+        "hotjar.com",
+        "clarity.ms",
+        "newrelic.com",
+        "nr-data.net",
+        "sentry.io",
+        "segment.com",
+        "mixpanel.com",
+        "quantserve.com",
+        "scorecardresearch.com",
+        "criteo.com",
+        "outbrain.com",
+        "taboola.com",
+    }
+)
 
 _BLOCKED_MEDIA_TYPES = frozenset({"image", "media", "font"})
 
@@ -635,9 +624,7 @@ async def _route_handler(route, *, block_media: bool = False):
     return await route.continue_()
 
 
-_CF_CHALLENGE_RE = re.compile(
-    r"^https?://challenges\.cloudflare\.com/cdn-cgi/challenge-platform/.*"
-)
+_CF_CHALLENGE_RE = re.compile(r"^https?://challenges\.cloudflare\.com/cdn-cgi/challenge-platform/.*")
 
 
 def _detect_cloudflare(html: str) -> str | None:
@@ -736,10 +723,7 @@ async def solve_cloudflare(page, *, max_retries: int = 2) -> bool:
             if not cf_frame or not outer_box:
                 if await _cf_is_solved(page):
                     return True
-                box_sel = (
-                    _CF_BOX_SELECTOR if cf_type == "embedded_turnstile"
-                    else _CF_INTERSTITIAL_BOX_SELECTOR
-                )
+                box_sel = _CF_BOX_SELECTOR if cf_type == "embedded_turnstile" else _CF_INTERSTITIAL_BOX_SELECTOR
                 try:
                     outer_box = await page.locator(box_sel).last.bounding_box()
                 except Exception:
@@ -796,9 +780,13 @@ _PAGE_RESET_JS = """
 
 class PoolMetrics:
     __slots__ = (
-        "total_acquires", "total_releases", "total_recycles",
-        "total_cold_creates", "recycle_failures",
-        "_acquire_times", "_last_reset",
+        "total_acquires",
+        "total_releases",
+        "total_recycles",
+        "total_cold_creates",
+        "recycle_failures",
+        "_acquire_times",
+        "_last_reset",
     )
 
     def __init__(self):
@@ -872,10 +860,7 @@ class BrowserPool:
         timezone = random.choice(_TIMEZONES)
         locale = random.choice(_LOCALES)
         headers = stealth_headers(user_agent=ua, timezone=timezone)
-        extra = {
-            k: v for k, v in headers.items()
-            if k not in ("User-Agent", "Accept-Encoding")
-        }
+        extra = {k: v for k, v in headers.items() if k not in ("User-Agent", "Accept-Encoding")}
         kwargs: dict = dict(
             user_agent=ua,
             locale=locale,

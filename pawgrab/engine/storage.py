@@ -45,6 +45,7 @@ class FilesystemStorage(StorageBackend):
 
     async def store(self, key: str, data: dict, *, prefix: str = "") -> str:
         import asyncio
+
         path = self._path(key, prefix)
         body = orjson.dumps(data, option=orjson.OPT_INDENT_2)
         await asyncio.to_thread(path.write_bytes, body)
@@ -53,6 +54,7 @@ class FilesystemStorage(StorageBackend):
 
     async def retrieve(self, key: str, *, prefix: str = "") -> dict | None:
         import asyncio
+
         path = self._path(key, prefix)
         if not path.exists():
             return None
@@ -65,21 +67,27 @@ class FilesystemStorage(StorageBackend):
 
     async def list_keys(self, prefix: str = "") -> list[str]:
         import asyncio
+
         d = self._base_dir / prefix if prefix else self._base_dir
         if not d.exists():
             return []
+
         def _glob():
             return [f.stem for f in sorted(d.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)]
+
         return await asyncio.to_thread(_glob)
 
     async def delete(self, key: str, *, prefix: str = "") -> bool:
         import asyncio
+
         path = self._path(key, prefix)
+
         def _delete():
             if path.exists():
                 path.unlink()
                 return True
             return False
+
         return await asyncio.to_thread(_delete)
 
 
@@ -94,6 +102,7 @@ class S3Storage(StorageBackend):
     def _get_client(self):
         if self._client is None:
             import boto3
+
             kwargs = {}
             if settings.s3_endpoint_url:
                 kwargs["endpoint_url"] = settings.s3_endpoint_url
@@ -109,6 +118,7 @@ class S3Storage(StorageBackend):
 
     async def store(self, key: str, data: dict, *, prefix: str = "") -> str:
         import asyncio
+
         s3_key = self._s3_key(key, prefix)
         body = orjson.dumps(data, option=orjson.OPT_INDENT_2)
         await asyncio.to_thread(
@@ -123,6 +133,7 @@ class S3Storage(StorageBackend):
 
     async def retrieve(self, key: str, *, prefix: str = "") -> dict | None:
         import asyncio
+
         s3_key = self._s3_key(key, prefix)
         try:
             resp = await asyncio.to_thread(
@@ -136,6 +147,7 @@ class S3Storage(StorageBackend):
 
     async def list_keys(self, prefix: str = "") -> list[str]:
         import asyncio
+
         full_prefix = "/".join(p for p in [self._prefix, prefix] if p)
         try:
             resp = await asyncio.to_thread(
@@ -155,6 +167,7 @@ class S3Storage(StorageBackend):
 
     async def delete(self, key: str, *, prefix: str = "") -> bool:
         import asyncio
+
         s3_key = self._s3_key(key, prefix)
         try:
             await asyncio.to_thread(

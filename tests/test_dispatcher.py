@@ -1,6 +1,5 @@
 """Tests for Phase 6: Memory-adaptive dispatcher."""
 
-
 from pawgrab.engine.dispatcher import MemoryAdaptiveDispatcher, _get_memory_percent
 
 
@@ -24,7 +23,8 @@ class TestMemoryAdaptiveDispatcher:
 
     async def test_start_stop(self):
         d = MemoryAdaptiveDispatcher(
-            min_concurrency=1, max_concurrency=3,
+            min_concurrency=1,
+            max_concurrency=3,
             check_interval=0.1,
         )
         await d.start()

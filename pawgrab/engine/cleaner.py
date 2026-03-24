@@ -29,12 +29,21 @@ class CleanedContent:
         self.description = description
         self.language = language
 
+
 _TAG_RE = re.compile(r"<[^>]+>")
 
 _BOILERPLATE_XPATHS = (
-    "//script", "//style", "//noscript", "//svg", "//iframe",
-    "//nav", "//header", "//footer", "//aside",
-    '//*[@role="navigation"]', '//*[@role="banner"]',
+    "//script",
+    "//style",
+    "//noscript",
+    "//svg",
+    "//iframe",
+    "//nav",
+    "//header",
+    "//footer",
+    "//aside",
+    '//*[@role="navigation"]',
+    '//*[@role="banner"]',
     '//*[@role="contentinfo"]',
 )
 
@@ -159,15 +168,18 @@ def extract_content(
                 try:
                     import trafilatura
 
-                    content_html = trafilatura.extract(
-                        html,
-                        url=url or None,
-                        output_format="html",
-                        include_tables=True,
-                        include_links=True,
-                        include_formatting=True,
-                        favor_recall=True,
-                    ) or content_html
+                    content_html = (
+                        trafilatura.extract(
+                            html,
+                            url=url or None,
+                            output_format="html",
+                            include_tables=True,
+                            include_links=True,
+                            include_formatting=True,
+                            favor_recall=True,
+                        )
+                        or content_html
+                    )
                 except Exception:
                     pass
 
@@ -178,9 +190,7 @@ def extract_content(
         content_html = _apply_word_count_threshold(content_html, word_count_threshold)
 
     if content_filter:
-        content_html = _apply_content_filter(
-            content_html, content_filter, content_filter_query
-        )
+        content_html = _apply_content_filter(content_html, content_filter, content_filter_query)
 
     return CleanedContent(
         title=title,
@@ -241,10 +251,10 @@ def _apply_content_filter(html: str, filter_type: str, query: str | None) -> str
     """Apply a content filter to cleaned HTML."""
     if filter_type == "pruning":
         from pawgrab.engine.filters import PruningContentFilter
+
         return PruningContentFilter().filter_html(html)
     elif filter_type == "bm25" and query:
         from pawgrab.engine.filters import BM25ContentFilter
+
         return BM25ContentFilter(query).filter_html(html)
     return html
-
-
