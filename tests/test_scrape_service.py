@@ -16,8 +16,8 @@ async def test_scrape_url_returns_markdown():
         status_code=200,
         url="https://example.com",
     )
-    with patch("pawgrab.engine.scrape_service.is_allowed", new_callable=AsyncMock, return_value=True):
-        with patch("pawgrab.engine.scrape_service.wait_for_slot", new_callable=AsyncMock):
+    with patch("pawgrab.engine.robots.is_allowed", new_callable=AsyncMock, return_value=True):
+        with patch("pawgrab.utils.rate_limiter.wait_for_slot", new_callable=AsyncMock):
             with patch("pawgrab.engine.scrape_service.fetch_page", new_callable=AsyncMock, return_value=mock_result):
                 resp = await scrape_url("https://example.com", formats=[OutputFormat.MARKDOWN])
 
@@ -27,7 +27,7 @@ async def test_scrape_url_returns_markdown():
 
 @pytest.mark.asyncio
 async def test_scrape_url_blocked_by_robots():
-    with patch("pawgrab.engine.scrape_service.is_allowed", new_callable=AsyncMock, return_value=False):
+    with patch("pawgrab.engine.robots.is_allowed", new_callable=AsyncMock, return_value=False):
         with pytest.raises(PermissionError):
             await scrape_url("https://example.com")
 
@@ -39,8 +39,8 @@ async def test_scrape_url_includes_metadata():
         status_code=200,
         url="https://example.com",
     )
-    with patch("pawgrab.engine.scrape_service.is_allowed", new_callable=AsyncMock, return_value=True):
-        with patch("pawgrab.engine.scrape_service.wait_for_slot", new_callable=AsyncMock):
+    with patch("pawgrab.engine.robots.is_allowed", new_callable=AsyncMock, return_value=True):
+        with patch("pawgrab.utils.rate_limiter.wait_for_slot", new_callable=AsyncMock):
             with patch("pawgrab.engine.scrape_service.fetch_page", new_callable=AsyncMock, return_value=mock_result):
                 resp = await scrape_url(
                     "https://example.com",

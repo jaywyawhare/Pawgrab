@@ -130,7 +130,7 @@ async def test_scrape_response_base64_fields():
 
 async def test_browser_unavailable_returns_503(client):
     """Screenshot request without browser pool should return 503."""
-    with patch("pawgrab.api.scrape.get_browser_pool", side_effect=Exception("no browser")):
+    with patch("pawgrab.dependencies.get_browser_pool", side_effect=Exception("no browser")):
         resp = await client.post(
             "/v1/scrape",
             json={

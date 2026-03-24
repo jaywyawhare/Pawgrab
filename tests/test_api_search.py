@@ -32,7 +32,7 @@ async def test_search_with_results(client):
     with (
         patch("pawgrab.api.search.search_web", new_callable=AsyncMock) as mock_search,
         patch("pawgrab.api.search.scrape_url", new_callable=AsyncMock) as mock_scrape,
-        patch("pawgrab.api.search.get_browser_pool", new_callable=AsyncMock) as mock_pool,
+        patch("pawgrab.dependencies.get_browser_pool", new_callable=AsyncMock) as mock_pool,
     ):
         mock_search.return_value = ["https://example.com"]
         mock_scrape.return_value = mock_response
@@ -74,7 +74,7 @@ async def test_search_scrape_failure_partial(client):
     with (
         patch("pawgrab.api.search.search_web", new_callable=AsyncMock) as mock_search,
         patch("pawgrab.api.search.scrape_url", side_effect=mock_scrape_fn),
-        patch("pawgrab.api.search.get_browser_pool", new_callable=AsyncMock) as mock_pool,
+        patch("pawgrab.dependencies.get_browser_pool", new_callable=AsyncMock) as mock_pool,
     ):
         mock_search.return_value = ["https://bad.com", "https://good.com"]
         mock_pool.side_effect = Exception("no browser")
