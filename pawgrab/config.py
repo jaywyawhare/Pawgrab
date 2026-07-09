@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     robots_fetch_timeout: int = Field(default=10, ge=1, le=60)
 
     stealth_mode: bool = True
-    max_challenge_retries: int = Field(default=2, ge=0, le=10)
+    max_challenge_retries: int = Field(default=3, ge=0, le=10)
     impersonate: str = ""
     solve_cloudflare: bool = True
 
