@@ -21,6 +21,20 @@ _cache: dict[str, tuple[Protego | None, float, bool]] = {}
 _cache_lock = asyncio.Lock()
 _inflight: dict[str, asyncio.Event] = {}
 
+# Shared persistent session avoids creating a new curl handle (and fresh DNS lookup)
+# for every robots.txt fetch — reuses connections and DNS cache across domains.
+_robots_session: AsyncSession | None = None
+_robots_session_lock = asyncio.Lock()
+
+
+async def _get_robots_session() -> AsyncSession:
+    global _robots_session
+    if _robots_session is None:
+        async with _robots_session_lock:
+            if _robots_session is None:
+                _robots_session = AsyncSession(impersonate="safari184")
+    return _robots_session
+
 
 async def is_allowed(url: str) -> bool:
     """Check if URL is allowed by robots.txt. Returns True if robots is disabled."""
@@ -77,10 +91,10 @@ async def is_allowed(url: str) -> bool:
 async def _fetch_robots(base_url: str) -> Protego | None:
     robots_url = f"{base_url}/robots.txt"
     try:
-        async with AsyncSession() as session:
-            resp = await session.get(robots_url, timeout=settings.robots_fetch_timeout, impersonate="safari184")
-            if resp.status_code == 200:
-                return Protego.parse(resp.text)
+        session = await _get_robots_session()
+        resp = await session.get(robots_url, timeout=settings.robots_fetch_timeout)
+        if resp.status_code == 200:
+            return Protego.parse(resp.text)
     except Exception:
         logger.info("robots_fetch_failed", url=robots_url)
     return None
