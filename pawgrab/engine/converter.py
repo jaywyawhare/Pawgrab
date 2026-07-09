@@ -64,7 +64,8 @@ def convert(html: str, fmt: OutputFormat) -> str:
     """Convert cleaned HTML content to the requested format."""
     match fmt:
         case OutputFormat.MARKDOWN:
-            return html_to_markdown(html)
+            from pawgrab.engine.cleaner import _filter_markdown_link_noise
+            return _filter_markdown_link_noise(html_to_markdown(html))
         case OutputFormat.TEXT:
             return html_to_text(html)
         case OutputFormat.HTML:
