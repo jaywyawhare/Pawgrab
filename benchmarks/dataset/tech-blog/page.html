@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Understanding Connection Pooling — Widget Blog</title>
+  <meta name="description" content="Why connection pools matter for latency.">
+</head>
+<body>
+  <div class="cookie-banner">This site uses cookies. Accept all cookies to continue browsing.</div>
+  <header class="site-header">
+    <nav class="nav-menu">
+      <a href="/">Home</a><a href="/blog">Blog</a><a href="/pricing">Pricing</a><a href="/login">Log in</a>
+    </nav>
+  </header>
+  <div class="layout">
+    <main>
+      <article>
+        <h1>Understanding Connection Pooling</h1>
+        <p>Opening a new database connection is expensive. Each connection requires a TCP
+        handshake, a TLS negotiation, and an authentication round trip before a single query
+        can run. Under load, that setup cost dominates request latency and can exhaust the
+        database's connection limit.</p>
+        <p>A connection pool solves this by keeping a set of established connections open and
+        handing them out to callers on demand. When a caller finishes, the connection returns
+        to the pool instead of closing. The next request reuses it, skipping the handshake
+        entirely.</p>
+        <p>The pool size is the key tuning parameter. Too small and requests queue waiting for
+        a free connection; too large and the database wastes memory on idle sessions. A good
+        starting point is the number of concurrent workers, adjusted after measuring real
+        contention under production traffic.</p>
+      </article>
+    </main>
+    <aside class="sidebar">
+      <div class="newsletter-signup">
+        <h3>Subscribe to our newsletter</h3>
+        <form><input type="email" placeholder="you@example.com"><button>Sign up</button></form>
+      </div>
+      <div class="related-posts">
+        <h3>Related posts</h3>
+        <ul><li><a href="/a">Indexing basics</a></li><li><a href="/b">Sharding 101</a></li></ul>
+      </div>
+    </aside>
+  </div>
+  <footer class="site-footer">
+    <p>© 2024 Widget Inc. All rights reserved. Terms · Privacy · Contact us.</p>
+  </footer>
+</body>
+</html>

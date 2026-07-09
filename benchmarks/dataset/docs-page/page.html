@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rate Limiting — API Docs</title>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to main content</a>
+  <header><nav class="nav-links"><a href="/">Docs</a><a href="/api">API</a><a href="/sdk">SDK</a></nav></header>
+  <div class="docs-layout">
+    <nav class="sidebar">
+      <ul>
+        <li><a href="/auth">Authentication</a></li>
+        <li><a href="/rate-limits">Rate limiting</a></li>
+        <li><a href="/errors">Error codes</a></li>
+        <li><a href="/webhooks">Webhooks</a></li>
+      </ul>
+    </nav>
+    <main id="content">
+      <article>
+        <h1>Rate Limiting</h1>
+        <p>Every API token is limited to a fixed number of requests per minute. The current
+        ceiling is six hundred requests per minute for standard plans and six thousand for
+        enterprise plans. Limits are enforced per token, not per IP address.</p>
+        <p>Each response includes three headers that describe your current budget: the limit,
+        the number of requests remaining in the window, and the Unix timestamp at which the
+        window resets. Clients should read these headers rather than hard-coding the limit.</p>
+        <p>When you exceed the limit the API returns a 429 status code with a Retry-After
+        header indicating how many seconds to wait. A well-behaved client backs off for that
+        duration and then resumes. Repeatedly ignoring 429 responses can lead to a temporary
+        block on the token.</p>
+      </article>
+    </main>
+  </div>
+  <footer class="site-footer"><p>Need help? Contact support · Status page · Changelog</p></footer>
+</body>
+</html>

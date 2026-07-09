@@ -1,0 +1,7 @@
+Understanding Connection Pooling
+
+Opening a new database connection is expensive. Each connection requires a TCP handshake, a TLS negotiation, and an authentication round trip before a single query can run. Under load, that setup cost dominates request latency and can exhaust the database's connection limit.
+
+A connection pool solves this by keeping a set of established connections open and handing them out to callers on demand. When a caller finishes, the connection returns to the pool instead of closing. The next request reuses it, skipping the handshake entirely.
+
+The pool size is the key tuning parameter. Too small and requests queue waiting for a free connection; too large and the database wastes memory on idle sessions. A good starting point is the number of concurrent workers, adjusted after measuring real contention under production traffic.
