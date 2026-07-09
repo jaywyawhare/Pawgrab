@@ -610,7 +610,7 @@ _AD_TRACKER_DOMAINS = frozenset(
 _BLOCKED_MEDIA_TYPES = frozenset({"image", "media", "font"})
 
 
-async def _route_handler(route, *, block_media: bool = False):
+async def _route_handler(route, request=None, *, block_media: bool = False):
     """Block ad/tracker domains and optionally media resources."""
     req = route.request
     try:
