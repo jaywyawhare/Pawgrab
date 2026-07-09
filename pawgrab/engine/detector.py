@@ -8,14 +8,29 @@ from collections import OrderedDict
 from urllib.parse import urlparse
 
 _SPA_INDICATORS = [
-    re.compile(r'<div\s+id=["\'](?:root|app|__next|__nuxt)["\']>\s*</div>', re.IGNORECASE),
+    re.compile(r'<div\s+id=["\'](?:root|app|__next|__nuxt|__svelte)["\']>\s*</div>', re.IGNORECASE),
     re.compile(r"<noscript>.*?enable javascript", re.IGNORECASE | re.DOTALL),
+    re.compile(r"you need to enable javascript to run this app", re.IGNORECASE),
+    re.compile(r"please enable javascript", re.IGNORECASE),
+    re.compile(r"this page requires javascript", re.IGNORECASE),
 ]
 
 _FRAMEWORK_INDICATORS = [
     re.compile(r"__NEXT_DATA__", re.IGNORECASE),
     re.compile(r"window\.__NUXT__", re.IGNORECASE),
     re.compile(r'<div\s+id=["\']gatsby-', re.IGNORECASE),
+    re.compile(r"window\.__INITIAL_STATE__", re.IGNORECASE),
+    re.compile(r"window\.__REDUX_STATE__", re.IGNORECASE),
+    re.compile(r"data-reactroot", re.IGNORECASE),
+    re.compile(r'<div\s+id=["\']ember', re.IGNORECASE),
+]
+
+# Text patterns that indicate a JS loading shell was captured
+_LOADING_SHELL_PATTERNS = [
+    re.compile(r"^loading\.{0,3}$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^please wait\.{0,3}$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"this html file is a template", re.IGNORECASE),
+    re.compile(r"you need to enable javascript to run this app", re.IGNORECASE),
 ]
 
 _MINIMAL_CONTENT_THRESHOLD = 200  # chars of visible text
@@ -79,6 +94,11 @@ def _run_heuristics(html: str) -> bool:
     text = re.sub(r"\s+", " ", text).strip()
     if len(text) < _MINIMAL_CONTENT_THRESHOLD:
         return True
+
+    # Check if visible text is just a loading shell
+    for pattern in _LOADING_SHELL_PATTERNS:
+        if pattern.search(text):
+            return True
 
     return False
 
