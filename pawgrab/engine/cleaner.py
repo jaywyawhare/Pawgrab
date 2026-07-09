@@ -39,13 +39,19 @@ _BOILERPLATE_XPATHS = (
     "//svg",
     "//iframe",
     "//nav",
-    "//header",
+    # Page-level headers only — an in-article <header> usually holds the H1/byline,
+    # so stripping every <header> would drop real content (recall loss).
+    "//header[not(ancestor::article) and not(ancestor::main) and not(ancestor::*[@role='main'])]",
     "//footer",
     "//aside",
+    "//form",
     '//*[@role="navigation"]',
     '//*[@role="banner"]',
     '//*[@role="contentinfo"]',
     '//*[@role="complementary"]',
+    '//*[@role="search"]',
+    '//*[@role="dialog"]',
+    '//*[@role="alertdialog"]',
 )
 
 _SEMANTIC_CONTENT_XPATHS = ("//article", "//main", '//*[@role="main"]')
@@ -62,8 +68,17 @@ _NOISE_CLASS_RE = re.compile(
     r"|newsletter[-_](?:signup|form)"
     r"|pagination|pager\b"
     r"|breadcrumbs?"
-    r"|read[-_]more|more[-_]stories|also[-_]read|related[-_]posts"
+    r"|read[-_]more|more[-_]stories|also[-_]read|related[-_](?:posts|articles|stories|content)"
     r"|nav[-_](?:menu|bar|links?)|menu[-_](?:item|list|nav)"
+    # Comment sections (but not the content word "commentary")
+    r"|comments?(?:[-_](?:list|section|area|wrap|respond|thread|box))?|disqus\w*"
+    # Share / social widgets (anchored so "shareholder"/"social-context" prose is safe)
+    r"|share[-_](?:bar|buttons?|links?|tools?|widget|this|sheet|count)"
+    r"|social[-_](?:share|links?|bar|icons?|nav|media)"
+    # Ad slots and promos
+    r"|ad[-_](?:slot|unit|banner|container|wrapper|box)|advert(?:isement)?|sponsored"
+    # Modals / overlays / popups
+    r"|modal|popup|lightbox|overlay"
     r")\b",
     re.IGNORECASE,
 )
@@ -107,6 +122,67 @@ def _serialize_body(tree) -> str:
     """Serialize the <body> (or root) of an lxml tree to HTML."""
     body = tree.xpath("//body")
     return lxml_html.tostring(body[0] if body else tree, encoding="unicode")
+
+
+# Block-level containers worth link-density testing. Excludes <article>/<main>
+# (the content roots) and <table> (tables are content, not link furniture).
+_PRUNABLE_TAGS = frozenset(
+    {"div", "ul", "ol", "nav", "aside", "section", "header", "footer", "form", "p"}
+)
+
+
+def _prune_link_density(
+    html: str, *, threshold: float = 0.5, min_text: int = 30
+) -> str:
+    """Drop blocks whose text is mostly anchor text (share bars, related lists, nav).
+
+    Complements tag/class stripping by catching link furniture that carries no
+    tell-tale class name. Guarded: if pruning would drop the result below the
+    minimum content size it returns the input unchanged, so it can never nuke a
+    legitimately link-heavy article down to nothing.
+    """
+    if not html or not html.strip():
+        return html
+    try:
+        root = lxml_html.fromstring(html)
+    except Exception:
+        return html
+
+    doomed = []
+    for el in root.iter():
+        if el is root or el.tag not in _PRUNABLE_TAGS:
+            continue
+        text = (el.text_content() or "").strip()
+        if len(text) < min_text:
+            continue
+        link_text = sum(len((a.text_content() or "").strip()) for a in el.iter("a"))
+        if link_text / len(text) > threshold:
+            doomed.append(el)
+
+    for el in doomed:
+        parent = el.getparent()
+        if parent is not None:  # None => already removed with an ancestor
+            parent.remove(el)
+
+    pruned = lxml_html.tostring(root, encoding="unicode")
+    return pruned if _text_length(pruned) >= _MIN_CONTENT_CHARS else html
+
+
+# Title separators: pipe, en/em dash, middot, bullet, and spaced hyphen.
+_TITLE_SEP_RE = re.compile(r"\s+[|–—·•\-]\s+")
+
+
+def _clean_title(raw: str) -> str:
+    """Strip a trailing site-name segment (e.g. "Article | Site") from a title."""
+    if not raw:
+        return ""
+    raw = raw.strip()
+    parts = [p.strip() for p in _TITLE_SEP_RE.split(raw) if p.strip()]
+    if len(parts) > 1:
+        best = max(parts, key=len)
+        if len(best) >= 10:
+            return best
+    return raw
 
 
 def _merge_sections(tree) -> str:
@@ -198,6 +274,7 @@ def extract_content(
     description = ""
     language = ""
     fallback_title = ""
+    og_title = ""
     if tree is not None:
         try:
             desc_els = tree.xpath('//meta[@name="description"]/@content')
@@ -209,6 +286,9 @@ def extract_content(
             title_els = tree.xpath("//title/text()")
             if title_els:
                 fallback_title = title_els[0].strip()
+            og_els = tree.xpath('//meta[@property="og:title"]/@content')
+            if og_els:
+                og_title = og_els[0].strip()
         except Exception:
             pass
 
@@ -257,7 +337,10 @@ def extract_content(
                 pass
 
             try:
-                doc = ReadabilityDocument(tree, url=url or None, retry_length=0)
+                # retry_length is readability's lenient-retry threshold; keeping the
+                # library default (250) lets it recover short articles that a strict
+                # pass would drop to the low-precision body fallback.
+                doc = ReadabilityDocument(tree, url=url or None, retry_length=250)
                 rr = doc.summary() or ""
                 if _text_length(rr) >= _MIN_CONTENT_CHARS:
                     read_html = rr
@@ -267,7 +350,10 @@ def extract_content(
             traf_len = _text_length(traf_html)
             read_len = _text_length(read_html)
             if read_len >= _MIN_CONTENT_CHARS:
-                if traf_len >= read_len * 2.0:
+                # Default to readability (cleaner, article-focused); defer to
+                # trafilatura when it recovers substantially more (multi-section
+                # pages). 1.5x is the first knob to tune against the benchmark.
+                if traf_len >= read_len * 1.5:
                     content_html = traf_html
                 else:
                     content_html = read_html
@@ -291,8 +377,26 @@ def extract_content(
             if body_html:
                 content_html = body_html
 
+        # Precision pass: drop link-dominated blocks (share bars, related-post
+        # lists, nav remnants) that survive tag/class stripping. Applied to every
+        # extraction source, including the whole-body fallback.
+        if content_html:
+            try:
+                content_html = _prune_link_density(content_html)
+            except Exception:
+                pass
+
     if not title:
-        title = fallback_title
+        title = _clean_title(og_title or fallback_title)
+        if not title and tree is not None:
+            try:
+                h1 = "".join(tree.xpath("//h1//text()")).strip()
+                if h1:
+                    title = h1
+            except Exception:
+                pass
+        if not title:
+            title = fallback_title
 
     if word_count_threshold and word_count_threshold > 0:
         content_html = _apply_word_count_threshold(content_html, word_count_threshold)
