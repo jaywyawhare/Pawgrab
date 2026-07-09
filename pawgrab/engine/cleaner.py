@@ -45,11 +45,32 @@ _BOILERPLATE_XPATHS = (
     '//*[@role="navigation"]',
     '//*[@role="banner"]',
     '//*[@role="contentinfo"]',
+    '//*[@role="complementary"]',
 )
 
 _SEMANTIC_CONTENT_XPATHS = ("//article", "//main", '//*[@role="main"]')
 
 _MIN_CONTENT_CHARS = 200
+
+# Tightly-scoped noise patterns: only clearly non-content elements.
+# Deliberately excludes broad terms like "widget", "banner", "social", "share", "promo"
+# that frequently appear in legitimate content class names.
+_NOISE_CLASS_RE = re.compile(
+    r"\b(?:"
+    r"sidebar"
+    r"|cookie[-_](?:banner|bar|consent|notice|popup)"
+    r"|newsletter[-_](?:signup|form)"
+    r"|pagination|pager\b"
+    r"|breadcrumbs?"
+    r"|read[-_]more|more[-_]stories|also[-_]read|related[-_]posts"
+    r"|nav[-_](?:menu|bar|links?)|menu[-_](?:item|list|nav)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Markdown link-noise pattern: lines that are purely navigation links
+_MD_LINK_LINE_RE = re.compile(r"^\s*(?:\[.+?\]\(.+?\)\s*[|·•\-]?\s*){3,}\s*$")
+_MD_LINK_RE = re.compile(r"\[.+?\]\(.+?\)")
 
 
 def _text_length(html: str) -> int:
@@ -68,20 +89,77 @@ def _strip_boilerplate(tree) -> None:
                 p.remove(el)
 
 
+def _strip_noise_by_class(tree) -> None:
+    """Remove elements whose class/id attributes match tightly-scoped noise patterns."""
+    for el in list(tree.iter()):
+        try:
+            cls = el.get("class") or ""
+            eid = el.get("id") or ""
+            if _NOISE_CLASS_RE.search(cls) or _NOISE_CLASS_RE.search(eid):
+                p = el.getparent()
+                if p is not None:
+                    p.remove(el)
+        except Exception:
+            pass
+
+
 def _serialize_body(tree) -> str:
     """Serialize the <body> (or root) of an lxml tree to HTML."""
     body = tree.xpath("//body")
     return lxml_html.tostring(body[0] if body else tree, encoding="unicode")
 
 
-def _body_fallback(html: str) -> str:
-    """Lightweight fallback: strip boilerplate elements, return body HTML."""
-    try:
-        tree = lxml_html.fromstring(html)
-        _strip_boilerplate(tree)
-        return _serialize_body(tree)
-    except Exception:
-        return ""
+def _merge_sections(tree) -> str:
+    """Concatenate all top-level <section> / <article> blocks when no single container found."""
+    for xpath in ("//article", "//section", "//main"):
+        els = tree.xpath(xpath)
+        if not els:
+            continue
+        blocks = []
+        for el in els:
+            try:
+                s = lxml_html.tostring(el, encoding="unicode")
+                if isinstance(s, str) and _text_length(s) > 50:
+                    blocks.append(s)
+            except Exception:
+                pass
+        if blocks:
+            return "<div>" + "".join(blocks) + "</div>"
+    return ""
+
+
+# Accessibility/skip-nav text that often leaks into extracted content
+_SKIP_NAV_RE = re.compile(
+    r"^(?:skip\s+(?:to\s+)?(?:main\s+)?content|main\s+content\s*\+?\s*sidebar|jump\s+to\s+(?:main\s+)?content)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _filter_markdown_link_noise(markdown: str) -> str:
+    """Remove nav-link lines, skip-nav text, and other structural noise."""
+    if not markdown:
+        return markdown
+    lines = markdown.splitlines()
+    kept = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip accessibility/skip-nav remnants
+        if _SKIP_NAV_RE.match(stripped):
+            continue
+        # Skip lines that are 3+ consecutive markdown links (nav menus)
+        if _MD_LINK_LINE_RE.match(line):
+            continue
+        # Skip short lines where >70% of words come from link anchors
+        words = line.split()
+        if len(words) >= 4:
+            link_matches = _MD_LINK_RE.findall(line)
+            link_word_count = sum(len(m.split()) for m in link_matches)
+            if link_word_count / len(words) > 0.7:
+                continue
+        kept.append(line)
+    # Collapse runs of 3+ blank lines left by removed lines
+    result = re.sub(r"\n{3,}", "\n\n", "\n".join(kept))
+    return result.strip()
 
 
 def extract_content(
@@ -139,49 +217,79 @@ def extract_content(
 
     if tree is not None:
         _strip_boilerplate(tree)
+        try:
+            _strip_noise_by_class(tree)
+        except Exception:
+            pass
 
+        # Fast path: single unambiguous semantic element
         for xpath in _SEMANTIC_CONTENT_XPATHS:
-            els = tree.xpath(xpath)
-            # For <article>, only use fast path if there's exactly one —
-            # multiple <article> tags usually mean card/list items, not main content
-            if els and (xpath != "//article" or len(els) == 1):
-                candidate = lxml_html.tostring(els[0], encoding="unicode")
-                if _text_length(candidate) >= _MIN_CONTENT_CHARS:
-                    content_html = candidate
-                    break
+            try:
+                els = tree.xpath(xpath)
+                if els and (xpath != "//article" or len(els) == 1):
+                    candidate = lxml_html.tostring(els[0], encoding="unicode")
+                    if _text_length(candidate) >= _MIN_CONTENT_CHARS:
+                        content_html = candidate
+                        break
+            except Exception:
+                pass
 
-        # retry_length=0: skips readability's expensive lenient-mode retry; our fallback handles short articles.
         if not content_html:
+            # Run trafilatura and readability; readability is the default (cleaner, article-focused).
+            # Only defer to trafilatura when it finds 2x more content (multi-section pages).
+            traf_html = ""
+            read_html = ""
+
+            try:
+                import trafilatura
+
+                traf_html = trafilatura.extract(
+                    html,
+                    url=url or None,
+                    output_format="html",
+                    include_tables=True,
+                    include_links=True,
+                    include_formatting=True,
+                    favor_recall=True,
+                    no_fallback=False,
+                ) or ""
+            except Exception:
+                pass
+
             try:
                 doc = ReadabilityDocument(tree, url=url or None, retry_length=0)
-                content_html = doc.summary()
-                # doc.short_title() triggers another _parse()+clean_html (~13ms); fallback_title is sufficient.
+                rr = doc.summary() or ""
+                if _text_length(rr) >= _MIN_CONTENT_CHARS:
+                    read_html = rr
             except Exception:
                 logger.warning("readability_failed", url=url, exc_info=True)
 
-        if _text_length(content_html) < _MIN_CONTENT_CHARS:
-            body_html = _serialize_body(tree)
-            if _text_length(body_html) >= _MIN_CONTENT_CHARS:
-                content_html = body_html
-            else:
-                # Last resort: trafilatura (~100-170 ms on cold path)
-                try:
-                    import trafilatura
+            traf_len = _text_length(traf_html)
+            read_len = _text_length(read_html)
+            if read_len >= _MIN_CONTENT_CHARS:
+                if traf_len >= read_len * 2.0:
+                    content_html = traf_html
+                else:
+                    content_html = read_html
+            elif traf_len >= _MIN_CONTENT_CHARS:
+                content_html = traf_html
 
-                    content_html = (
-                        trafilatura.extract(
-                            html,
-                            url=url or None,
-                            output_format="html",
-                            include_tables=True,
-                            include_links=True,
-                            include_formatting=True,
-                            favor_recall=True,
-                        )
-                        or content_html
-                    )
+            # Last resort before body fallback: merge article/section blocks.
+            # Only used when both readability and trafilatura found nothing — avoids
+            # overriding good single-article extraction with noisy multi-card merges.
+            if not content_html:
+                try:
+                    merged = _merge_sections(tree)
+                    if merged and _text_length(merged) >= _MIN_CONTENT_CHARS:
+                        content_html = merged
                 except Exception:
                     pass
+
+        # Fallback: full body with boilerplate stripped
+        if _text_length(content_html) < _MIN_CONTENT_CHARS:
+            body_html = _serialize_body(tree)
+            if body_html:
+                content_html = body_html
 
     if not title:
         title = fallback_title
