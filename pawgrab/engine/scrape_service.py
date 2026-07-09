@@ -23,6 +23,12 @@ from pawgrab.utils.text import word_count
 
 logger = structlog.get_logger()
 
+_SPA_SHELL_PATTERNS = (
+    "this html file is a template",
+    "if you open it directly in the browser, you will see an empty page",
+    "google tag manager (noscript)",
+)
+
 
 async def scrape_url(
     url: str,
@@ -137,6 +143,43 @@ async def scrape_url(
         "session_id": session_id,
     }
     result = await fetch_page(url, **fetch_kwargs)
+
+    # Conservative browser fallback: if curl returned essentially nothing from a JS page,
+    # retry with browser rendering. Only triggers when curl gives <100 chars of visible text.
+    # This is safe because these pages currently score F1=0 regardless.
+    if (
+        not result.used_browser
+        and browser_pool is not None
+        and effective_wait is None  # caller didn't explicitly set wait_for_js
+    ):
+        from lxml import html as _lxml_html
+
+        from pawgrab.engine.detector import needs_js_rendering
+
+        try:
+            _tree = _lxml_html.fromstring(result.html or "")
+            _visible = _tree.text_content().strip()
+        except Exception:
+            _visible = (result.html or "").strip()
+        if len(_visible) < 100 and needs_js_rendering(result.html or "", url=url):
+            browser_result = await fetch_page(
+                url,
+                wait_for_js=True,
+                timeout=timeout,
+                browser_pool=browser_pool,
+                proxy_pool=proxy_pool,
+                headers=headers,
+                cookies=cookies,
+                session_id=session_id,
+            )
+            if browser_result and browser_result.html:
+                try:
+                    _bt = _lxml_html.fromstring(browser_result.html)
+                    _bvis = _bt.text_content().strip()
+                except Exception:
+                    _bvis = browser_result.html.strip()
+                if len(_bvis) > len(_visible):
+                    result = browser_result
 
     if hooks:
         await hooks.fire("after_fetch", url=url, result=result)
@@ -253,8 +296,10 @@ def build_response(
     content_filter: str | None = None,
     content_filter_query: str | None = None,
 ) -> ScrapeResponse:
+    extraction_html = result.readability_html or result.html
+
     cleaned = extract_content(
-        result.html,
+        extraction_html,
         url=result.url,
         excluded_tags=excluded_tags,
         excluded_selector=excluded_selector,
@@ -296,6 +341,24 @@ def build_response(
 
     if not text_content:
         text_content = convert(cleaned.content_html, OutputFormat.TEXT)
+
+    # Mark JS-shell pages as failures: page fetched but rendered nothing meaningful.
+    # Avoids returning "Loading..." or nav-only content as successful extractions.
+    stripped_text = text_content.strip()
+    if not result.used_browser and len(stripped_text) < 200:
+        from pawgrab.engine.detector import needs_js_rendering
+        if needs_js_rendering(result.html, url=result.url):
+            response.success = False
+            response.error = "Page requires JavaScript rendering; re-scrape with wait_for_js=true"
+            return response
+
+    # Detect SPA template shells: React/Angular/Vue index.html served without JS execution
+    if not result.used_browser:
+        text_lower = stripped_text.lower()
+        if any(p in text_lower for p in _SPA_SHELL_PATTERNS):
+            response.success = False
+            response.error = "Page requires JavaScript rendering; re-scrape with wait_for_js=true"
+            return response
 
     if include_metadata:
         response.metadata = PageMetadata(
