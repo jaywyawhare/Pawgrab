@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 from urllib.parse import urlparse
 
 import structlog
 from curl_cffi import CurlHttpVersion
 from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.exceptions import DNSError
 
 from pawgrab.config import settings
 from pawgrab.engine.antibot import (
@@ -144,6 +146,7 @@ class FetchResult:
         "retry_count",
         "websocket_messages",
         "trace_path",
+        "readability_html",
     )
 
     def __init__(
@@ -167,6 +170,7 @@ class FetchResult:
         retry_count: int = 0,
         websocket_messages: list[dict] | None = None,
         trace_path: str | None = None,
+        readability_html: str | None = None,
     ):
         self.html = html
         self.status_code = status_code
@@ -186,6 +190,7 @@ class FetchResult:
         self.retry_count = retry_count
         self.websocket_messages = websocket_messages
         self.trace_path = trace_path
+        self.readability_html = readability_html
 
 
 async def fetch_page(
@@ -273,24 +278,37 @@ async def fetch_page(
 
     host = urlparse(url).netloc
     first_target = settings.impersonate or await _impersonate_for_host(host)
-    try:
-        result = await _fetch_with_curl(
-            url,
-            timeout=timeout,
-            impersonate=first_target,
-            headers=headers,
-            cookies=cookies,
-            proxy=proxy_url,
-        )
-        if proxy_entry is not None:
-            proxy_entry.mark_success()
-    except Exception as exc:
-        if proxy_entry is not None:
-            proxy_entry.mark_failure(
-                is_timeout=is_proxy_error(exc),
-                backoff_seconds=settings.proxy_backoff_seconds,
+    dns_retries = 2
+    for _dns_attempt in range(1, dns_retries + 2):
+        try:
+            result = await _fetch_with_curl(
+                url,
+                timeout=timeout,
+                impersonate=first_target,
+                headers=headers,
+                cookies=cookies,
+                proxy=proxy_url,
             )
-        raise
+            if proxy_entry is not None:
+                proxy_entry.mark_success()
+            break
+        except DNSError as exc:
+            if proxy_entry is not None:
+                proxy_entry.mark_failure(
+                    is_timeout=False,
+                    backoff_seconds=settings.proxy_backoff_seconds,
+                )
+            if _dns_attempt > dns_retries:
+                raise
+            await _backoff(_dns_attempt + 1)
+            logger.warning("dns_error_retry", url=url, attempt=_dns_attempt, error=str(exc))
+        except Exception as exc:
+            if proxy_entry is not None:
+                proxy_entry.mark_failure(
+                    is_timeout=is_proxy_error(exc),
+                    backoff_seconds=settings.proxy_backoff_seconds,
+                )
+            raise
 
     challenge = _check_challenge(result)
     if challenge.detected:
@@ -540,6 +558,46 @@ def is_proxy_error(exc: Exception) -> bool:
     return any(indicator in msg for indicator in _PROXY_ERROR_INDICATORS)
 
 
+_READABILITY_JS: str | None = None
+
+
+def _load_readability_js() -> str:
+    global _READABILITY_JS
+    if _READABILITY_JS is None:
+        import pathlib
+        js_path = pathlib.Path(__file__).parent / "readability.js"
+        if js_path.exists():
+            _READABILITY_JS = js_path.read_text(encoding="utf-8")
+        else:
+            _READABILITY_JS = ""
+    return _READABILITY_JS
+
+
+async def _run_readability_js(page) -> str | None:
+    """Inject Mozilla Readability.js into the page and extract article HTML."""
+    try:
+        js = _load_readability_js()
+        if not js:
+            return None
+        result = await page.evaluate(f"""
+            () => {{
+                {js}
+                try {{
+                    const doc = document.cloneNode(true);
+                    const article = new Readability(doc).parse();
+                    return article ? article.content : null;
+                }} catch(e) {{
+                    return null;
+                }}
+            }}
+        """)
+        if result and isinstance(result, str) and len(result) > 200:
+            return result
+    except Exception:
+        pass
+    return None
+
+
 async def _fetch_with_browser(
     url: str,
     *,
@@ -602,7 +660,7 @@ async def _fetch_with_browser(
         if text_mode:
             from pawgrab.engine.browser import _BLOCKED_MEDIA_TYPES
 
-            async def _media_block_handler(route):
+            async def _media_block_handler(route, request=None):
                 if route.request.resource_type in _BLOCKED_MEDIA_TYPES:
                     return await route.abort()
                 return await route.continue_()
@@ -648,7 +706,14 @@ async def _fetch_with_browser(
         if capture_websocket:
             page.on("websocket", lambda ws: _setup_ws_capture(ws, websocket_messages))
 
-        response = await page.goto(url, timeout=timeout, wait_until="networkidle")
+        try:
+            response = await page.goto(url, timeout=timeout, wait_until="load")
+            try:
+                await page.wait_for_load_state("networkidle", timeout=min(timeout // 3, 10_000))
+            except Exception:
+                pass  # networkidle is best-effort; proceed with loaded content
+        except Exception:
+            response = await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
 
         action_warnings: list[str] = []
         if actions:
@@ -779,6 +844,9 @@ async def _fetch_with_browser(
             trace_name = session_id or "anon"
             trace_path = await pool.stop_trace(page.context, name=trace_name)
 
+        # Run Mozilla Readability.js to get clean article extraction
+        readability_html = await _run_readability_js(page)
+
         result = FetchResult(
             html=html,
             status_code=status,
@@ -794,6 +862,7 @@ async def _fetch_with_browser(
             mhtml_data=mhtml_data,
             ssl_info=ssl_info,
             websocket_messages=websocket_messages,
+            readability_html=readability_html,
         )
         if trace_path:
             result.trace_path = trace_path
@@ -832,6 +901,33 @@ async def _capture_ssl_info(page, url: str) -> dict | None:
 
 _SILENT_BLOCK_MAX_BODY = 500  # 403/429 with body < 500 chars = likely silent block
 
+_ERROR_PAGE_PATTERNS = [
+    # HTTP error titles
+    re.compile(r"<title[^>]*>\s*(?:502|503|504|500|400|403|404)\b", re.IGNORECASE),
+    re.compile(r"\b(?:502|503|504)\s+(?:bad\s+gateway|service\s+unavailable|gateway\s+timeout)\b", re.IGNORECASE),
+    re.compile(r"cloudfront.*(?:error|bad\s+gateway)", re.IGNORECASE | re.DOTALL),
+    re.compile(r"<title[^>]*>access\s+denied", re.IGNORECASE),
+    re.compile(r"request\s+could\s+not\s+be\s+satisfied", re.IGNORECASE),
+    # Bot/CAPTCHA challenge pages
+    re.compile(r"making sure you.re not a bot", re.IGNORECASE),
+    re.compile(r"difficulty:\s*\d+.*speed:\s*\d+kH/s", re.IGNORECASE | re.DOTALL),  # Anubis PoW
+    re.compile(r"anubis.*calculating\b", re.IGNORECASE | re.DOTALL),
+    re.compile(r"<title[^>]*>just a moment", re.IGNORECASE),  # Cloudflare interstitial
+    re.compile(r"checking your browser before accessing", re.IGNORECASE),
+    re.compile(r"enable javascript and cookies to continue", re.IGNORECASE),
+    re.compile(r"please turn javascript on", re.IGNORECASE),
+    # JS loading/redirect shells
+    re.compile(r"^(?:\s*(?:Loading\.\.\.|Try Again|Cancel)\s*)+$", re.MULTILINE),  # FB/React loading
+    re.compile(r"<title[^>]*>loading\.\.\.</title>", re.IGNORECASE),
+    # Privacy/access gates
+    re.compile(r"powered and protected by\s*\n?\s*privacy", re.IGNORECASE),
+    re.compile(r"<title[^>]*>(?:403 forbidden|forbidden)</title>", re.IGNORECASE),
+    re.compile(r"this site is protected by.*bot detection", re.IGNORECASE),
+    # Parked/empty domains
+    re.compile(r"<title[^>]*>(?:domain for sale|this domain|buy this domain)", re.IGNORECASE),
+    re.compile(r"this domain is for sale", re.IGNORECASE),
+]
+
 
 def _check_challenge(result: FetchResult) -> ChallengeDetection:
     """Run challenge detection against a FetchResult.
@@ -857,6 +953,16 @@ def _check_challenge(result: FetchResult) -> ChallengeDetection:
             challenge_type="cloudflare_mitigated",
             detail="cf-mitigated header indicates challenge",
         )
+
+    # Detect error pages served with 200 status (e.g. CloudFront 502 pages)
+    if result.status_code == 200 and result.html:
+        for pattern in _ERROR_PAGE_PATTERNS:
+            if pattern.search(result.html[:4000]):
+                return ChallengeDetection(
+                    detected=True,
+                    challenge_type="error_page",
+                    detail=f"Error page detected in 200 response (pattern: {pattern.pattern[:40]})",
+                )
 
     return challenge
 
