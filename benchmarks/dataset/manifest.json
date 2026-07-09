@@ -2,6 +2,8 @@
   "cases": [
     "tech-blog",
     "news-article",
-    "docs-page"
+    "docs-page",
+    "comments-heavy",
+    "promo-in-article"
   ]
 }

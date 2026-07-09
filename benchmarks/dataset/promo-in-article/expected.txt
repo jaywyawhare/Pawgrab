@@ -1,0 +1,7 @@
+Why We Switched to Rust
+
+Our ingestion service was written in Python and spent most of its time parsing binary protocol frames. Profiling showed the interpreter overhead dominated, and the garbage collector introduced tail-latency spikes that violated our service level objective.
+
+We rewrote the hot path in Rust. The zero-cost abstractions let us keep the code readable while compiling down to tight machine code, and the ownership model removed a whole class of data races we had been papering over with locks. Throughput tripled.
+
+The migration was incremental. We exposed the Rust core through a thin FFI layer and swapped one endpoint at a time, so we could roll back instantly if metrics regressed. Six weeks later the last Python worker was retired and tail latency dropped by half.

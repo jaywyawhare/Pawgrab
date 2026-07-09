@@ -79,9 +79,15 @@ def _print_table(results: list[tuple[str, Score, float]]) -> None:
             f"{score.f1:>7.3f}{latency_ms:>9.1f}ms"
         )
     scores = [s for _, s, _ in results]
-    avg_latency = sum(lat for _, _, lat in results) / len(results) if results else 0.0
+    n = len(results) or 1
+    avg_p = sum(s.precision for s in scores) / n
+    avg_r = sum(s.recall for s in scores) / n
+    avg_latency = sum(lat for _, _, lat in results) / n
     print("-" * len(header))
-    print(f"{'MEAN':<28}{'':>7}{'':>7}{mean_f1(scores):>7.3f}{avg_latency:>9.1f}ms")
+    print(
+        f"{'MEAN':<28}{avg_p:>7.3f}{avg_r:>7.3f}"
+        f"{mean_f1(scores):>7.3f}{avg_latency:>9.1f}ms"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,8 +118,11 @@ def main(argv: list[str] | None = None) -> int:
     avg_f1 = mean_f1(scores)
 
     if args.json:
+        n = len(scores) or 1
         payload = {
             "mean_f1": round(avg_f1, 4),
+            "mean_precision": round(sum(s.precision for s in scores) / n, 4),
+            "mean_recall": round(sum(s.recall for s in scores) / n, 4),
             "cases": [
                 {"name": name, **score.as_dict(), "latency_ms": round(lat, 1)}
                 for name, score, lat in results

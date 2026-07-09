@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Why We Switched to Rust — Engineering Blog</title></head>
+<body>
+  <nav class="nav-menu"><a href="/">Home</a><a href="/eng">Engineering</a></nav>
+  <main>
+    <article>
+      <h1>Why We Switched to Rust</h1>
+      <div class="share">Share this: <a href="#">Facebook</a> <a href="#">Twitter</a> <a href="#">LinkedIn</a></div>
+      <p>Our ingestion service was written in Python and spent most of its time parsing binary
+      protocol frames. Profiling showed the interpreter overhead dominated, and the garbage
+      collector introduced tail-latency spikes that violated our service level objective.</p>
+      <p>We rewrote the hot path in Rust. The zero-cost abstractions let us keep the code
+      readable while compiling down to tight machine code, and the ownership model removed a
+      whole class of data races we had been papering over with locks. Throughput tripled.</p>
+      <p>The migration was incremental. We exposed the Rust core through a thin FFI layer and
+      swapped one endpoint at a time, so we could roll back instantly if metrics regressed.
+      Six weeks later the last Python worker was retired and tail latency dropped by half.</p>
+      <form class="subscribe"><label>Get our engineering posts</label><input type="email"><button>Subscribe</button></form>
+      <div class="related-articles">
+        <h3>More from Engineering</h3>
+        <ul><li><a href="/a">Scaling Postgres</a></li><li><a href="/b">Our CI pipeline</a></li></ul>
+      </div>
+    </article>
+  </main>
+</body>
+</html>
