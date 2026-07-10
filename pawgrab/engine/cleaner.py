@@ -95,6 +95,26 @@ def _text_length(html: str) -> int:
     return len(_TAG_RE.sub("", html).strip())
 
 
+def _content_score(html: str) -> float:
+    """Score an extraction candidate: visible text length discounted by link density.
+
+    Rewards fuller extractions (recall) while penalising nav/link furniture, so a
+    longer-but-cleaner candidate beats a short one and a link-dump loses to real
+    prose of the same length. Used to pick between semantic, readability and
+    trafilatura outputs instead of defaulting to whichever ran first.
+    """
+    tl = _text_length(html)
+    if tl <= 0:
+        return 0.0
+    try:
+        root = lxml_html.fromstring(html)
+        link_text = sum(len((a.text_content() or "").strip()) for a in root.iter("a"))
+    except Exception:
+        link_text = 0
+    density = min(link_text / tl, 1.0)
+    return tl * (1.0 - 0.8 * density)
+
+
 def _strip_boilerplate(tree) -> None:
     """Remove boilerplate elements from an lxml tree in-place."""
     for xpath in _BOILERPLATE_XPATHS:
@@ -302,74 +322,85 @@ def extract_content(
         except Exception:
             pass
 
-        # Fast path: single unambiguous semantic element
+        # Collect every viable extraction and pick the best by content score
+        # (text length discounted by link density). Readability under-extracts on
+        # product/listing/FAQ/docs layouts it doesn't recognise as "articles";
+        # scoring lets a fuller trafilatura or semantic-container result win
+        # instead of defaulting to whichever ran first.
+        candidates: list[str] = []
+
+        # Semantic containers (article/main/role=main). Run first: readability may
+        # mutate `tree`, so snapshot these before invoking it. Add both the first
+        # block and — when a page has several (a forum thread's posts, an item
+        # grid) — their concatenation, so the score picks the fuller one instead of
+        # a single post. Boilerplate merges lose on link density; real threads win.
         for xpath in _SEMANTIC_CONTENT_XPATHS:
             try:
                 els = tree.xpath(xpath)
-                if els and (xpath != "//article" or len(els) == 1):
-                    candidate = lxml_html.tostring(els[0], encoding="unicode")
-                    if _text_length(candidate) >= _MIN_CONTENT_CHARS:
-                        content_html = candidate
-                        break
+                if not els:
+                    continue
+                first = lxml_html.tostring(els[0], encoding="unicode")
+                if _text_length(first) >= _MIN_CONTENT_CHARS:
+                    candidates.append(first)
+                if len(els) >= 3:
+                    blocks = [lxml_html.tostring(e, encoding="unicode") for e in els]
+                    lengths = [_text_length(b) for b in blocks]
+                    total = sum(lengths)
+                    # Merge only for a genuine thread / item grid: several blocks and
+                    # no single one dominating. An article with a few related-post
+                    # cards has one block holding most of the text, so it's excluded
+                    # and keeps its clean single-article extraction (precision).
+                    if total and max(lengths) / total < 0.45:
+                        merged = "<div>" + "".join(
+                            b for b, ln in zip(blocks, lengths) if ln > 30
+                        ) + "</div>"
+                        if _text_length(merged) >= _MIN_CONTENT_CHARS:
+                            candidates.append(merged)
             except Exception:
                 pass
 
+        try:
+            # retry_length is readability's lenient-retry threshold; keeping the
+            # library default (250) lets it recover short articles that a strict
+            # pass would drop to the low-precision body fallback.
+            doc = ReadabilityDocument(tree, url=url or None, retry_length=250)
+            rr = doc.summary() or ""
+            if _text_length(rr) >= _MIN_CONTENT_CHARS:
+                candidates.append(rr)
+        except Exception:
+            logger.warning("readability_failed", url=url, exc_info=True)
+
+        try:
+            import trafilatura
+
+            traf_html = trafilatura.extract(
+                html,
+                url=url or None,
+                output_format="html",
+                include_tables=True,
+                include_links=True,
+                include_formatting=True,
+                favor_recall=True,
+                no_fallback=False,
+            ) or ""
+            if _text_length(traf_html) >= _MIN_CONTENT_CHARS:
+                candidates.append(traf_html)
+        except Exception:
+            pass
+
+        if candidates:
+            content_html = max(candidates, key=_content_score)
+
+        # Last resort before body fallback: merge article/section blocks.
+        # Only used when the primary extractors found nothing — avoids overriding
+        # good single-article extraction with noisy multi-card merges.
         if not content_html:
-            # Run trafilatura and readability; readability is the default (cleaner, article-focused).
-            # Only defer to trafilatura when it finds 2x more content (multi-section pages).
-            traf_html = ""
-            read_html = ""
-
             try:
-                import trafilatura
-
-                traf_html = trafilatura.extract(
-                    html,
-                    url=url or None,
-                    output_format="html",
-                    include_tables=True,
-                    include_links=True,
-                    include_formatting=True,
-                    favor_recall=True,
-                    no_fallback=False,
-                ) or ""
+                merged = _merge_sections(tree)
+                if merged and _text_length(merged) >= _MIN_CONTENT_CHARS:
+                    content_html = merged
             except Exception:
                 pass
-
-            try:
-                # retry_length is readability's lenient-retry threshold; keeping the
-                # library default (250) lets it recover short articles that a strict
-                # pass would drop to the low-precision body fallback.
-                doc = ReadabilityDocument(tree, url=url or None, retry_length=250)
-                rr = doc.summary() or ""
-                if _text_length(rr) >= _MIN_CONTENT_CHARS:
-                    read_html = rr
-            except Exception:
-                logger.warning("readability_failed", url=url, exc_info=True)
-
-            traf_len = _text_length(traf_html)
-            read_len = _text_length(read_html)
-            if read_len >= _MIN_CONTENT_CHARS:
-                # Default to readability (cleaner, article-focused); defer to
-                # trafilatura when it recovers substantially more (multi-section
-                # pages). 1.5x is the first knob to tune against the benchmark.
-                if traf_len >= read_len * 1.5:
-                    content_html = traf_html
-                else:
-                    content_html = read_html
-            elif traf_len >= _MIN_CONTENT_CHARS:
-                content_html = traf_html
-
-            # Last resort before body fallback: merge article/section blocks.
-            # Only used when both readability and trafilatura found nothing — avoids
-            # overriding good single-article extraction with noisy multi-card merges.
-            if not content_html:
-                try:
-                    merged = _merge_sections(tree)
-                    if merged and _text_length(merged) >= _MIN_CONTENT_CHARS:
-                        content_html = merged
-                except Exception:
-                    pass
 
         # Fallback: full body with boilerplate stripped
         if _text_length(content_html) < _MIN_CONTENT_CHARS:
