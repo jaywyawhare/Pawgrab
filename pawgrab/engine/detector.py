@@ -92,7 +92,11 @@ def _run_heuristics(html: str) -> bool:
 
     text = re.sub(r"<[^>]+>", " ", html)
     text = re.sub(r"\s+", " ", text).strip()
-    if len(text) < _MINIMAL_CONTENT_THRESHOLD:
+    # Sparse text implies "needs JS" only if the page is empty or has script that
+    # could be doing the rendering. A short page with real content and no scripts
+    # is just a small static page (a terse landing/stub), not a JS shell — flagging
+    # it fails valid pages at the scrape layer.
+    if len(text) < _MINIMAL_CONTENT_THRESHOLD and (not html.strip() or "<script" in html.lower()):
         return True
 
     # Check if visible text is just a loading shell
