@@ -369,6 +369,8 @@ def build_response(
             title=cleaned.title,
             description=cleaned.description,
             language=cleaned.language,
+            author=cleaned.author or None,
+            publish_date=cleaned.publish_date or None,
             url=result.url,
             status_code=result.status_code,
             word_count=word_count(text_content),

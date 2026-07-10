@@ -106,6 +106,8 @@ class PageMetadata(BaseModel):
     title: str | None = None
     description: str | None = None
     language: str | None = None
+    author: str | None = None
+    publish_date: str | None = None
     url: str
     status_code: int
     word_count: int = 0

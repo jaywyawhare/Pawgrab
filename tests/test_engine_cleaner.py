@@ -25,3 +25,26 @@ def test_extract_empty_html():
     result = extract_content("")
     assert result.title == ""
     assert result.content_html is not None
+
+
+def test_extract_byline_from_meta():
+    html = (
+        '<html><head>'
+        '<meta name="author" content="Jane Doe">'
+        '<meta property="article:published_time" content="2025-03-14T09:00:00Z">'
+        "</head><body><p>" + "Body text. " * 40 + "</p></body></html>"
+    )
+    result = extract_content(html)
+    assert result.author == "Jane Doe"
+    assert result.publish_date.startswith("2025-03-14")
+
+
+def test_extract_byline_from_json_ld():
+    html = (
+        '<html><head><script type="application/ld+json">'
+        '{"@type":"Article","author":{"name":"John Smith"},"datePublished":"2024-11-02"}'
+        "</script></head><body><p>" + "Body text. " * 40 + "</p></body></html>"
+    )
+    result = extract_content(html)
+    assert result.author == "John Smith"
+    assert result.publish_date == "2024-11-02"

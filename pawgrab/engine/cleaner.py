@@ -15,7 +15,7 @@ logger = structlog.get_logger()
 
 
 class CleanedContent:
-    __slots__ = ("title", "content_html", "description", "language")
+    __slots__ = ("title", "content_html", "description", "language", "author", "publish_date")
 
     def __init__(
         self,
@@ -23,11 +23,15 @@ class CleanedContent:
         content_html: str,
         description: str = "",
         language: str = "",
+        author: str = "",
+        publish_date: str = "",
     ):
         self.title = title
         self.content_html = content_html
         self.description = description
         self.language = language
+        self.author = author
+        self.publish_date = publish_date
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -276,6 +280,77 @@ def _clean_title(raw: str) -> str:
     return raw
 
 
+import json as _json
+
+_DATE_META_XPATHS = (
+    '//meta[@property="article:published_time"]/@content',
+    '//meta[@itemprop="datePublished"]/@content',
+    '//meta[@name="datePublished"]/@content',
+    '//meta[@name="date"]/@content',
+    '//meta[@property="og:published_time"]/@content',
+    "//time[@datetime]/@datetime",
+    "//time[@pubdate]/@datetime",
+)
+_AUTHOR_META_XPATHS = (
+    '//meta[@name="author"]/@content',
+    '//meta[@property="article:author"]/@content',
+    '//meta[@name="twitter:creator"]/@content',
+    '//*[@itemprop="author"]//*[@itemprop="name"]/text()',
+    '//*[@rel="author"]/text()',
+    '//*[contains(concat(" ", normalize-space(@class), " "), " author ")]//text()',
+)
+
+
+def _first_xpath(tree, xpaths) -> str:
+    for xp in xpaths:
+        try:
+            vals = tree.xpath(xp)
+        except Exception:
+            continue
+        for v in vals:
+            s = (v or "").strip()
+            if s:
+                return s[:300]
+    return ""
+
+
+def _extract_byline(tree, html: str) -> tuple[str, str]:
+    """Best-effort (author, publish_date) from JSON-LD, meta tags, and bylines."""
+    author = publish_date = ""
+    # JSON-LD is the most reliable source when present.
+    try:
+        for script in tree.xpath('//script[@type="application/ld+json"]/text()'):
+            try:
+                data = _json.loads(script)
+            except Exception:
+                continue
+            items = data if isinstance(data, list) else [data]
+            if isinstance(data, dict) and isinstance(data.get("@graph"), list):
+                items = data["@graph"]
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                if not publish_date:
+                    publish_date = str(it.get("datePublished") or it.get("dateCreated") or "").strip()
+                if not author:
+                    a = it.get("author")
+                    if isinstance(a, dict):
+                        author = str(a.get("name") or "").strip()
+                    elif isinstance(a, list) and a and isinstance(a[0], dict):
+                        author = str(a[0].get("name") or "").strip()
+                    elif isinstance(a, str):
+                        author = a.strip()
+            if author and publish_date:
+                break
+    except Exception:
+        pass
+    if not publish_date:
+        publish_date = _first_xpath(tree, _DATE_META_XPATHS)
+    if not author:
+        author = " ".join(_first_xpath(tree, _AUTHOR_META_XPATHS).split())
+    return author[:300], publish_date[:100]
+
+
 def _merge_sections(tree) -> str:
     """Concatenate all top-level <section> / <article> blocks when no single container found."""
     for xpath in ("//article", "//section", "//main"):
@@ -366,6 +441,8 @@ def extract_content(
     language = ""
     fallback_title = ""
     og_title = ""
+    author = ""
+    publish_date = ""
     if tree is not None:
         try:
             desc_els = tree.xpath('//meta[@name="description"]/@content')
@@ -380,6 +457,10 @@ def extract_content(
             og_els = tree.xpath('//meta[@property="og:title"]/@content')
             if og_els:
                 og_title = og_els[0].strip()
+        except Exception:
+            pass
+        try:
+            author, publish_date = _extract_byline(tree, html)
         except Exception:
             pass
 
@@ -517,6 +598,8 @@ def extract_content(
         content_html=content_html,
         description=description,
         language=language,
+        author=author,
+        publish_date=publish_date,
     )
 
 
