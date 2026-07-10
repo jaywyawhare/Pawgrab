@@ -151,6 +151,77 @@ _PRUNABLE_TAGS = frozenset(
 )
 
 
+# Short, page-type-specific UI chrome that survives generic stripping because it's
+# plain text in ordinary tags (not links, not tell-tale classes): forum post
+# reputation/metadata, commerce-grid widgets, listing pagination controls. These
+# are the top precision leaks on WCXB forum/product/collection/listing pages.
+_UI_CHROME_TAGS = frozenset(
+    {"a", "button", "span", "li", "p", "div", "small", "time", "label", "strong", "em", "b"}
+)
+
+# Whole-block UI phrases (matched against the block's entire short text).
+_UI_CHROME_FULL_RE = re.compile(
+    r"^(?:"
+    r"add to (?:cart|bag|compare|wishlist|list|quote|favou?rites)"
+    r"|quick\s*(?:view|shop|add|look)|buy(?: it)? now|shop now|pre-?order"
+    r"|in stock|out of stock|low stock|sold out|view (?:details|more|all|product)"
+    r"|load(?:ing)?(?: more)?\.{0,3}|show more|see (?:more|all|details)|read more"
+    r"|try again|refresh|reset|clear(?: all| filters?)?|back(?: to top)?|top"
+    r"|next|previous|prev|more|expand|collapse|reply|quote|report|share|save"
+    r"|follow(?:ing)?|upvote|downvote|like|flag|edit|delete|subscribe"
+    r"|sort by|filter|compare|wishlist|favou?rite"
+    r"|click to expand|last seen|add to compare|quick view|view cart"
+    r")[\s:•·|>-]*$",
+    re.I,
+)
+
+# Reputation / commerce / count fragments (searched within a short block).
+_UI_CHROME_PART_RE = re.compile(
+    r"(?:"
+    r"\b\d[\d,]* (?:posts?|replies|reviews?|badges?|followers?|points?|reputation|answers?|votes?)\b"
+    r"|\b(?:bronze|silver|gold) badges?\b|\b\d+ (?:bronze|silver|gold)\b"
+    r"|\bmember since\b|\bjoined \w+ ?\d*\b|\b(?:edited|answered|asked|posted|commented|updated) \w+ \d"
+    r"|\b(?:regular|sale|original|list|starting|was) price\b|\byou may also like\b"
+    r"|\bcustomers? also\b|\bfree (?:shipping|delivery)\b|\badd to cart\b|\bprice:?\s*\$"
+    r")",
+    re.I,
+)
+
+
+def _strip_ui_chrome(html: str) -> str:
+    """Drop short leaf blocks that are page-type UI chrome, not content.
+
+    Only touches blocks with <= 8 words of *total* text, so it can never remove a
+    real paragraph or a content container (whose text_content is long). Guarded to
+    return the input unchanged if it would drop below the minimum content size.
+    """
+    if not html or not html.strip():
+        return html
+    try:
+        root = lxml_html.fromstring(html)
+    except Exception:
+        return html
+
+    doomed = []
+    for el in root.iter():
+        if el is root or el.tag not in _UI_CHROME_TAGS:
+            continue
+        text = (el.text_content() or "").strip()
+        if not text or len(text.split()) > 8:
+            continue
+        low = text.lower()
+        if _UI_CHROME_FULL_RE.match(low) or _UI_CHROME_PART_RE.search(low):
+            doomed.append(el)
+
+    for el in doomed:
+        parent = el.getparent()
+        if parent is not None:  # None => already removed with an ancestor
+            parent.remove(el)
+
+    pruned = lxml_html.tostring(root, encoding="unicode")
+    return pruned if _text_length(pruned) >= _MIN_CONTENT_CHARS else html
+
+
 def _prune_link_density(
     html: str, *, threshold: float = 0.5, min_text: int = 30
 ) -> str:
@@ -414,6 +485,12 @@ def extract_content(
         if content_html:
             try:
                 content_html = _prune_link_density(content_html)
+            except Exception:
+                pass
+            # Then drop short UI-chrome leaf blocks (forum post metadata, commerce
+            # grid widgets, listing controls) that plain-text stripping misses.
+            try:
+                content_html = _strip_ui_chrome(content_html)
             except Exception:
                 pass
 
