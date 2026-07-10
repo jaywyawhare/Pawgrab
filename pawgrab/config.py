@@ -52,6 +52,9 @@ class Settings(BaseSettings):
 
     proxy_url: str = ""
     proxy_urls: str = ""
+    # Premium tier (residential/mobile). Escalated to on anti-bot blocks (403/429/
+    # challenge) — the datacenter->residential "auto" pattern. Empty = no escalation.
+    proxy_urls_premium: str = ""
     proxy_rotation_policy: Literal["round_robin", "random", "least_used"] = "round_robin"
     proxy_health_check: bool = True
     proxy_health_check_interval: int = Field(default=300, ge=10)

@@ -242,3 +242,38 @@ def test_is_proxy_error_false_for_generic_error():
 
 def test_cf_min_timeout_value():
     assert _CF_MIN_TIMEOUT == 60_000
+
+
+class _FakeChallenge:
+    def __init__(self, challenge_type):
+        self.challenge_type = challenge_type
+
+
+def test_is_browser_solvable_cloudflare_always():
+    from pawgrab.engine.fetcher import _is_browser_solvable
+
+    for t in ("cloudflare_js", "cloudflare_managed", "cloudflare_turnstile", "cloudflare_interstitial"):
+        assert _is_browser_solvable(_FakeChallenge(t)) is True
+
+
+def test_is_browser_solvable_none():
+    from pawgrab.engine.fetcher import _is_browser_solvable
+
+    assert _is_browser_solvable(None) is False
+    assert _is_browser_solvable(_FakeChallenge(None)) is False
+
+
+def test_captcha_types_need_solver_to_be_browser_solvable():
+    from pawgrab.engine.fetcher import _is_browser_solvable
+
+    # No solver configured -> not worth a browser slot (would just harden the block).
+    with patch("pawgrab.engine.captcha_solver.get_solver") as gs:
+        gs.return_value.available = False
+        assert _is_browser_solvable(_FakeChallenge("recaptcha")) is False
+        assert _is_browser_solvable(_FakeChallenge("datadome")) is False
+
+    # Solver configured -> escalate so the external service can crack it.
+    with patch("pawgrab.engine.captcha_solver.get_solver") as gs:
+        gs.return_value.available = True
+        assert _is_browser_solvable(_FakeChallenge("recaptcha")) is True
+        assert _is_browser_solvable(_FakeChallenge("hcaptcha")) is True

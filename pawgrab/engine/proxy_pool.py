@@ -36,6 +36,7 @@ class RotationPolicy(enum.Enum):
 class ProxyEntry:
     url: str
     ok: bool = True
+    tier: str = "standard"  # "standard" (datacenter) or "premium" (residential/mobile)
     speed: float = 0.0  # EMA latency in seconds
 
     offered: int = 0
@@ -146,6 +147,10 @@ class ProxyPool:
         for url in urls:
             self.add_proxy(url)
 
+        if settings.proxy_urls_premium:
+            for url in (p.strip() for p in settings.proxy_urls_premium.split(",") if p.strip()):
+                self.add_proxy(url, tier="premium")
+
         if self._entries:
             self._eviction_task = asyncio.create_task(self._eviction_loop())
             if settings.proxy_health_check:
@@ -164,10 +169,11 @@ class ProxyPool:
         self._health_task = None
         logger.info("proxy_pool_stopped", count=len(self._entries))
 
-    def add_proxy(self, url: str) -> bool:
+    def add_proxy(self, url: str, tier: str = "standard") -> bool:
         """Add a proxy (idempotent). Returns True if added, False if duplicate.
 
         Supports http, https, socks4, socks5, and socks5h proxy schemes.
+        ``tier`` is "standard" (datacenter) or "premium" (residential/mobile).
         """
         parsed = urlparse(url)
         if parsed.scheme not in _VALID_PROXY_SCHEMES:
@@ -181,7 +187,7 @@ class ProxyPool:
         for entry in self._entries:
             if entry.url == url:
                 return False
-        self._entries.append(ProxyEntry(url=url))
+        self._entries.append(ProxyEntry(url=url, tier=tier))
         if len(self._entries) == 1 and self._eviction_task is None:
             self._eviction_task = asyncio.create_task(self._eviction_loop())
             if settings.proxy_health_check and self._health_task is None:
@@ -196,18 +202,28 @@ class ProxyPool:
                 return True
         return False
 
-    async def get_proxy(self) -> ProxyEntry | None:
+    def has_premium(self) -> bool:
+        """Whether any residential/mobile-tier proxy is configured."""
+        return any(e.tier == "premium" for e in self._entries)
+
+    async def get_proxy(self, premium: bool = False) -> ProxyEntry | None:
         """Get the next proxy according to the rotation policy.
 
+        ``premium=True`` restricts to residential/mobile-tier proxies (used to
+        escalate on anti-bot blocks); ``False`` uses the standard datacenter tier.
         Caller MUST call entry.mark_success() or entry.mark_failure() after use.
-        Returns None if the pool is empty or all proxies are unhealthy.
+        Returns None if no matching proxy is available.
         """
         async with self._lock:
             if not self._entries:
                 return None
 
+            want_tier = "premium" if premium else "standard"
             offer_limit = settings.proxy_offer_limit
-            candidates = [e for e in self._entries if not e.should_skip(offer_limit)]
+            candidates = [
+                e for e in self._entries
+                if e.tier == want_tier and not e.should_skip(offer_limit)
+            ]
             if not candidates:
                 return None
 

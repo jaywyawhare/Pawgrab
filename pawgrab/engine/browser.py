@@ -660,12 +660,22 @@ async def _cf_is_solved(page) -> bool:
     return "<title>Just a moment...</title>" not in await _cf_page_content(page)
 
 
-async def solve_cloudflare(page, *, max_retries: int = 2) -> bool:
+async def solve_cloudflare(page, *, max_retries: int = 2, max_seconds: float | None = None) -> bool:
     """Attempt to solve a Cloudflare Turnstile challenge on *page*.
 
     Returns ``True`` if the challenge was solved and the page navigated to
     the real content, ``False`` otherwise.
+
+    ``max_seconds`` bounds total wall-clock: the retry loops give up once the
+    deadline passes. This keeps "managed" challenges the clicker can't clear from
+    spinning ~90 s/page. Prefer this over cancelling the coroutine externally,
+    which would abort a pending Playwright call and leak an unretrieved future.
     """
+    deadline = (time.monotonic() + max_seconds) if max_seconds else None
+
+    def _expired() -> bool:
+        return deadline is not None and time.monotonic() > deadline
+
     try:
         await page.wait_for_load_state("networkidle", timeout=5_000)
     except Exception:
@@ -679,8 +689,12 @@ async def solve_cloudflare(page, *, max_retries: int = 2) -> bool:
     logger.info("cf_challenge_detected", cf_type=cf_type)
 
     for attempt in range(max_retries + 1):
+        if _expired():
+            return False
         if cf_type == "non-interactive":
             for _wait_iter in range(30):  # cap at 30 s to prevent infinite loop
+                if _expired():
+                    return False
                 if "<title>Just a moment...</title>" not in await _cf_page_content(page):
                     break
                 try:
@@ -698,6 +712,8 @@ async def solve_cloudflare(page, *, max_retries: int = 2) -> bool:
         try:
             if cf_type != "embedded_turnstile":
                 while "Verifying you are human." in await _cf_page_content(page):
+                    if _expired():
+                        return False
                     await page.wait_for_timeout(500)
 
             outer_box = None
@@ -725,7 +741,9 @@ async def solve_cloudflare(page, *, max_retries: int = 2) -> bool:
                     return True
                 box_sel = _CF_BOX_SELECTOR if cf_type == "embedded_turnstile" else _CF_INTERSTITIAL_BOX_SELECTOR
                 try:
-                    outer_box = await page.locator(box_sel).last.bounding_box()
+                    # Short timeout: the default 30 s locator wait would blow the
+                    # solve budget and leak a pending future when the box is absent.
+                    outer_box = await page.locator(box_sel).last.bounding_box(timeout=3_000)
                 except Exception:
                     pass
 

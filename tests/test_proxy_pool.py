@@ -118,6 +118,26 @@ class TestProxyPool:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_tiered_proxy_escalation(self):
+        pool = ProxyPool()
+        pool.add_proxy("http://dc:8080")  # standard
+        pool.add_proxy("http://res:8080", tier="premium")
+        assert pool.has_premium() is True
+        # default -> standard tier only
+        std = await pool.get_proxy()
+        assert std.url == "http://dc:8080" and std.tier == "standard"
+        # premium=True -> residential tier
+        prem = await pool.get_proxy(premium=True)
+        assert prem.url == "http://res:8080" and prem.tier == "premium"
+
+    @pytest.mark.asyncio
+    async def test_no_premium_returns_none(self):
+        pool = ProxyPool()
+        pool.add_proxy("http://dc:8080")
+        assert pool.has_premium() is False
+        assert await pool.get_proxy(premium=True) is None
+
+    @pytest.mark.asyncio
     async def test_round_robin(self):
         pool = ProxyPool()
         pool._policy = RotationPolicy.ROUND_ROBIN

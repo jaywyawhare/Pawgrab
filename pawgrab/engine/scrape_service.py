@@ -162,6 +162,10 @@ async def scrape_url(
         except Exception:
             _visible = (result.html or "").strip()
         if len(_visible) < 100 and needs_js_rendering(result.html or "", url=url):
+            # Hand off cookies earned by the curl attempt (e.g. cf_clearance) so the
+            # browser continues as the same "visitor" instead of tripping a fresh
+            # anti-bot challenge — a naive re-fetch trades a soft block for a 403.
+            handoff_cookies = {**(cookies or {}), **(result.cookies or {})}
             browser_result = await fetch_page(
                 url,
                 wait_for_js=True,
@@ -169,7 +173,7 @@ async def scrape_url(
                 browser_pool=browser_pool,
                 proxy_pool=proxy_pool,
                 headers=headers,
-                cookies=cookies,
+                cookies=handoff_cookies or None,
                 session_id=session_id,
             )
             if browser_result and browser_result.html:

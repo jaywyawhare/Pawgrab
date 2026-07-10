@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import structlog
 from curl_cffi import CurlHttpVersion
 from curl_cffi.requests import AsyncSession
-from curl_cffi.requests.exceptions import DNSError
+from curl_cffi.requests.exceptions import DNSError, SSLError
 
 from pawgrab.config import settings
 from pawgrab.engine.antibot import (
@@ -24,6 +24,38 @@ from pawgrab.engine.detector import needs_js_rendering
 from pawgrab.engine.pdf_extractor import is_pdf_content
 
 logger = structlog.get_logger()
+
+# Challenge types a headless browser can clear on its own (via solve_cloudflare).
+# CAPTCHA-gated types (recaptcha/hcaptcha/datadome/sucuri) need a solver service,
+# so escalating them to the browser only wastes a slot and hardens the block.
+_BROWSER_SOLVABLE_CHALLENGES = frozenset(
+    {
+        "cloudflare_js",
+        "cloudflare_managed",
+        "cloudflare_turnstile",
+        "cloudflare_interstitial",
+    }
+)
+
+
+# Token-injection CAPTCHAs the external solver (solve_captcha_on_page) can clear.
+# DataDome/Sucuri need a different (cookie-based) flow that isn't implemented, so
+# they're excluded — escalating them would only waste a browser slot.
+_SOLVER_REQUIRED_CHALLENGES = frozenset({"recaptcha", "hcaptcha"})
+
+
+def _is_browser_solvable(challenge) -> bool:
+    if not challenge or not challenge.challenge_type:
+        return False
+    if challenge.challenge_type in _BROWSER_SOLVABLE_CHALLENGES:
+        return True
+    # reCAPTCHA/hCaptcha/DataDome are only worth a browser slot if a solver is
+    # configured to actually crack them — otherwise it just hardens the block.
+    if challenge.challenge_type in _SOLVER_REQUIRED_CHALLENGES:
+        from pawgrab.engine.captcha_solver import get_solver
+
+        return get_solver().available
+    return False
 
 
 async def _backoff(attempt: int) -> None:
@@ -336,7 +368,8 @@ async def fetch_page(
             retry_entry = None
             retry_proxy: str | None = None
             if proxy_pool is not None:
-                retry_entry = await proxy_pool.get_proxy()
+                # Escalate to residential/mobile on a block, else stay standard.
+                retry_entry = await proxy_pool.get_proxy(premium=True) or await proxy_pool.get_proxy()
                 if retry_entry is not None:
                     retry_proxy = retry_entry.url
             try:
@@ -378,14 +411,21 @@ async def fetch_page(
             )
             prev_target = retry_target
 
-        if challenge.detected and browser_pool is not None:
-            logger.info("escalating_to_browser", url=url)
+        # Escalate to the browser only for Cloudflare-family challenges, which the
+        # headless solver can actually clear. reCAPTCHA / hCaptcha / DataDome /
+        # Sucuri need a CAPTCHA service — a headless browser just burns a slot and
+        # trades the soft block for a hard 403 (measured on scrape-evals), so
+        # return the challenged result instead of making it worse.
+        if challenge.detected and browser_pool is not None and _is_browser_solvable(challenge):
+            logger.info("escalating_to_browser", url=url, type=challenge.challenge_type)
             browser_proxy_url: str | None = None
             if proxy_pool is not None:
-                browser_entry = await proxy_pool.get_proxy()
+                browser_entry = await proxy_pool.get_proxy(premium=True) or await proxy_pool.get_proxy()
                 if browser_entry is not None:
                     browser_proxy_url = browser_entry.url
             _browser_kwargs["proxy_url"] = browser_proxy_url
+            # Carry cookies accumulated across curl retries into the browser.
+            _browser_kwargs["cookies"] = merged_cookies or _browser_kwargs.get("cookies")
             return await _fetch_with_browser(url, **_browser_kwargs)
 
         if challenge.detected:
@@ -425,6 +465,22 @@ async def _fetch_with_curl(
             headers=headers,
             cookies=cookies,
         )
+    except SSLError as exc:
+        # Misconfigured / expired certs are common on long-tail sites. Retry once
+        # without verification so a self-signed cert doesn't cost us the page.
+        logger.warning("curl_ssl_retry_no_verify", url=url, impersonate=impersonate, error=str(exc))
+        try:
+            resp = await session.get(
+                url,
+                timeout=timeout_s,
+                allow_redirects=True,
+                headers=headers,
+                cookies=cookies,
+                verify=False,
+            )
+        except Exception as exc2:
+            logger.warning("curl_fetch_failed", url=url, impersonate=impersonate, error=str(exc2))
+            raise
     except Exception as exc:
         logger.warning("curl_fetch_failed", url=url, impersonate=impersonate, error=str(exc))
         raise
@@ -538,6 +594,10 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
 _CF_WAIT_MS = 10_000
 _CF_SETTLE_MS = 6_000
 _CF_MIN_TIMEOUT = 60_000
+# Hard wall-clock cap on the built-in Turnstile clicker. Its internal retry loops
+# can otherwise spin ~90 s/page on Cloudflare "managed" challenges it can't clear,
+# which is unusable at scale — bound it and move on to the external solver / wait.
+_CF_SOLVE_BUDGET_S = 20.0
 
 _PROXY_ERROR_INDICATORS = frozenset(
     {
@@ -756,15 +816,59 @@ async def _fetch_with_browser(
             resp_headers = {k: v for k, v in response.headers.items()}
 
         challenge = detect_challenge(status, resp_headers, html)
+
+        # CAPTCHA-gated challenges (reCAPTCHA / hCaptcha) can't be clicked away —
+        # route them to the external solver service when one is configured, which
+        # extracts the sitekey and injects the token. No-op without an API key.
+        if challenge.detected and challenge.challenge_type in (
+            "recaptcha",
+            "hcaptcha",
+        ):
+            from pawgrab.engine.captcha_solver import get_solver, solve_captcha_on_page
+
+            if get_solver().available and await solve_captcha_on_page(
+                page, url, challenge.challenge_type
+            ):
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=_CF_SETTLE_MS)
+                except Exception:
+                    pass
+                html = await page.content()
+                if not detect_challenge(status, {}, html).detected:
+                    return FetchResult(
+                        html=html,
+                        status_code=200,
+                        url=page.url,
+                        used_browser=True,
+                        action_warnings=action_warnings,
+                        network_requests=network_requests,
+                        console_logs=console_logs,
+                    )
+
         if challenge.detected and challenge.challenge_type in (
             "cloudflare_js",
             "cloudflare_interstitial",
+            "cloudflare_managed",
+            "cloudflare_turnstile",
         ):
             if settings.solve_cloudflare:
                 from pawgrab.engine.browser import solve_cloudflare as _solve_cf
 
                 logger.info("attempting_cf_solve", url=url)
-                solved = await _solve_cf(page)
+                # Budget-bounded internally so it degrades gracefully instead of
+                # being cancelled mid-Playwright-call (which leaks a pending future).
+                solved = await _solve_cf(page, max_seconds=_CF_SOLVE_BUDGET_S)
+                # If the built-in clicker couldn't clear it (common on "managed"
+                # challenges), fall back to the external Turnstile solver service.
+                if not solved:
+                    from pawgrab.engine.captcha_solver import (
+                        get_solver,
+                        solve_captcha_on_page,
+                    )
+
+                    if get_solver().available:
+                        logger.info("attempting_external_turnstile_solve", url=url)
+                        solved = await solve_captcha_on_page(page, url, "turnstile")
                 if solved:
                     html = await page.content()
                     return FetchResult(
