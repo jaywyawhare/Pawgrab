@@ -1017,7 +1017,10 @@ class BrowserPool:
 
         if is_chromium:
             self._user_data_dir = tempfile.mkdtemp(prefix="pawgrab_chrome_")
-            ctx_kwargs = self._context_kwargs()
+            # One coherent identity for the shared context: viewport/screen/GPU/
+            # timezone/UA all drawn from a single seed instead of independently.
+            profile = build_profile(settings.fingerprint_seed or None)
+            ctx_kwargs = self._context_kwargs(profile=profile)
             ctx_kwargs.pop("permissions", None)
             self._persistent_ctx = await launcher.launch_persistent_context(
                 self._user_data_dir,
@@ -1028,7 +1031,7 @@ class BrowserPool:
             )
             if settings.stealth_mode:
                 await _apply_stealth(self._persistent_ctx)
-                evasion_js = _build_evasion_script(browser_type="chromium")
+                evasion_js = _build_evasion_script(browser_type="chromium", profile=profile)
                 await self._persistent_ctx.add_init_script(evasion_js)
             await self._persistent_ctx.route("**/*", _route_handler)
             try:
