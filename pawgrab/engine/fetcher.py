@@ -534,14 +534,33 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
 
     warnings: list[str] = []
     per_action_timeout = max(timeout // (len(actions) + 1), 5_000)
+    humanize = settings.humanize_interactions
 
     for i, action in enumerate(actions):
         try:
             match action.type:
                 case ActionType.CLICK:
-                    await page.click(action.selector, timeout=per_action_timeout)
+                    if humanize:
+                        box = await page.locator(action.selector).first.bounding_box(
+                            timeout=per_action_timeout
+                        )
+                        if box:
+                            from pawgrab.engine.humanize import human_click
+
+                            await human_click(
+                                page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+                            )
+                        else:
+                            await page.click(action.selector, timeout=per_action_timeout)
+                    else:
+                        await page.click(action.selector, timeout=per_action_timeout)
                 case ActionType.TYPE:
-                    await page.fill(action.selector, action.text, timeout=per_action_timeout)
+                    if humanize:
+                        from pawgrab.engine.humanize import human_type
+
+                        await human_type(page, action.selector, action.text, timeout=per_action_timeout)
+                    else:
+                        await page.fill(action.selector, action.text, timeout=per_action_timeout)
                 case ActionType.SCROLL:
                     direction = -1 if action.direction == "up" else 1
                     px = (action.amount or 500) * direction
@@ -781,9 +800,14 @@ async def _fetch_with_browser(
 
         if scroll_to_bottom:
             try:
-                from pawgrab.engine.browser import _SCROLL_TO_BOTTOM_JS
+                if settings.humanize_interactions:
+                    from pawgrab.engine.humanize import human_scroll
 
-                await page.evaluate(_SCROLL_TO_BOTTOM_JS)
+                    await human_scroll(page)
+                else:
+                    from pawgrab.engine.browser import _SCROLL_TO_BOTTOM_JS
+
+                    await page.evaluate(_SCROLL_TO_BOTTOM_JS)
             except Exception as exc:
                 logger.warning("scroll_to_bottom_failed", url=url, error=str(exc))
 

@@ -92,20 +92,70 @@ class TestExecuteActions:
         page.screenshot = AsyncMock()
         return page
 
-    async def test_click_action(self, mock_page):
+    async def test_click_action(self, mock_page, monkeypatch):
+        from pawgrab.engine import fetcher
         from pawgrab.engine.fetcher import _execute_actions
 
+        # Humanize off: CLICK dispatches straight to page.click.
+        monkeypatch.setattr(fetcher.settings, "humanize_interactions", False)
         actions = [PageAction(type=ActionType.CLICK, selector="button#go")]
         warnings = await _execute_actions(mock_page, actions, 30000)
         mock_page.click.assert_awaited_once()
         assert warnings == []
 
-    async def test_type_action(self, mock_page):
+    async def test_type_action(self, mock_page, monkeypatch):
+        from pawgrab.engine import fetcher
         from pawgrab.engine.fetcher import _execute_actions
 
+        monkeypatch.setattr(fetcher.settings, "humanize_interactions", False)
         actions = [PageAction(type=ActionType.TYPE, selector="input", text="hello")]
         _warnings = await _execute_actions(mock_page, actions, 30000)
         mock_page.fill.assert_awaited_once_with("input", "hello", timeout=15000)
+
+    async def test_click_action_humanized(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from pawgrab.engine import fetcher
+        from pawgrab.engine.fetcher import _execute_actions
+
+        monkeypatch.setattr(fetcher.settings, "humanize_interactions", True)
+        page = AsyncMock()
+        # page.locator is sync in Playwright; return a locator whose bounding_box awaits.
+        locator = MagicMock()
+        locator.first.bounding_box = AsyncMock(
+            return_value={"x": 10, "y": 20, "width": 40, "height": 10}
+        )
+        page.locator = MagicMock(return_value=locator)
+        page.mouse = MagicMock()
+        page.mouse.move = AsyncMock()
+        page.mouse.down = AsyncMock()
+        page.mouse.up = AsyncMock()
+        page.mouse.click = AsyncMock()
+
+        actions = [PageAction(type=ActionType.CLICK, selector="button#go")]
+        warnings = await _execute_actions(page, actions, 30000)
+        assert warnings == []
+        # Humanized click drives the mouse rather than page.click.
+        assert page.mouse.down.await_count == 1
+        assert page.mouse.up.await_count == 1
+
+    async def test_type_action_humanized(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from pawgrab.engine import fetcher
+        from pawgrab.engine.fetcher import _execute_actions
+
+        monkeypatch.setattr(fetcher.settings, "humanize_interactions", True)
+        page = AsyncMock()
+        page.click = AsyncMock()
+        page.keyboard = MagicMock()
+        page.keyboard.type = AsyncMock()
+        page.keyboard.press = AsyncMock()
+
+        actions = [PageAction(type=ActionType.TYPE, selector="input", text="hi")]
+        await _execute_actions(page, actions, 30000)
+        typed = "".join(c.args[0] for c in page.keyboard.type.await_args_list if c.args)
+        assert "h" in typed and "i" in typed
 
     async def test_scroll_down(self, mock_page):
         from pawgrab.engine.fetcher import _execute_actions
@@ -136,9 +186,11 @@ class TestExecuteActions:
         await _execute_actions(mock_page, actions, 30000)
         mock_page.evaluate.assert_awaited_once_with("return 42")
 
-    async def test_action_error_returns_warning(self, mock_page):
+    async def test_action_error_returns_warning(self, mock_page, monkeypatch):
+        from pawgrab.engine import fetcher
         from pawgrab.engine.fetcher import _execute_actions
 
+        monkeypatch.setattr(fetcher.settings, "humanize_interactions", False)
         mock_page.click.side_effect = Exception("Element not found")
         actions = [PageAction(type=ActionType.CLICK, selector="missing")]
         warnings = await _execute_actions(mock_page, actions, 30000)

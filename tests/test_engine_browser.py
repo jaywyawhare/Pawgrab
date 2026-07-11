@@ -238,3 +238,51 @@ def test_stealth_args_include_consolidated_disable_features():
     joined = " ".join(_STEALTH_CHROMIUM_ARGS)
     assert "IsolateOrigins" in joined
     assert "site-per-process" in joined
+
+
+def test_evasion_script_honors_profile():
+    from pawgrab.engine.fingerprint import build_profile
+
+    profile = build_profile(42069)
+    script = _build_evasion_script(profile=profile)
+    assert profile.webgl_renderer in script
+    assert str(profile.hardware_concurrency) in script
+    assert str(profile.device_memory) in script
+
+
+def test_context_kwargs_uses_profile():
+    from pawgrab.engine.browser import BrowserPool
+    from pawgrab.engine.fingerprint import build_profile
+
+    pool = BrowserPool()
+    profile = build_profile(42069)
+    kw = pool._context_kwargs(profile=profile)
+    assert kw["user_agent"] == profile.user_agent
+    assert kw["timezone_id"] == profile.timezone
+    assert kw["locale"] == profile.locale
+    assert kw["viewport"] == profile.viewport
+
+
+def test_context_kwargs_geo_overrides_profile():
+    from pawgrab.engine.browser import BrowserPool
+    from pawgrab.engine.fingerprint import build_profile
+    from pawgrab.engine.geoip import ProxyGeo
+
+    pool = BrowserPool()
+    profile = build_profile(42069)  # some American/European tz
+    geo = ProxyGeo(
+        ip="1.2.3.4",
+        timezone="Asia/Tokyo",
+        locale="en-US",
+        accept_language="en-US,en;q=0.9,ja;q=0.7",
+        latitude=35.6,
+        longitude=139.7,
+        country="JP",
+    )
+    kw = pool._context_kwargs(proxy_url="http://p:8080", profile=profile, geo=geo)
+    # Proxy exit-IP geo wins over the profile's random timezone.
+    assert kw["timezone_id"] == "Asia/Tokyo"
+    assert kw["extra_http_headers"]["Accept-Language"] == geo.accept_language
+    # Geolocation is seeded from the proxy coordinates.
+    assert kw["geolocation"]["latitude"] == 35.6
+    assert kw["proxy"] == {"server": "http://p:8080"}

@@ -16,6 +16,8 @@ from patchright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from pawgrab.config import settings
 from pawgrab.engine.antibot import random_user_agent, stealth_headers
+from pawgrab.engine.fingerprint import build_profile
+from pawgrab.engine.geoip import resolve_proxy_geo
 
 logger = structlog.get_logger()
 
@@ -452,14 +454,23 @@ def _strip_section(script: str, tag: str) -> str:
     return pattern.sub("", script)
 
 
-def _build_evasion_script(browser_type: str = "chromium") -> str:
+def _build_evasion_script(browser_type: str = "chromium", profile=None) -> str:
     """Build fingerprint evasion JS with randomized values matching a consistent profile.
 
     On Chromium, native flags handle canvas noise and WebRTC blocking, so the
     JS versions are stripped to avoid detectable ``Function.prototype.toString``
     leaks.  Firefox/WebKit keep the full script.
+
+    When a :class:`~pawgrab.engine.fingerprint.FingerprintProfile` is supplied,
+    its GPU/hardware values are used so the injected JS agrees with the rest of
+    the context (viewport, timezone, UA); otherwise a random GPU is picked.
     """
-    renderer, hw_concurrency, dev_memory = _pick_gpu_profile()
+    if profile is not None:
+        renderer = profile.webgl_renderer
+        hw_concurrency = profile.hardware_concurrency
+        dev_memory = profile.device_memory
+    else:
+        renderer, hw_concurrency, dev_memory = _pick_gpu_profile()
     script = _FINGERPRINT_EVASION_JS.replace("__RENDERER__", renderer)
     script = script.replace("__HARDWARE_CONCURRENCY__", str(hw_concurrency))
     script = script.replace("__DEVICE_MEMORY__", str(dev_memory))
@@ -755,7 +766,14 @@ async def solve_cloudflare(page, *, max_retries: int = 2, max_seconds: float | N
 
             x = outer_box["x"] + random.randint(26, 28)
             y = outer_box["y"] + random.randint(25, 27)
-            await page.mouse.click(x, y, delay=random.randint(100, 200), button="left")
+            if settings.humanize_interactions:
+                # Curved approach + realistic hold reads as human to the Turnstile
+                # behavioural check, not a teleport-click.
+                from pawgrab.engine.humanize import human_click
+
+                await human_click(page, x, y)
+            else:
+                await page.mouse.click(x, y, delay=random.randint(100, 200), button="left")
 
             try:
                 await page.wait_for_load_state("networkidle", timeout=10_000)
@@ -871,13 +889,39 @@ class BrowserPool:
         self,
         proxy_url: str | None = None,
         geolocation: dict[str, float] | None = None,
+        profile=None,
+        geo=None,
     ) -> dict:
-        """Build common context/launch kwargs for stealth sessions."""
-        ua = random_user_agent()
-        viewport = random.choice(_VIEWPORTS)
-        timezone = random.choice(_TIMEZONES)
-        locale = random.choice(_LOCALES)
+        """Build common context/launch kwargs for stealth sessions.
+
+        ``profile`` is a coherent :class:`FingerprintProfile` (UA/viewport/GPU/
+        timezone drawn from one seed); when absent, values are picked at random
+        as before.  ``geo`` is a resolved :class:`ProxyGeo` for the proxy exit IP
+        — its timezone/locale/geolocation override the profile so the browser
+        agrees with the IP the site sees.
+        """
+        if profile is not None:
+            ua = profile.user_agent
+            viewport = dict(profile.viewport)
+            timezone = profile.timezone
+            locale = profile.locale
+            accept_language = profile.accept_language
+        else:
+            ua = random_user_agent()
+            viewport = random.choice(_VIEWPORTS)
+            timezone = random.choice(_TIMEZONES)
+            locale = random.choice(_LOCALES)
+            accept_language = None
+
+        # Proxy exit-IP geo wins: align timezone/locale to the visible IP.
+        if geo is not None:
+            timezone = geo.timezone
+            locale = geo.locale
+            accept_language = geo.accept_language
+
         headers = stealth_headers(user_agent=ua, timezone=timezone)
+        if accept_language:
+            headers["Accept-Language"] = accept_language
         extra = {k: v for k, v in headers.items() if k not in ("User-Agent", "Accept-Encoding")}
         kwargs: dict = dict(
             user_agent=ua,
@@ -896,6 +940,8 @@ class BrowserPool:
         )
         if proxy_url:
             kwargs["proxy"] = {"server": proxy_url}
+        if geolocation is None and geo is not None:
+            geolocation = {"latitude": geo.latitude, "longitude": geo.longitude, "accuracy": 100}
         if geolocation:
             kwargs["geolocation"] = {
                 "latitude": geolocation.get("latitude", 0),
@@ -918,6 +964,8 @@ class BrowserPool:
         if not proxy_url and self._persistent_ctx is not None:
             return await self._persistent_ctx.new_page()
 
+        profile = build_profile(settings.fingerprint_seed or None)
+
         if proxy_url:
             if self._proxy_browser is None:
                 launcher = await self._get_browser_launcher()
@@ -927,21 +975,25 @@ class BrowserPool:
                     args=list(_STEALTH_CHROMIUM_ARGS) if is_chromium else None,
                     ignore_default_args=list(_HARMFUL_DEFAULT_ARGS) if is_chromium else None,
                 )
-            ctx_kwargs = self._context_kwargs(proxy_url=proxy_url, geolocation=geolocation)
+            # Align timezone/locale/geolocation to the proxy exit IP (best-effort).
+            geo = await resolve_proxy_geo(proxy_url)
+            ctx_kwargs = self._context_kwargs(
+                proxy_url=proxy_url, geolocation=geolocation, profile=profile, geo=geo
+            )
             ctx = await self._proxy_browser.new_context(**ctx_kwargs)
             if settings.stealth_mode:
                 await _apply_stealth(ctx)
-                evasion_js = _build_evasion_script(browser_type=self._browser_type)
+                evasion_js = _build_evasion_script(browser_type=self._browser_type, profile=profile)
                 await ctx.add_init_script(evasion_js)
             await ctx.route("**/*", _route_handler)
             return await ctx.new_page()
 
         assert self._browser is not None
-        ctx_kwargs = self._context_kwargs(geolocation=geolocation)
+        ctx_kwargs = self._context_kwargs(geolocation=geolocation, profile=profile)
         ctx = await self._browser.new_context(**ctx_kwargs)
         if settings.stealth_mode:
             await _apply_stealth(ctx)
-            evasion_js = _build_evasion_script(browser_type=self._browser_type)
+            evasion_js = _build_evasion_script(browser_type=self._browser_type, profile=profile)
             await ctx.add_init_script(evasion_js)
         await ctx.route("**/*", _route_handler)
         return await ctx.new_page()
@@ -1104,7 +1156,10 @@ class BrowserPool:
             user_data_dir = tempfile.mkdtemp(prefix=f"pawgrab_session_{session_id[:8]}_")
             self._session_dirs[session_id] = user_data_dir
 
-            ctx_kwargs = self._context_kwargs()
+            # Seed the fingerprint from the session id so the identity stays
+            # stable across every page in this session (a returning visitor).
+            session_profile = build_profile(settings.fingerprint_seed or session_id)
+            ctx_kwargs = self._context_kwargs(profile=session_profile)
             ctx_kwargs.pop("permissions", None)
 
             if is_chromium:
@@ -1122,7 +1177,9 @@ class BrowserPool:
 
             if settings.stealth_mode:
                 await _apply_stealth(ctx)
-                evasion_js = _build_evasion_script(browser_type=self._browser_type)
+                evasion_js = _build_evasion_script(
+                    browser_type=self._browser_type, profile=session_profile
+                )
                 await ctx.add_init_script(evasion_js)
             await ctx.route("**/*", _route_handler)
             self._session_contexts[session_id] = ctx

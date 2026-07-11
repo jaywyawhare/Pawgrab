@@ -47,6 +47,17 @@ class Settings(BaseSettings):
     impersonate: str = ""
     solve_cloudflare: bool = True
 
+    # Human-like input on the browser path (Bezier mouse, per-char typing, wheel
+    # scroll). Scores higher against behavioural anti-bot layers than instant clicks.
+    humanize_interactions: bool = True
+    # Resolve a proxy's exit-IP geolocation and align the browser timezone/locale/
+    # geolocation to it, so the fingerprint agrees with the IP the site sees.
+    geoip_coherence: bool = True
+    geoip_timeout_seconds: float = Field(default=5.0, ge=0.5, le=30.0)
+    # Deterministic fingerprint seed. 0 = fresh random identity per context; any
+    # non-zero value pins one coherent identity (GPU/screen/UA/timezone) across runs.
+    fingerprint_seed: int = 0
+
     captcha_provider: str = ""
     captcha_api_key: str = ""
 
