@@ -6,7 +6,7 @@ import csv
 import io
 import math
 import re
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ElementTree
 from collections import Counter
 
 import orjson
@@ -60,11 +60,27 @@ _LEAF_TAGS = frozenset(
 )
 
 
+# Format-appropriate empty output. extract_content legitimately returns an empty
+# content_html (empty/whitespace input), and lxml.fromstring("") raises
+# ParserError — so every conversion must short-circuit on empty input.
+_EMPTY_OUTPUT = {
+    OutputFormat.MARKDOWN: "",
+    OutputFormat.TEXT: "",
+    OutputFormat.HTML: "",
+    OutputFormat.JSON: "[]",
+    OutputFormat.CSV: "",
+    OutputFormat.XML: "<document/>",
+}
+
+
 def convert(html: str, fmt: OutputFormat) -> str:
     """Convert cleaned HTML content to the requested format."""
+    if not html or not html.strip():
+        return _EMPTY_OUTPUT.get(fmt, "")
     match fmt:
         case OutputFormat.MARKDOWN:
             from pawgrab.engine.cleaner import _filter_markdown_link_noise
+
             return _filter_markdown_link_noise(html_to_markdown(html))
         case OutputFormat.TEXT:
             return html_to_text(html)
@@ -78,9 +94,21 @@ def convert(html: str, fmt: OutputFormat) -> str:
             return html_to_xml(html)
 
 
+def _parse(html_str: str):
+    """Parse HTML to an lxml tree, or None for empty/whitespace input.
+
+    ``lxml.html.fromstring("")`` raises ``ParserError``; callers must handle None.
+    """
+    if not html_str or not html_str.strip():
+        return None
+    return lxml_html.fromstring(html_str)
+
+
 def html_to_markdown(html_str: str) -> str:
     """Convert HTML to Markdown via lxml tree walking (~10x faster than html2text)."""
-    tree = lxml_html.fromstring(html_str)
+    tree = _parse(html_str)
+    if tree is None:
+        return ""
     for el in tree.xpath("//script|//style|//noscript|//svg|//template"):
         if el.getparent() is not None:
             el.getparent().remove(el)
@@ -216,7 +244,9 @@ def html_to_markdown(html_str: str) -> str:
 
 
 def html_to_text(html: str) -> str:
-    tree = lxml_html.fromstring(html)
+    tree = _parse(html)
+    if tree is None:
+        return ""
     text = tree.text_content()
     lines = (line.strip() for line in text.splitlines())
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
@@ -224,7 +254,9 @@ def html_to_text(html: str) -> str:
 
 def html_to_json(html: str) -> str:
     """Convert HTML to a JSON structure of headings and paragraphs."""
-    tree = lxml_html.fromstring(html)
+    tree = _parse(html)
+    if tree is None:
+        return "[]"
     sections: list[dict] = []
 
     for el in tree.iter("h1", "h2", "h3", "h4", "h5", "h6", "p", "li"):
@@ -247,7 +279,9 @@ def html_to_csv(html: str) -> str:
 
     If no tables are found, falls back to heading/content pairs.
     """
-    tree = lxml_html.fromstring(html)
+    tree = _parse(html)
+    if tree is None:
+        return ""
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -272,19 +306,21 @@ def html_to_csv(html: str) -> str:
 
 def html_to_xml(html: str) -> str:
     """Convert HTML content to a structured XML document."""
-    tree = lxml_html.fromstring(html)
+    tree = _parse(html)
+    if tree is None:
+        return "<document/>"
 
-    root = ET.Element("document")
+    root = ElementTree.Element("document")
 
     for el in tree.iter("h1", "h2", "h3", "h4", "h5", "h6", "p", "li"):
         tag = el.tag
         text = (el.text_content() or "").strip()
         if not text:
             continue
-        child = ET.SubElement(root, tag)
+        child = ElementTree.SubElement(root, tag)
         child.text = text
 
-    return ET.tostring(root, encoding="unicode", xml_declaration=True)
+    return ElementTree.tostring(root, encoding="unicode", xml_declaration=True)
 
 
 _HEADING_RE = re.compile(r"^#{1,6}\s")

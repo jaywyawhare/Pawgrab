@@ -10,6 +10,10 @@ from pawgrab.config import settings
 
 logger = structlog.get_logger()
 
+# Per-request timeout for solver-provider HTTP calls. Without it a hung provider
+# holds the browser page slot well past the intended 120 s poll budget.
+_HTTP_TIMEOUT = 30
+
 
 class CaptchaSolver:
     """Async CAPTCHA solver supporting multiple provider backends."""
@@ -93,9 +97,9 @@ class CaptchaSolver:
         try:
             from curl_cffi.requests import AsyncSession
 
-            async with AsyncSession() as session:
+            async with AsyncSession(timeout=_HTTP_TIMEOUT) as session:
                 submit_data = {"key": self._api_key, "method": method, "json": 1, **params}
-                resp = await session.post("https://2captcha.com/in.php", data=submit_data)
+                resp = await session.post("https://2captcha.com/in.php", data=submit_data, timeout=_HTTP_TIMEOUT)
                 result = resp.json()
                 if result.get("status") != 1:
                     logger.warning("2captcha_submit_failed", error=result.get("request"))
@@ -105,7 +109,10 @@ class CaptchaSolver:
 
                 for _ in range(24):  # 24 × 5 s = 120 s max
                     await asyncio.sleep(5)
-                    resp = await session.get(f"https://2captcha.com/res.php?key={self._api_key}&action=get&id={task_id}&json=1")
+                    resp = await session.get(
+                        f"https://2captcha.com/res.php?key={self._api_key}&action=get&id={task_id}&json=1",
+                        timeout=_HTTP_TIMEOUT,
+                    )
                     result = resp.json()
                     if result.get("status") == 1:
                         logger.info("2captcha_solved", method=method)
@@ -125,7 +132,7 @@ class CaptchaSolver:
         try:
             from curl_cffi.requests import AsyncSession
 
-            async with AsyncSession() as session:
+            async with AsyncSession(timeout=_HTTP_TIMEOUT) as session:
                 payload = {
                     "clientKey": self._api_key,
                     "task": {"type": task_type, **params},
@@ -133,6 +140,7 @@ class CaptchaSolver:
                 resp = await session.post(
                     "https://api.capsolver.com/createTask",
                     json=payload,
+                    timeout=_HTTP_TIMEOUT,
                 )
                 result = resp.json()
                 if result.get("errorId", 0) != 0:
@@ -146,6 +154,7 @@ class CaptchaSolver:
                     resp = await session.post(
                         "https://api.capsolver.com/getTaskResult",
                         json={"clientKey": self._api_key, "taskId": task_id},
+                        timeout=_HTTP_TIMEOUT,
                     )
                     result = resp.json()
                     status = result.get("status")
@@ -187,18 +196,28 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
 
     try:
         site_key = await page.evaluate("""() => {
-            // reCAPTCHA
-            const recaptcha = document.querySelector('[data-sitekey]');
-            if (recaptcha) return {type: 'recaptcha', key: recaptcha.getAttribute('data-sitekey')};
-            // hCaptcha
-            const hcaptcha = document.querySelector('[data-sitekey]');
-            if (hcaptcha) return {type: 'hcaptcha', key: hcaptcha.getAttribute('data-sitekey')};
-            // Turnstile
-            const turnstile = document.querySelector('[data-sitekey]');
-            if (turnstile) return {type: 'turnstile', key: turnstile.getAttribute('data-sitekey')};
-            // Try window.turnstile
+            const keyOf = el => el && (el.getAttribute('data-sitekey') || el.dataset.sitekey);
+            // hCaptcha — distinct class/attribute.
+            const hEl = document.querySelector('.h-captcha[data-sitekey]');
+            if (hEl) return {type: 'hcaptcha', key: keyOf(hEl)};
+            const hAttr = document.querySelector('[data-hcaptcha-sitekey]');
+            if (hAttr) return {type: 'hcaptcha', key: hAttr.getAttribute('data-hcaptcha-sitekey')};
+            // Cloudflare Turnstile — distinct class or CF challenge global.
+            const tEl = document.querySelector('.cf-turnstile[data-sitekey]');
+            if (tEl) return {type: 'turnstile', key: keyOf(tEl)};
             if (window._cf_chl_opt && window._cf_chl_opt.chlApiSitekey)
                 return {type: 'turnstile', key: window._cf_chl_opt.chlApiSitekey};
+            // reCAPTCHA — g-recaptcha class or grecaptcha global.
+            const rEl = document.querySelector('.g-recaptcha[data-sitekey]');
+            if (rEl) return {type: 'recaptcha', key: keyOf(rEl)};
+            // Bare [data-sitekey] fallback: disambiguate by nearby iframe host.
+            const bare = document.querySelector('[data-sitekey]');
+            if (bare) {
+                const key = keyOf(bare);
+                if (document.querySelector('iframe[src*="hcaptcha.com"]')) return {type: 'hcaptcha', key};
+                if (document.querySelector('iframe[src*="challenges.cloudflare.com"]')) return {type: 'turnstile', key};
+                return {type: 'recaptcha', key};
+            }
             return null;
         }""")
 

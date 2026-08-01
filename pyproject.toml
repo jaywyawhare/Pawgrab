@@ -42,6 +42,7 @@ dependencies = [
     "pymupdf>=1.24",
     "orjson>=3.10",
     "croniter>=2.0",
+    "defusedxml>=0.7",
 ]
 
 [project.optional-dependencies]

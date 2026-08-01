@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+import re
+import xml.etree.ElementTree as ElementTree
 from urllib.parse import urlparse
 
 import structlog
@@ -13,6 +14,25 @@ from pawgrab.config import settings
 logger = structlog.get_logger()
 
 _SITEMAP_PATHS = ["/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml"]
+_MAX_SITEMAP_DEPTH = 3  # bound recursion into nested sitemap indexes
+_DOCTYPE_RE = re.compile(r"<!DOCTYPE", re.IGNORECASE)
+
+
+def _safe_parse(xml_text: str):
+    """Parse sitemap XML, rejecting DTDs to prevent entity-expansion (billion-laughs) DoS.
+
+    Untrusted sitemap XML comes from arbitrary target sites. defusedxml is used
+    when available; otherwise we reject any document declaring a DOCTYPE (the
+    vector for internal-entity expansion) before handing it to the stdlib parser.
+    """
+    if _DOCTYPE_RE.search(xml_text[:4096]):
+        raise ValueError("sitemap declares a DOCTYPE; refusing to parse (XXE/billion-laughs)")
+    try:
+        import defusedxml.ElementTree as DefusedET
+
+        return DefusedET.fromstring(xml_text)
+    except ImportError:
+        return ElementTree.fromstring(xml_text)
 
 
 async def discover_urls(
@@ -41,48 +61,76 @@ async def discover_urls(
     return urls[:limit], "crawl"
 
 
-async def _fetch_sitemap(url: str, *, limit: int = 5000) -> list[str]:
-    """Fetch and parse a sitemap XML, handling sitemap indexes recursively."""
+async def _fetch_sitemap(
+    url: str,
+    *,
+    limit: int = 5000,
+    depth: int = 0,
+    seen: set[str] | None = None,
+) -> list[str]:
+    """Fetch a sitemap and return *page* URLs, recursing into sitemap indexes.
+
+    A ``<sitemapindex>`` lists child sitemaps, not pages; we fetch each child (up
+    to ``_MAX_SITEMAP_DEPTH``) and aggregate their ``<url>`` locs so callers get
+    real page URLs instead of sitemap-XML URLs.
+    """
+    seen = seen if seen is not None else set()
+    if url in seen or depth > _MAX_SITEMAP_DEPTH:
+        return []
+    seen.add(url)
+
     try:
         async with AsyncSession() as session:
             resp = await session.get(url, timeout=settings.sitemap_fetch_timeout, allow_redirects=True)
         if resp.status_code != 200:
             return []
-        return _parse_sitemap_xml(resp.text, limit=limit)
+        kind, locs = _parse_sitemap(resp.text)
     except Exception as exc:
         logger.info("sitemap_fetch_failed", url=url, error=str(exc))
         return []
 
+    if kind != "index":
+        return locs[:limit]
 
-def _parse_sitemap_xml(xml_text: str, *, limit: int = 5000) -> list[str]:
-    """Parse sitemap XML, extracting <loc> tags."""
+    pages: list[str] = []
+    for child in locs:
+        if len(pages) >= limit:
+            break
+        pages.extend(await _fetch_sitemap(child, limit=limit - len(pages), depth=depth + 1, seen=seen))
+    return pages[:limit]
+
+
+def _parse_sitemap(xml_text: str) -> tuple[str, list[str]]:
+    """Parse sitemap XML into ``(kind, locs)`` where kind is 'index' or 'urlset'."""
     try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError:
-        return []
+        root = _safe_parse(xml_text)
+    except Exception:
+        return "urlset", []
 
     ns = ""
     if root.tag.startswith("{"):
         ns = root.tag.split("}")[0] + "}"
 
-    urls: list[str] = []
-
+    index_locs: list[str] = []
     for sitemap in root.findall(f"{ns}sitemap"):
         loc = sitemap.find(f"{ns}loc")
         if loc is not None and loc.text:
-            urls.append(loc.text.strip())
+            index_locs.append(loc.text.strip())
+    if index_locs:
+        return "index", index_locs
 
-    if urls:
-        return urls[:limit]
-
+    page_locs: list[str] = []
     for url_elem in root.findall(f"{ns}url"):
         loc = url_elem.find(f"{ns}loc")
         if loc is not None and loc.text:
-            urls.append(loc.text.strip())
-            if len(urls) >= limit:
-                break
+            page_locs.append(loc.text.strip())
+    return "urlset", page_locs
 
-    return urls
+
+def _parse_sitemap_xml(xml_text: str, *, limit: int = 5000) -> list[str]:
+    """Parse sitemap XML, extracting <loc> tags (flat; index or urlset)."""
+    _kind, locs = _parse_sitemap(xml_text)
+    return locs[:limit]
 
 
 def _matches_domain(url: str, domain: str) -> bool:
