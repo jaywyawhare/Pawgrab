@@ -15,15 +15,23 @@ class TestRenderingCache:
         _cache.clear()
 
     def test_cache_hit(self):
-        """Cached domain returns stored value without re-running heuristics."""
-        # First call — runs heuristics and caches
+        """Refetching the SAME url returns the cached value without re-evaluating."""
         html = "<html><body><p>" + ("Hello world. " * 50) + "</p></body></html>"
         result1 = needs_js_rendering(html, url="https://example.com/page1")
         assert result1 is False
 
-        # Second call with different HTML but same domain — should use cache
-        result2 = needs_js_rendering("", url="https://example.com/page2")
-        assert result2 is False  # cached as False, not re-evaluated
+        # Same URL again with empty HTML — served from cache (not re-evaluated).
+        result2 = needs_js_rendering("", url="https://example.com/page1")
+        assert result2 is False
+
+    def test_sibling_pages_evaluated_independently(self):
+        """A static page must not fix the decision for a different page (per-page key)."""
+        static = "<html><body><p>" + ("Hello world. " * 50) + "</p></body></html>"
+        assert needs_js_rendering(static, url="https://example.com/page1") is False
+
+        # Different path with empty (JS-shell) HTML re-evaluates rather than reusing
+        # page1's cached False.
+        assert needs_js_rendering("", url="https://example.com/page2") is True
 
     def test_cache_miss_different_domain(self):
         """Different domains are cached independently."""

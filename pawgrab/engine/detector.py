@@ -107,22 +107,37 @@ def _run_heuristics(html: str) -> bool:
     return False
 
 
+def _cache_key(url: str) -> str:
+    """Cache key = domain + path.
+
+    Keyed per *page*, not per domain: a single static page on a mostly-JS site
+    (or vice-versa) must not fix the decision for the whole domain for the TTL.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    domain = _extract_domain(url)
+    path = (parsed.path or "/").rstrip("/") or "/"
+    return f"{domain}{path}"
+
+
 def needs_js_rendering(html: str, url: str = "") -> bool:
     """Check if HTML looks like it needs JavaScript to render content.
 
-    When a url is provided, results are cached per-domain to avoid
-    redundant heuristic evaluation on subsequent requests.
+    When a url is provided, results are cached per domain+path (per page) to
+    avoid redundant heuristic evaluation on refetches of the same URL without
+    misclassifying sibling pages.
     """
-    domain = _extract_domain(url) if url else ""
+    key = _cache_key(url) if url else ""
 
-    if domain:
-        cached = _cache.get(domain)
+    if key:
+        cached = _cache.get(key)
         if cached is not None:
             return cached
 
     result = _run_heuristics(html)
 
-    if domain:
-        _cache.put(domain, result)
+    if key:
+        _cache.put(key, result)
 
     return result

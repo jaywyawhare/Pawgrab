@@ -119,15 +119,21 @@ class MemoryAdaptiveDispatcher:
         if diff > 0:
             for _ in range(diff):
                 self._semaphore.release()
+            self._current_concurrency = new_level
         elif diff < 0:
-            # Non-blocking drain: asyncio.timeout(0) raises TimeoutError instead of blocking.
+            # Non-blocking drain: asyncio.timeout(0) raises TimeoutError instead of
+            # blocking. Only reduce the tracked level by the permits we ACTUALLY
+            # acquired — otherwise a later scale-up releases phantom permits and the
+            # semaphore's real capacity drifts above the max.
+            acquired = 0
             for _ in range(-diff):
                 try:
                     async with asyncio.timeout(0):
                         await self._semaphore.acquire()
+                    acquired += 1
                 except TimeoutError:
                     break
-        self._current_concurrency = new_level
+            self._current_concurrency -= acquired
 
     async def _monitor_loop(self) -> None:
         """Periodically check memory and adjust concurrency."""

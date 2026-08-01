@@ -88,6 +88,9 @@ async def is_allowed(url: str) -> bool:
         return parser.can_fetch(url, _USER_AGENT)
 
 
+_DENY_ALL = "User-agent: *\nDisallow: /"
+
+
 async def _fetch_robots(base_url: str) -> Protego | None:
     robots_url = f"{base_url}/robots.txt"
     try:
@@ -95,9 +98,16 @@ async def _fetch_robots(base_url: str) -> Protego | None:
         resp = await session.get(robots_url, timeout=settings.robots_fetch_timeout)
         if resp.status_code == 200:
             return Protego.parse(resp.text)
+        # A clean non-200 (typically 404) means "no robots.txt" => allow all.
+        return None
     except Exception:
+        # Transient fetch error (timeout/DNS/connection). Fail open by default so a
+        # network blip doesn't halt scraping, but honor robots_fail_closed for
+        # strict-compliance deployments (deny rather than silently ignore robots).
         logger.info("robots_fetch_failed", url=robots_url)
-    return None
+        if settings.robots_fail_closed:
+            return Protego.parse(_DENY_ALL)
+        return None
 
 
 def clear_cache():

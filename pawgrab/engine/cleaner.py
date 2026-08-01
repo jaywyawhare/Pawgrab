@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 import structlog
@@ -280,8 +281,6 @@ def _clean_title(raw: str) -> str:
     return raw
 
 
-import json as _json
-
 _DATE_META_XPATHS = (
     '//meta[@property="article:published_time"]/@content',
     '//meta[@itemprop="datePublished"]/@content',
@@ -321,7 +320,7 @@ def _extract_byline(tree, html: str) -> tuple[str, str]:
     try:
         for script in tree.xpath('//script[@type="application/ld+json"]/text()'):
             try:
-                data = _json.loads(script)
+                data = json.loads(script)
             except Exception:
                 continue
             items = data if isinstance(data, list) else [data]
@@ -504,7 +503,7 @@ def extract_content(
                     # and keeps its clean single-article extraction (precision).
                     if total and max(lengths) / total < 0.45:
                         merged = "<div>" + "".join(
-                            b for b, ln in zip(blocks, lengths) if ln > 30
+                            b for b, ln in zip(blocks, lengths, strict=False) if ln > 30
                         ) + "</div>"
                         if _text_length(merged) >= _MIN_CONTENT_CHARS:
                             candidates.append(merged)

@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3"
 
     browser_pool_size: int = Field(default=5, ge=1, le=20)
+    # Max concurrent per-session browser contexts before LRU eviction (bounds
+    # context + temp-dir growth when sessions are never explicitly closed).
+    browser_max_sessions: int = Field(default=50, ge=1, le=500)
     browser_type: str = "chromium"
     browser_standby_recycle: bool = True
     browser_session_profiles: bool = True
@@ -44,6 +47,9 @@ class Settings(BaseSettings):
     respect_robots: bool = True
     robots_cache_ttl: int = Field(default=3600, ge=0)
     robots_fetch_timeout: int = Field(default=10, ge=1, le=60)
+    # On a transient robots.txt fetch error: fail open (allow, default) or closed
+    # (deny). A clean 404 always means "no robots.txt" => allowed, regardless.
+    robots_fail_closed: bool = False
 
     # SSRF protection: block fetch/webhook targets that resolve to private,
     # loopback, link-local (cloud-metadata), or reserved addresses. Disable only

@@ -93,6 +93,9 @@ def _sanitize_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
 
 _MAX_SESSIONS = 12
 _MAX_HOST_TARGETS = 2000
+# Cap captured network/console entries so a heavy page can't balloon memory or
+# the JSON response with thousands of records.
+_MAX_CAPTURE_ENTRIES = 5000
 _sessions: dict[str, AsyncSession] = {}
 _session_lock = asyncio.Lock()
 _host_targets: dict[str, str] = {}
@@ -132,18 +135,25 @@ async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSessi
         session_kwargs["proxy"] = proxy
         return AsyncSession(**session_kwargs)
 
-    if impersonate not in _sessions:
-        async with _session_lock:
-            if impersonate not in _sessions:
-                if len(_sessions) >= _MAX_SESSIONS:
-                    oldest_key = next(iter(_sessions))
-                    old = _sessions.pop(oldest_key)
-                    try:
-                        await old.close()
-                    except Exception:
-                        pass
-                _sessions[impersonate] = AsyncSession(**session_kwargs)
-    return _sessions[impersonate]
+    # Fast path: existing session (dict reads are atomic under the GIL).
+    existing = _sessions.get(impersonate)
+    if existing is not None:
+        return existing
+
+    async with _session_lock:
+        # Re-check under the lock; another coroutine may have created it.
+        existing = _sessions.get(impersonate)
+        if existing is not None:
+            return existing
+        if len(_sessions) >= _MAX_SESSIONS:
+            # Evict the oldest DIFFERENT target. Removing it from the dict stops
+            # new requests reusing it; it is closed on GC once in-flight requests
+            # release their reference (avoids closing a session mid-request).
+            oldest_key = next(iter(_sessions))
+            _sessions.pop(oldest_key, None)
+        session = AsyncSession(**session_kwargs)
+        _sessions[impersonate] = session
+        return session
 
 
 async def close_sessions():
@@ -782,6 +792,8 @@ async def _fetch_with_browser(
         if capture_network:
 
             def _on_request(req):
+                if len(network_requests) >= _MAX_CAPTURE_ENTRIES:
+                    return
                 network_requests.append(
                     {
                         "url": req.url,
@@ -792,6 +804,8 @@ async def _fetch_with_browser(
                 )
 
             def _on_response(resp):
+                if len(network_requests) >= _MAX_CAPTURE_ENTRIES:
+                    return
                 network_requests.append({"url": resp.url, "status": resp.status, "headers": dict(resp.headers)})
 
             page.on("request", _on_request)
@@ -802,6 +816,8 @@ async def _fetch_with_browser(
         if capture_console:
 
             def _on_console(msg):
+                if len(console_logs) >= _MAX_CAPTURE_ENTRIES:
+                    return
                 console_logs.append(
                     {
                         "type": msg.type,

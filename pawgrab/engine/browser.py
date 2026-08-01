@@ -883,6 +883,8 @@ class BrowserPool:
         self.metrics = PoolMetrics()
         self._session_contexts: dict[str, BrowserContext] = {}
         self._session_dirs: dict[str, str] = {}
+        self._session_last_used: dict[str, float] = {}
+        self._session_lock = asyncio.Lock()
         self._trace_dir: str | None = None
 
     def _context_kwargs(
@@ -1210,46 +1212,74 @@ class BrowserPool:
         """Acquire a page bound to a persistent context for the given session."""
         t0 = time.monotonic()
 
-        if session_id in self._session_contexts:
-            ctx = self._session_contexts[session_id]
-            page = await ctx.new_page()
-        else:
-            launcher = await self._get_browser_launcher()
-            is_chromium = self._browser_type == "chromium"
-            user_data_dir = tempfile.mkdtemp(prefix=f"pawgrab_session_{session_id[:8]}_")
-            self._session_dirs[session_id] = user_data_dir
+        # Lock the check-then-create so concurrent calls for the same session
+        # don't each launch a context (leaking one + its temp dir).
+        async with self._session_lock:
+            ctx = self._session_contexts.get(session_id)
+            if ctx is None:
+                await self._evict_idle_sessions()
+                launcher = await self._get_browser_launcher()
+                is_chromium = self._browser_type == "chromium"
+                user_data_dir = tempfile.mkdtemp(prefix=f"pawgrab_session_{session_id[:8]}_")
+                self._session_dirs[session_id] = user_data_dir
 
-            # Seed the fingerprint from the session id so the identity stays
-            # stable across every page in this session (a returning visitor).
-            session_profile = build_profile(settings.fingerprint_seed or session_id)
-            ctx_kwargs = self._context_kwargs(profile=session_profile)
-            ctx_kwargs.pop("permissions", None)
+                # Seed the fingerprint from the session id so the identity stays
+                # stable across every page in this session (a returning visitor).
+                session_profile = build_profile(settings.fingerprint_seed or session_id)
+                ctx_kwargs = self._context_kwargs(profile=session_profile)
+                ctx_kwargs.pop("permissions", None)
 
-            if is_chromium:
-                ctx = await launcher.launch_persistent_context(
-                    user_data_dir,
-                    headless=True,
-                    args=list(_STEALTH_CHROMIUM_ARGS),
-                    ignore_default_args=list(_HARMFUL_DEFAULT_ARGS),
-                    **ctx_kwargs,
-                )
-            else:
-                if self._browser is None:
-                    self._browser = await launcher.launch(headless=True)
-                ctx = await self._browser.new_context(**ctx_kwargs)
+                if is_chromium:
+                    ctx = await launcher.launch_persistent_context(
+                        user_data_dir,
+                        headless=True,
+                        args=list(_STEALTH_CHROMIUM_ARGS),
+                        ignore_default_args=list(_HARMFUL_DEFAULT_ARGS),
+                        **ctx_kwargs,
+                    )
+                else:
+                    if self._browser is None:
+                        self._browser = await launcher.launch(headless=True)
+                    ctx = await self._browser.new_context(**ctx_kwargs)
 
-            if settings.stealth_mode:
-                await _apply_stealth(ctx)
-                evasion_js = _build_evasion_script(browser_type=self._browser_type, profile=session_profile)
-                await ctx.add_init_script(evasion_js)
-            await ctx.route("**/*", _route_handler)
-            self._session_contexts[session_id] = ctx
-            page = await ctx.new_page()
-            logger.info("session_context_created", session_id=session_id)
+                if settings.stealth_mode:
+                    await _apply_stealth(ctx)
+                    evasion_js = _build_evasion_script(browser_type=self._browser_type, profile=session_profile)
+                    await ctx.add_init_script(evasion_js)
+                await ctx.route("**/*", _route_handler)
+                self._session_contexts[session_id] = ctx
+                logger.info("session_context_created", session_id=session_id)
 
+            self._session_last_used[session_id] = time.monotonic()
+
+        page = await ctx.new_page()
         elapsed_ms = (time.monotonic() - t0) * 1000
         self.metrics.record_acquire(elapsed_ms)
         return page
+
+    async def _evict_idle_sessions(self) -> None:
+        """Bound the session-context pool: close the least-recently-used ones.
+
+        Caller must hold ``self._session_lock``. Prevents unbounded context/temp-dir
+        growth when callers never call ``close_session``.
+        """
+        cap = settings.browser_max_sessions
+        while len(self._session_contexts) >= cap:
+            oldest = min(
+                self._session_contexts,
+                key=lambda s: self._session_last_used.get(s, 0.0),
+            )
+            ctx = self._session_contexts.pop(oldest, None)
+            self._session_last_used.pop(oldest, None)
+            if ctx is not None:
+                try:
+                    await ctx.close()
+                except Exception:
+                    pass
+            data_dir = self._session_dirs.pop(oldest, None)
+            if data_dir:
+                shutil.rmtree(data_dir, ignore_errors=True)
+            logger.info("session_context_evicted", session_id=oldest)
 
     async def release_session_page(self, page: Page) -> None:
         try:
@@ -1259,6 +1289,7 @@ class BrowserPool:
 
     async def close_session(self, session_id: str) -> None:
         ctx = self._session_contexts.pop(session_id, None)
+        self._session_last_used.pop(session_id, None)
         if ctx:
             try:
                 await ctx.close()

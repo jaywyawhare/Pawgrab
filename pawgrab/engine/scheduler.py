@@ -33,6 +33,14 @@ def _deserialize_schedule(data: dict) -> dict:
     }
 
 
+def validate_cron(cron: str) -> None:
+    """Raise ValueError if *cron* is not a valid cron expression."""
+    from croniter import croniter
+
+    if not croniter.is_valid(cron):
+        raise ValueError(f"Invalid cron expression: {cron!r}")
+
+
 async def create_schedule(
     *,
     url: str,
@@ -43,8 +51,12 @@ async def create_schedule(
     webhook_url: str | None = None,
     strategy: str = "bfs",
 ) -> str:
-    """Create a scheduled crawl. Returns schedule ID."""
+    """Create a scheduled crawl. Returns schedule ID. Raises ValueError on bad cron."""
     from pawgrab.queue.manager import get_redis
+
+    # Reject invalid cron at creation instead of silently falling back to "+1h"
+    # forever (which masks a broken schedule).
+    validate_cron(cron)
 
     schedule_id = uuid.uuid4().hex[:12]
     redis = await get_redis()
@@ -141,7 +153,23 @@ def _next_cron_time(cron_expr: str) -> int:
 
 
 async def get_due_schedules() -> list[dict]:
-    """Get all schedules that are due to run."""
+    """Get all schedules that are due to run.
+
+    Each due schedule is atomically claimed for its ``next_run`` slot (Redis
+    SET NX), so overlapping scheduler ticks — or multiple scheduler processes —
+    never fire the same schedule twice.
+    """
+    from pawgrab.queue.manager import get_redis
+
     now = int(time.time())
     schedules = await list_schedules()
-    return [s for s in schedules if s["enabled"] and s["next_run"] <= now]
+    redis = await get_redis()
+    due = []
+    for s in schedules:
+        if not (s["enabled"] and s["next_run"] <= now):
+            continue
+        lease_key = f"{_SCHEDULE_PREFIX}lease:{s['schedule_id']}:{s['next_run']}"
+        claimed = await redis.set(lease_key, "1", nx=True, ex=3600)
+        if claimed:
+            due.append(s)
+    return due

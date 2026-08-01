@@ -26,12 +26,19 @@ async def search_web(query: str, num_results: int = 5) -> list[str]:
 
 async def _search_duckduckgo(query: str, num_results: int) -> list[str]:
     """Search using duckduckgo-search library."""
-    try:
+    import asyncio
+
+    def _blocking_search() -> list[str]:
         from duckduckgo_search import DDGS
 
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=num_results))
         return [r["href"] for r in results if r.get("href")]
+
+    try:
+        # DDGS().text() is synchronous; run it off the event loop so it doesn't
+        # block every other request for the duration of the search.
+        return await asyncio.to_thread(_blocking_search)
     except Exception as exc:
         logger.warning("duckduckgo_search_failed", error=str(exc))
         return []
