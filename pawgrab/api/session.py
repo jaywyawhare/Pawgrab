@@ -58,6 +58,9 @@ async def update_session_data(session_id: str, req: UpdateSessionRequest):
     if not ok:
         raise PawgrabError(status_code=404, code=ErrorCode.RESOURCE_NOT_FOUND, message=f"Session not found: {session_id}")
     data = await get_session(session_id)
+    if data is None:
+        # Session expired/evicted between update and read — treat as gone.
+        raise PawgrabError(status_code=404, code=ErrorCode.RESOURCE_NOT_FOUND, message=f"Session not found: {session_id}")
     return SessionInfo(**data)
 
 

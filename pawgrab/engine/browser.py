@@ -1058,6 +1058,17 @@ class BrowserPool:
             stealth=settings.stealth_mode,
         )
 
+    def stats(self) -> dict:
+        """Public pool status snapshot (avoids reaching into private attributes)."""
+        return {
+            "status": "active",
+            "pool_size": self._pool_size,
+            "pages_available": self._pages.qsize(),
+            "degraded": self._degraded,
+            "active_sessions": len(self._session_contexts),
+            **self.metrics.snapshot(),
+        }
+
     async def _close_page(self, page: Page) -> None:
         """Close a page — close just the page if persistent, or the whole context otherwise.
 

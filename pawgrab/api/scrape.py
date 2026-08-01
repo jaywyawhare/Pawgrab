@@ -8,6 +8,7 @@ from pawgrab.engine.scrape_service import scrape_url
 from pawgrab.exceptions import ErrorCode, PawgrabError
 from pawgrab.models.common import ErrorResponse
 from pawgrab.models.scrape import ScrapeRequest, ScrapeResponse
+from pawgrab.utils.url_safety import SSRFError
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["Scrape"])
@@ -53,6 +54,12 @@ async def scrape(req: ScrapeRequest):
         if warnings:
             response.warnings = warnings + response.warnings
         return response
+    except SSRFError:
+        raise PawgrabError(
+            status_code=400,
+            code=ErrorCode.VALIDATION_ERROR,
+            message="URL blocked: target resolves to a private/internal address",
+        ) from None
     except PermissionError:
         raise PawgrabError(
             status_code=403,

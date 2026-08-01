@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 from .common import JobStatus, OutputFormat, PaginatedJobResult
 from .scrape import ScrapeResponse
@@ -30,11 +30,19 @@ class CrawlParamsBase(BaseModel):
 class CrawlRequest(CrawlParamsBase):
     include_metadata: bool = Field(default=True, description="Include page metadata (title, description, language)")
     resume_job_id: str | None = Field(default=None, description="Job ID of a previous crawl to resume")
-    allowed_domains: list[str] | None = Field(default=None, description="Only follow links to these domains")
-    blocked_domains: list[str] | None = Field(default=None, description="Never follow links to these domains")
-    include_path_patterns: list[str] | None = Field(default=None, description="Only follow URLs matching these regex patterns")
-    exclude_path_patterns: list[str] | None = Field(default=None, description="Skip URLs matching these regex patterns")
-    keywords: list[str] | None = Field(default=None, description="Keywords for best_first strategy scoring")
+    allowed_domains: list[str] | None = Field(default=None, max_length=200, description="Only follow links to these domains")
+    blocked_domains: list[str] | None = Field(default=None, max_length=200, description="Never follow links to these domains")
+    include_path_patterns: list[str] | None = Field(default=None, max_length=50, description="Only follow URLs matching these regex patterns")
+    exclude_path_patterns: list[str] | None = Field(default=None, max_length=50, description="Skip URLs matching these regex patterns")
+    keywords: list[str] | None = Field(default=None, max_length=200, description="Keywords for best_first strategy scoring")
+
+    @field_validator("include_path_patterns", "exclude_path_patterns")
+    @classmethod
+    def _bound_pattern_length(cls, v: list[str] | None) -> list[str] | None:
+        # Cap each pattern's length as a cheap first line against ReDoS.
+        if v and any(len(p) > 500 for p in v):
+            raise ValueError("path pattern exceeds 500 characters")
+        return v
 
 
 class CrawlResponse(BaseModel):

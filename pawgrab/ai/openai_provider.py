@@ -64,15 +64,40 @@ class OpenAIProvider:
                 ],
                 response_format=response_format,
                 temperature=0,
+                max_tokens=settings.llm_max_output_tokens,
                 timeout=60,
             )
         except APIError as exc:
             logger.error("openai_api_error", error=str(exc), status=getattr(exc, "status_code", None))
             raise RuntimeError(f"LLM API error: {exc}") from exc
 
+        # Record token usage for cost visibility.
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            logger.info(
+                "llm_usage",
+                model=self._model,
+                prompt_tokens=getattr(usage, "prompt_tokens", None),
+                completion_tokens=getattr(usage, "completion_tokens", None),
+            )
+
         raw = response.choices[0].message.content or "{}"
         try:
-            return orjson.loads(raw)
-        except orjson.JSONDecodeError:
+            parsed = orjson.loads(raw)
+        except orjson.JSONDecodeError as exc:
             logger.warning("llm_json_parse_failed", raw=raw[:200])
-            return {"raw_response": raw}
+            raise RuntimeError("LLM returned invalid JSON") from exc
+
+        # When a strict schema was requested, surface validation failures as errors
+        # rather than returning malformed data as a success.
+        if json_schema:
+            _validate_against_schema(parsed, json_schema)
+        return parsed
+
+
+def _validate_against_schema(data: Any, schema: dict[str, Any]) -> None:
+    """Best-effort validation of top-level required keys/type for LLM output."""
+    if schema.get("type") == "object" and isinstance(data, dict):
+        missing = [k for k in schema.get("required", []) if k not in data]
+        if missing:
+            raise RuntimeError(f"LLM output missing required fields: {missing}")

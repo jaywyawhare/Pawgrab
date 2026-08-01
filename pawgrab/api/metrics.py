@@ -1,12 +1,20 @@
 """Metrics and observability endpoints."""
 
-from fastapi import APIRouter
+import hashlib
+
+from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 
 from pawgrab.engine.analytics import usage_tracker
 from pawgrab.engine.metrics import metrics
+from pawgrab.exceptions import ErrorCode, PawgrabError
 
 router = APIRouter(tags=["Metrics"])
+
+
+def _caller_key(request: Request) -> str:
+    raw = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    return hashlib.sha256(raw.encode()).hexdigest()[:16] if raw else "anonymous"
 
 
 @router.get("/metrics", response_class=PlainTextResponse)
@@ -28,14 +36,7 @@ async def browser_pool_metrics():
     pool = await try_browser_pool()
     if pool is None:
         return {"status": "unavailable", "message": "Browser pool not initialized"}
-    return {
-        "status": "active",
-        "pool_size": pool._pool_size,
-        "pages_available": pool._pages.qsize(),
-        "degraded": pool._degraded,
-        "active_sessions": len(pool._session_contexts),
-        **pool.metrics.snapshot(),
-    }
+    return pool.stats()
 
 
 @router.get("/v1/usage")
@@ -45,6 +46,16 @@ async def usage_summary():
 
 
 @router.get("/v1/usage/{client_key}")
-async def client_usage(client_key: str):
-    """Get usage analytics for a specific client."""
+async def client_usage(client_key: str, request: Request):
+    """Get usage analytics for the calling client.
+
+    A caller may only read their own usage — the path key must match the key
+    derived from their credentials (prevents reading another tenant's analytics).
+    """
+    if client_key != _caller_key(request):
+        raise PawgrabError(
+            status_code=403,
+            code=ErrorCode.INVALID_API_KEY,
+            message="You may only read your own usage analytics",
+        )
     return usage_tracker.get_usage(client_key)

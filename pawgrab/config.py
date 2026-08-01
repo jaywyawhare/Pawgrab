@@ -20,10 +20,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
-    llm_provider: str = "openai"
+    llm_provider: Literal["openai", "anthropic", "gemini", "ollama"] = "openai"
     # Hard cap on chunks sent to the LLM per extraction — bounds cost/latency on
     # huge pages (a chunked extract would otherwise fan out unboundedly).
     llm_max_chunks: int = Field(default=20, ge=1, le=200)
+    llm_max_output_tokens: int = Field(default=4096, ge=256, le=32768)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
     gemini_api_key: str = ""
