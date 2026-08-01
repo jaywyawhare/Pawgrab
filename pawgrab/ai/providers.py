@@ -12,6 +12,16 @@ from pawgrab.config import settings
 logger = structlog.get_logger()
 
 
+def _require(module: str, extra: str):
+    """Import an optional provider SDK, or raise a clear install hint."""
+    import importlib
+
+    try:
+        return importlib.import_module(module)
+    except ImportError as exc:
+        raise RuntimeError(f"The '{extra}' LLM provider requires an optional dependency. " f"Install it with: pip install 'pawgrab[{extra}]'") from exc
+
+
 class LLMProvider:
     """Base class for LLM providers."""
 
@@ -29,9 +39,8 @@ class AnthropicProvider(LLMProvider):
 
     def _get_client(self):
         if self._client is None:
-            from anthropic import AsyncAnthropic
-
-            self._client = AsyncAnthropic(api_key=self._api_key)
+            anthropic = _require("anthropic", "anthropic")
+            self._client = anthropic.AsyncAnthropic(api_key=self._api_key)
         return self._client
 
     async def extract(self, content: str, prompt: str, schema_hint: dict | None = None, json_schema: dict | None = None) -> dict[str, Any]:
@@ -72,8 +81,7 @@ class GeminiProvider(LLMProvider):
 
     def _get_client(self):
         if self._client is None:
-            import google.generativeai as genai
-
+            genai = _require("google.generativeai", "gemini")
             genai.configure(api_key=self._api_key)
             self._client = genai.GenerativeModel(self._model)
         return self._client

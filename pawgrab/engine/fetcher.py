@@ -632,7 +632,10 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
                 case ActionType.WAIT_FOR:
                     await page.wait_for_selector(action.selector, timeout=per_action_timeout)
                 case ActionType.SCREENSHOT:
-                    await page.screenshot()
+                    # A standalone screenshot action has nowhere to return its bytes
+                    # (only the top-level `screenshot=true` option is surfaced), so
+                    # rendering-and-discarding just wastes time. Flag it instead.
+                    warnings.append(f"Action {i} (screenshot): use the top-level screenshot=true option; " "standalone screenshot actions are not returned")
                 case ActionType.EXECUTE_JS:
                     await asyncio.wait_for(
                         page.evaluate(action.text),

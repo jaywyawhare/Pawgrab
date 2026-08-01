@@ -57,6 +57,9 @@ docs = [
     "mkdocs-material>=9.5",
     "mkdocs-minify-plugin>=0.8",
 ]
+# Optional LLM provider SDKs (only needed if PAWGRAB_LLM_PROVIDER selects them).
+anthropic = ["anthropic>=0.40"]
+gemini = ["google-generativeai>=0.8"]
 
 [project.scripts]
 pawgrab = "pawgrab.cli.main:app"
