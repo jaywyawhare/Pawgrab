@@ -65,10 +65,7 @@ _SAFARI_VERSIONS = (
     ("18.3", "605.1.15"),
     ("18.4", "605.1.15"),
 )
-_SAFARI_UA_TEMPLATE = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/{webkit} "
-    "(KHTML, like Gecko) Version/{version} Safari/{webkit}"
-)
+_SAFARI_UA_TEMPLATE = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/{webkit} " "(KHTML, like Gecko) Version/{version} Safari/{webkit}"
 
 _SEED_MIN = 10_000
 _SEED_MAX = 99_999

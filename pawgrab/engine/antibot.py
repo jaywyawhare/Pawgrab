@@ -110,8 +110,7 @@ def _compile_rules() -> dict[str, _ChallengeRule]:
             status_codes=frozenset({403, 429}),
             server_prefix=None,
             body_pattern=re.compile(
-                r"(bot detected|automated access|Please verify you are (a )?human|"
-                r"unusual traffic from your computer)",
+                r"(bot detected|automated access|Please verify you are (a )?human|" r"unusual traffic from your computer)",
                 re.I,
             ),
         ),

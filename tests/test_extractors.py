@@ -173,9 +173,9 @@ def test_regex_redos_pattern_bounded():
 
 
 def test_regex_pattern_length_capped():
-    from pawgrab.engine.extractors import RegexExtractor
-
     import pytest
+
+    from pawgrab.engine.extractors import RegexExtractor
 
     with pytest.raises(ValueError):
         RegexExtractor({"toolong": "a" * 5000})
