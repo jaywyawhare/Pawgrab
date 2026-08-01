@@ -80,6 +80,7 @@ class ScrapeRequest(BaseModel):
     citations: bool = Field(default=False, description="Convert inline links to numbered citation-style references")
     fit_markdown_query: str | None = Field(default=None, description="BM25 query to filter markdown sections by relevance")
     fit_markdown_top_k: int = Field(default=5, ge=1, le=50, description="Number of top sections to keep when using fit_markdown_query")
+    follow_next: int = Field(default=0, ge=0, le=20, description="Follow rel=next up to N pages and stitch their markdown into one document")
     actions: list[PageAction] | None = Field(default=None, max_length=100, description="Browser actions to execute before content extraction")
     excluded_tags: list[str] | None = Field(default=None, max_length=200, description="HTML tags to strip before extraction (e.g. ['nav', 'footer'])")
     excluded_selector: str | None = Field(default=None, max_length=2000, description="CSS selector for elements to remove before extraction")

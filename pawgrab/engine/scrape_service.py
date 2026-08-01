@@ -49,6 +49,7 @@ async def scrape_url(
     citations: bool = False,
     fit_markdown_query: str | None = None,
     fit_markdown_top_k: int = 5,
+    follow_next: int = 0,
     actions: list | None = None,
     excluded_tags: list[str] | None = None,
     excluded_selector: str | None = None,
@@ -148,9 +149,7 @@ async def scrape_url(
     # retry with browser rendering. Only triggers when curl gives <100 chars of visible text.
     # This is safe because these pages currently score F1=0 regardless.
     if (
-        not result.used_browser
-        and browser_pool is not None
-        and effective_wait is None  # caller didn't explicitly set wait_for_js
+        not result.used_browser and browser_pool is not None and effective_wait is None  # caller didn't explicitly set wait_for_js
     ):
         from lxml import html as _lxml_html
 
@@ -216,6 +215,19 @@ async def scrape_url(
         fit_markdown_top_k=fit_markdown_top_k,
         **content_kwargs,
     )
+
+    # Pagination stitching: follow rel="next" and append subsequent pages'
+    # markdown so a multi-page article/listing returns as one document.
+    if follow_next and response.markdown:
+        await _stitch_next_pages(
+            response,
+            first_html=result.html,
+            first_url=result.url,
+            limit=follow_next,
+            browser_pool=browser_pool,
+            proxy_pool=proxy_pool,
+            fetch_kwargs=fetch_kwargs,
+        )
 
     if llm_ready and response.markdown:
         response.markdown = _clean_for_llm(response.markdown)
@@ -285,6 +297,61 @@ async def scrape_url(
     return response
 
 
+async def _stitch_next_pages(
+    response: ScrapeResponse,
+    *,
+    first_html: str,
+    first_url: str,
+    limit: int,
+    browser_pool: object | None,
+    proxy_pool: object | None,
+    fetch_kwargs: dict,
+) -> None:
+    """Follow rel="next" up to *limit* pages and append their markdown to *response*."""
+    from urllib.parse import urlparse
+
+    from pawgrab.engine.converter import convert
+    from pawgrab.engine.pagination import find_next_url
+    from pawgrab.utils.url_safety import SSRFError, assert_public_url
+
+    limit = max(0, min(limit, 20))  # hard cap regardless of caller
+    seen = {first_url}
+    origin = urlparse(first_url).netloc
+    html = first_html
+    current = first_url
+    pages_followed = 0
+
+    # fetch_kwargs carries browser/proxy pools already; strip per-call extras.
+    next_fetch_kwargs = {k: v for k, v in fetch_kwargs.items() if k not in ("actions",)}
+
+    for _ in range(limit):
+        nxt = find_next_url(html, current)
+        if not nxt or nxt in seen:
+            break
+        # Only stitch within the same site, and never to a private address.
+        if urlparse(nxt).netloc != origin:
+            break
+        try:
+            await assert_public_url(nxt)
+        except SSRFError:
+            break
+        seen.add(nxt)
+        try:
+            nresult = await fetch_page(nxt, **next_fetch_kwargs)
+        except Exception:
+            break
+        page_cleaned = extract_content(nresult.readability_html or nresult.html, url=nresult.url)
+        page_md = convert(page_cleaned.content_html, OutputFormat.MARKDOWN)
+        if page_md.strip():
+            response.markdown = (response.markdown or "") + "\n\n" + page_md
+        html = nresult.html
+        current = nresult.url
+        pages_followed += 1
+
+    if pages_followed:
+        response.warnings.append(f"Stitched {pages_followed} additional page(s) via rel=next")
+
+
 def build_response(
     result: FetchResult,
     *,
@@ -301,7 +368,6 @@ def build_response(
     content_filter_query: str | None = None,
 ) -> ScrapeResponse:
     extraction_html = result.readability_html or result.html
-
     cleaned = extract_content(
         extraction_html,
         url=result.url,
@@ -351,6 +417,7 @@ def build_response(
     stripped_text = text_content.strip()
     if not result.used_browser and len(stripped_text) < 200:
         from pawgrab.engine.detector import needs_js_rendering
+
         if needs_js_rendering(result.html, url=result.url):
             response.success = False
             response.error = "Page requires JavaScript rendering; re-scrape with wait_for_js=true"
