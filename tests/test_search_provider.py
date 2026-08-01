@@ -3,6 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pawgrab.engine.search_provider import (
+    EngineResult,
+    SearchParams,
     SearchResult,
     _bing_real_url,
     _ddg_real_url,
@@ -10,6 +12,8 @@ from pawgrab.engine.search_provider import (
     _engine_duckduckgo,
     _merge,
     _normalize_url,
+    _region_to_market,
+    search,
     search_structured,
     search_web,
 )
@@ -57,25 +61,55 @@ def test_normalize_url_strips_www_and_trailing_slash():
     assert _normalize_url("https://www.Example.com/path/") == _normalize_url("https://example.com/path")
 
 
+def test_region_to_market():
+    assert _region_to_market("us-en") == "en-US"
+    assert _region_to_market("uk-en") == "en-UK"
+
+
 def test_merge_dedupes_and_scores_cross_engine_agreement_higher():
-    # 'shared' is #1 on both engines; 'solo' only on ddg at #2.
     engine_results = {
         "duckduckgo": [("https://shared.example/", "Shared", "s"), ("https://solo.example/", "Solo", "s")],
         "bing": [("https://shared.example", "Shared bing", "longer snippet here")],
     }
     merged = _merge(engine_results)
     assert merged[0].url.startswith("https://shared.example")
-    # Shared appears in both engines -> higher score than the single-engine result.
     assert merged[0].score > merged[1].score
-    top = merged[0]
-    assert top.engines == {"duckduckgo", "bing"}
-    # Merge kept the longer snippet.
-    assert top.content == "longer snippet here"
+    assert merged[0].engines == {"duckduckgo", "bing"}
+    assert merged[0].content == "longer snippet here"
 
 
 def test_merge_prefers_https():
     r = _merge({"a": [("http://x.example/p", "t", "c")], "b": [("https://x.example/p", "t", "c")]})
     assert r[0].url == "https://x.example/p"
+
+
+# --- query params (SearXNG SearchQuery) --------------------------------------
+
+
+def test_search_params_normalized_clamps():
+    p = SearchParams(page=0, time_range="bogus", safesearch=9).normalized()
+    assert p.page == 1 and p.time_range is None and p.safesearch == 0
+
+
+async def test_ddg_applies_page_time_and_safesearch_params():
+    session = _session_returning("<html></html>")
+    with patch("pawgrab.engine.search_provider.AsyncSession", return_value=session):
+        await _engine_duckduckgo("q", 5, SearchParams(page=2, time_range="week", safesearch=2, region="uk-en"))
+    sent = session.get.await_args.kwargs["params"]
+    assert sent["kl"] == "uk-en"
+    assert sent["df"] == "w"  # week -> w
+    assert sent["kp"] == "1"  # strict
+    assert sent["s"] > 0  # page 2 offset
+
+
+async def test_bing_applies_pagination_and_market():
+    session = _session_returning("<html></html>")
+    with patch("pawgrab.engine.search_provider.AsyncSession", return_value=session):
+        await _engine_bing("q", 5, SearchParams(page=3, safesearch=1, region="us-en"))
+    sent = session.get.await_args.kwargs["params"]
+    assert sent["mkt"] == "en-US"
+    assert sent["adlt"] == "moderate"
+    assert sent["first"] > 1
 
 
 # --- engine scraping ----------------------------------------------------------
@@ -92,21 +126,23 @@ async def test_engine_duckduckgo_scrapes():
     </div>
     """
     with patch("pawgrab.engine.search_provider.AsyncSession", return_value=_session_returning(html)):
-        out = await _engine_duckduckgo("test", 5)
-    assert [u for u, _, _ in out] == ["https://one.example/", "https://two.example/"]
-    assert out[0][2] == "first snippet"
+        out = await _engine_duckduckgo("test", 5, SearchParams())
+    assert [u for u, _, _ in out.results] == ["https://one.example/", "https://two.example/"]
+    assert out.results[0][2] == "first snippet"
 
 
-async def test_engine_bing_scrapes():
+async def test_engine_bing_scrapes_and_collects_suggestions():
     html = """
     <ol id="b_results">
       <li class="b_algo"><h2><a href="https://first.example/">First</a></h2><p>desc</p></li>
       <li class="b_algo"><h2><a href="https://second.example/">Second</a></h2></li>
     </ol>
+    <div id="b_rs"><a href="/search?q=more">more like this</a></div>
     """
     with patch("pawgrab.engine.search_provider.AsyncSession", return_value=_session_returning(html)):
-        out = await _engine_bing("test", 5)
-    assert [u for u, _, _ in out] == ["https://first.example/", "https://second.example/"]
+        out = await _engine_bing("test", 5, SearchParams())
+    assert [u for u, _, _ in out.results] == ["https://first.example/", "https://second.example/"]
+    assert "more like this" in out.suggestions
 
 
 async def test_engine_duckduckgo_bad_status_returns_empty():
@@ -115,7 +151,8 @@ async def test_engine_duckduckgo_bad_status_returns_empty():
     session.__aexit__ = AsyncMock(return_value=False)
     session.get = AsyncMock(return_value=MagicMock(status_code=429, text=""))
     with patch("pawgrab.engine.search_provider.AsyncSession", return_value=session):
-        assert await _engine_duckduckgo("test", 5) == []
+        out = await _engine_duckduckgo("test", 5, SearchParams())
+    assert out.results == []
 
 
 # --- public API + dispatch ----------------------------------------------------
@@ -128,12 +165,12 @@ async def test_search_web_returns_urls():
         with patch(
             "pawgrab.engine.search_provider._engine_duckduckgo",
             new_callable=AsyncMock,
-            return_value=[("https://a.com", "A", ""), ("https://b.com", "B", "")],
+            return_value=EngineResult(results=[("https://a.com", "A", ""), ("https://b.com", "B", "")]),
         ):
             assert await search_web("q") == ["https://a.com", "https://b.com"]
 
 
-async def test_search_structured_shape_and_ranking():
+async def test_search_envelope_shape_ranking_and_suggestions():
     with patch("pawgrab.engine.search_provider.settings") as s:
         s.search_provider = "auto"
         s.google_search_api_key = ""
@@ -141,22 +178,23 @@ async def test_search_structured_shape_and_ranking():
             patch(
                 "pawgrab.engine.search_provider._engine_duckduckgo",
                 new_callable=AsyncMock,
-                return_value=[("https://shared.com", "Shared", "x")],
+                return_value=EngineResult(results=[("https://shared.com", "Shared", "x")], suggestions=["a"]),
             ),
             patch(
                 "pawgrab.engine.search_provider._engine_bing",
                 new_callable=AsyncMock,
-                return_value=[("https://shared.com", "Shared", "x")],
+                return_value=EngineResult(results=[("https://shared.com", "Shared", "x")], suggestions=["b"]),
             ),
         ):
-            results = await search_structured("q", 5)
-    assert results[0]["link"] == "https://shared.com"
-    assert set(results[0]["engines"]) == {"duckduckgo", "bing"}
-    assert results[0]["position"] == 1
-    assert "score" in results[0]
+            env = await search("q", 5)
+    assert env["results"][0]["link"] == "https://shared.com"
+    assert set(env["results"][0]["engines"]) == {"duckduckgo", "bing"}
+    assert env["suggestions"] == ["a", "b"]
+    assert env["page"] == 1
+    assert env["number_of_results"] == 1
 
 
-async def test_search_engine_failure_is_isolated():
+async def test_search_reports_unresponsive_engine():
     with patch("pawgrab.engine.search_provider.settings") as s:
         s.search_provider = "auto"
         s.google_search_api_key = ""
@@ -165,11 +203,25 @@ async def test_search_engine_failure_is_isolated():
             patch(
                 "pawgrab.engine.search_provider._engine_bing",
                 new_callable=AsyncMock,
-                return_value=[("https://ok.com", "OK", "")],
+                return_value=EngineResult(results=[("https://ok.com", "OK", "")]),
             ),
         ):
-            results = await search_web("q")
-    assert results == ["https://ok.com"]
+            env = await search("q")
+    assert [r["link"] for r in env["results"]] == ["https://ok.com"]
+    assert "duckduckgo" in env["unresponsive_engines"]
+
+
+async def test_search_structured_is_results_list():
+    with patch("pawgrab.engine.search_provider.settings") as s:
+        s.search_provider = "duckduckgo"
+        s.google_search_api_key = ""
+        with patch(
+            "pawgrab.engine.search_provider._engine_duckduckgo",
+            new_callable=AsyncMock,
+            return_value=EngineResult(results=[("https://a.com", "A", "snip")]),
+        ):
+            items = await search_structured("q")
+    assert items == [{"position": 1, "title": "A", "link": "https://a.com", "snippet": "snip", "engines": ["duckduckgo"], "score": items[0]["score"]}]
 
 
 async def test_google_without_key_falls_back_to_meta():

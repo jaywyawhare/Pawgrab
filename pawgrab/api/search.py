@@ -7,7 +7,7 @@ from fastapi import APIRouter
 
 from pawgrab.dependencies import try_browser_pool
 from pawgrab.engine.scrape_service import scrape_url
-from pawgrab.engine.search_provider import search_web
+from pawgrab.engine.search_provider import search as run_search
 from pawgrab.exceptions import ErrorCode, PawgrabError
 from pawgrab.models.common import ErrorResponse
 from pawgrab.models.search import SearchRequest, SearchResponse
@@ -34,7 +34,14 @@ async def search(req: SearchRequest):
     scrapes each one in parallel and returns the content.
     """
     try:
-        urls = await search_web(req.query, num_results=req.num_results)
+        serp = await run_search(
+            req.query,
+            num_results=req.num_results,
+            page=req.page,
+            time_range=req.time_range,
+            safesearch=req.safesearch,
+            region=req.region,
+        )
     except Exception as exc:
         logger.error("search_failed", query=req.query, error=str(exc))
         raise PawgrabError(
@@ -43,8 +50,21 @@ async def search(req: SearchRequest):
             message=f"Search provider error: {type(exc).__name__}",
         ) from exc
 
-    if not urls:
-        return SearchResponse(success=True, query=req.query, results=[], total=0)
+    serp_items = serp["results"]
+    urls = [r["link"] for r in serp_items]
+
+    # SERP-only mode (SerpAPI-style): return ranked metadata without scraping.
+    if not req.scrape or not urls:
+        return SearchResponse(
+            success=True,
+            query=req.query,
+            results=[],
+            total=0,
+            search_results=serp_items,
+            suggestions=serp["suggestions"],
+            unresponsive_engines=serp["unresponsive_engines"],
+            page=serp["page"],
+        )
 
     pool = await try_browser_pool()
 
@@ -80,4 +100,8 @@ async def search(req: SearchRequest):
         results=results,
         total=len(results),
         failed_urls=failed_urls,
+        search_results=serp_items,
+        suggestions=serp["suggestions"],
+        unresponsive_engines=serp["unresponsive_engines"],
+        page=serp["page"],
     )
