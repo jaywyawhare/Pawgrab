@@ -120,6 +120,79 @@ def _content_score(html: str) -> float:
     return tl * (1.0 - 0.8 * density)
 
 
+_JSONLD_BODY_KEYS = ("articleBody", "reviewBody", "description", "text")
+_JSONLD_CONTENT_TYPES = frozenset(
+    {
+        "Article",
+        "NewsArticle",
+        "BlogPosting",
+        "Report",
+        "TechArticle",
+        "Product",
+        "Recipe",
+        "QAPage",
+        "Question",
+    }
+)
+
+
+def _iter_jsonld_objects(html: str):
+    """Yield each JSON-LD object embedded in the page (handles @graph and arrays)."""
+    for match in re.finditer(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        html,
+        re.DOTALL | re.IGNORECASE,
+    ):
+        raw = match.group(1).strip()
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        stack = [data]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, list):
+                stack.extend(node)
+            elif isinstance(node, dict):
+                if "@graph" in node and isinstance(node["@graph"], list):
+                    stack.extend(node["@graph"])
+                yield node
+
+
+def _jsonld_content_html(html: str) -> str:
+    """Build an HTML content candidate from JSON-LD article/product/recipe bodies.
+
+    Most modern CMS/e-commerce pages embed the clean article body or product
+    description in schema.org JSON-LD. It is deterministic, boilerplate-free, and
+    exactly the high-precision source readability under-extracts on product/FAQ/
+    recipe layouts — added here as a *scored* candidate so it only wins when it is
+    genuinely the fullest clean extraction.
+    """
+    if "ld+json" not in html.lower():
+        return ""
+    best = ""
+    for node in _iter_jsonld_objects(html):
+        types = node.get("@type", "")
+        types = types if isinstance(types, list) else [types]
+        if not any(t in _JSONLD_CONTENT_TYPES for t in types):
+            continue
+        for key in _JSONLD_BODY_KEYS:
+            val = node.get(key)
+            if isinstance(val, str) and len(val.strip()) > len(best):
+                best = val.strip()
+    if len(best) < _MIN_CONTENT_CHARS:
+        return ""
+    # Wrap paragraphs (JSON-LD bodies use \n\n or \n between paragraphs).
+    paras = [p.strip() for p in re.split(r"\n{2,}|\r\n\r\n", best) if p.strip()]
+    if not paras:
+        paras = [best]
+    from html import escape
+
+    return "<div>" + "".join(f"<p>{escape(p)}</p>" for p in paras) + "</div>"
+
+
 def _strip_boilerplate(tree) -> None:
     """Remove boilerplate elements from an lxml tree in-place."""
     for xpath in _BOILERPLATE_XPATHS:
@@ -151,18 +224,14 @@ def _serialize_body(tree) -> str:
 
 # Block-level containers worth link-density testing. Excludes <article>/<main>
 # (the content roots) and <table> (tables are content, not link furniture).
-_PRUNABLE_TAGS = frozenset(
-    {"div", "ul", "ol", "nav", "aside", "section", "header", "footer", "form", "p"}
-)
+_PRUNABLE_TAGS = frozenset({"div", "ul", "ol", "nav", "aside", "section", "header", "footer", "form", "p"})
 
 
 # Short, page-type-specific UI chrome that survives generic stripping because it's
 # plain text in ordinary tags (not links, not tell-tale classes): forum post
 # reputation/metadata, commerce-grid widgets, listing pagination controls. These
 # are the top precision leaks on WCXB forum/product/collection/listing pages.
-_UI_CHROME_TAGS = frozenset(
-    {"a", "button", "span", "li", "p", "div", "small", "time", "label", "strong", "em", "b"}
-)
+_UI_CHROME_TAGS = frozenset({"a", "button", "span", "li", "p", "div", "small", "time", "label", "strong", "em", "b"})
 
 # Whole-block UI phrases (matched against the block's entire short text).
 _UI_CHROME_FULL_RE = re.compile(
@@ -227,9 +296,7 @@ def _strip_ui_chrome(html: str) -> str:
     return pruned if _text_length(pruned) >= _MIN_CONTENT_CHARS else html
 
 
-def _prune_link_density(
-    html: str, *, threshold: float = 0.5, min_text: int = 30
-) -> str:
+def _prune_link_density(html: str, *, threshold: float = 0.5, min_text: int = 30) -> str:
     """Drop blocks whose text is mostly anchor text (share bars, related lists, nav).
 
     Complements tag/class stripping by catching link furniture that carries no
@@ -502,9 +569,7 @@ def extract_content(
                     # cards has one block holding most of the text, so it's excluded
                     # and keeps its clean single-article extraction (precision).
                     if total and max(lengths) / total < 0.45:
-                        merged = "<div>" + "".join(
-                            b for b, ln in zip(blocks, lengths, strict=False) if ln > 30
-                        ) + "</div>"
+                        merged = "<div>" + "".join(b for b, ln in zip(blocks, lengths, strict=False) if ln > 30) + "</div>"
                         if _text_length(merged) >= _MIN_CONTENT_CHARS:
                             candidates.append(merged)
             except Exception:
@@ -524,18 +589,30 @@ def extract_content(
         try:
             import trafilatura
 
-            traf_html = trafilatura.extract(
-                html,
-                url=url or None,
-                output_format="html",
-                include_tables=True,
-                include_links=True,
-                include_formatting=True,
-                favor_recall=True,
-                no_fallback=False,
-            ) or ""
+            traf_html = (
+                trafilatura.extract(
+                    html,
+                    url=url or None,
+                    output_format="html",
+                    include_tables=True,
+                    include_links=True,
+                    include_formatting=True,
+                    favor_recall=True,
+                    no_fallback=False,
+                )
+                or ""
+            )
             if _text_length(traf_html) >= _MIN_CONTENT_CHARS:
                 candidates.append(traf_html)
+        except Exception:
+            pass
+
+        # JSON-LD articleBody / product / recipe body — deterministic, clean, and
+        # often the only full text on layouts readability under-extracts.
+        try:
+            jsonld_html = _jsonld_content_html(html)
+            if jsonld_html:
+                candidates.append(jsonld_html)
         except Exception:
             pass
 

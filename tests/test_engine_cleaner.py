@@ -29,7 +29,7 @@ def test_extract_empty_html():
 
 def test_extract_byline_from_meta():
     html = (
-        '<html><head>'
+        "<html><head>"
         '<meta name="author" content="Jane Doe">'
         '<meta property="article:published_time" content="2025-03-14T09:00:00Z">'
         "</head><body><p>" + "Body text. " * 40 + "</p></body></html>"
@@ -48,3 +48,29 @@ def test_extract_byline_from_json_ld():
     result = extract_content(html)
     assert result.author == "John Smith"
     assert result.publish_date == "2024-11-02"
+
+
+def test_jsonld_product_description_extracted():
+    """Product pages with a JSON-LD description (readability under-extracts) recover it."""
+    import json
+
+    from pawgrab.engine.cleaner import extract_content
+
+    desc = "A great widget with many useful features. " * 20
+    ld = {"@type": "Product", "name": "Widget", "description": desc}
+    html = f'<html><body><script type="application/ld+json">{json.dumps(ld)}</script>' "<div>nav junk</div><p>tiny</p></body></html>"
+    c = extract_content(html)
+    assert "great widget" in c.content_html.lower()
+
+
+def test_jsonld_does_not_override_full_article():
+    """A short JSON-LD summary must not beat the full in-page article body."""
+    import json
+
+    from pawgrab.engine.cleaner import extract_content
+
+    body = "".join(f"<p>{'Real article paragraph %d with substantial content. ' % i * 5}</p>" for i in range(15))
+    ld = {"@type": "NewsArticle", "headline": "Title", "description": "Short blurb."}
+    html = f"<html><body><article>{body}</article>" f'<script type="application/ld+json">{json.dumps(ld)}</script></body></html>'
+    c = extract_content(html)
+    assert c.content_html.count("Real article paragraph") > 10
