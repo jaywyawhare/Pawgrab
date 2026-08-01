@@ -29,8 +29,9 @@ _SEARCH_CONCURRENCY = 5
 async def search(req: SearchRequest):
     """Search the web and scrape each result page.
 
-    Uses the configured search provider (DuckDuckGo, SerpAPI, Google, or SearXNG)
-    to find URLs, then scrapes each one in parallel and returns the content.
+    Uses the vendored-in meta-search engine (DuckDuckGo/Bing/Brave scraped
+    natively, "auto" merges them, or Google's keyed API) to find URLs, then
+    scrapes each one in parallel and returns the content.
     """
     try:
         urls = await search_web(req.query, num_results=req.num_results)

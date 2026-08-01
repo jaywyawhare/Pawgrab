@@ -106,14 +106,12 @@ class Settings(BaseSettings):
     proxy_evict_after_failures: int = Field(default=3, ge=1)
     proxy_backoff_seconds: int = Field(default=60, ge=1)
 
-    search_provider: Literal["duckduckgo", "serpapi", "google", "searxng"] = "duckduckgo"
-    serpapi_key: str = ""
+    # Search is a vendored-in meta-search engine that scrapes SERPs natively — no
+    # API key or external service. "auto" merges multiple engines (SearXNG-style);
+    # "google" is the one keyed option, via Google's own Custom Search JSON API.
+    search_provider: Literal["duckduckgo", "bing", "brave", "auto", "google"] = "duckduckgo"
     google_search_api_key: str = ""
     google_search_cx: str = ""
-    # SearXNG: self-hosted meta-search, no API key. Point at an instance whose
-    # JSON output is enabled (settings.yml: search.formats includes "json").
-    searxng_base_url: str = ""
-    searxng_engines: str = ""  # optional comma-separated engine allow-list
 
     webhook_timeout: int = Field(default=15, ge=1, le=120)
     webhook_retries: int = Field(default=3, ge=0, le=10)

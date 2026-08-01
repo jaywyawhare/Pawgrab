@@ -1,207 +1,185 @@
+"""Tests for the vendored-in meta-search engine (native SERP scraping + merge)."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pawgrab.engine.search_provider import (
-    _search_duckduckgo,
-    _search_google,
-    _search_serpapi,
+    SearchResult,
+    _bing_real_url,
+    _ddg_real_url,
+    _engine_bing,
+    _engine_duckduckgo,
+    _merge,
+    _normalize_url,
+    search_structured,
     search_web,
 )
 
 
-async def test_search_web_duckduckgo_default():
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.search_provider = "duckduckgo"
-        mock_settings.serpapi_key = ""
-        mock_settings.google_search_api_key = ""
-        with patch("pawgrab.engine.search_provider._search_duckduckgo", new_callable=AsyncMock, return_value=["https://a.com"]) as mock_ddg:
-            result = await search_web("python tutorial")
-    mock_ddg.assert_called_once_with("python tutorial", 5)
-    assert result == ["https://a.com"]
+def _session_returning(html: str):
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=False)
+    session.get = AsyncMock(return_value=MagicMock(status_code=200, text=html))
+    return session
 
 
-async def test_search_web_serpapi():
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.search_provider = "serpapi"
-        mock_settings.serpapi_key = "mykey"
-        mock_settings.google_search_api_key = ""
-        with patch("pawgrab.engine.search_provider._search_serpapi", new_callable=AsyncMock, return_value=["https://b.com"]) as mock_serp:
-            result = await search_web("test query", num_results=3)
-    mock_serp.assert_called_once_with("test query", 3)
-    assert result == ["https://b.com"]
+# --- redirect decoding --------------------------------------------------------
 
 
-async def test_search_web_google():
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.search_provider = "google"
-        mock_settings.serpapi_key = ""
-        mock_settings.google_search_api_key = "gkey"
-        with patch("pawgrab.engine.search_provider._search_google", new_callable=AsyncMock, return_value=["https://c.com"]) as mock_google:
-            result = await search_web("test")
-    mock_google.assert_called_once()
-    assert result == ["https://c.com"]
+def test_ddg_real_url_decodes_redirect():
+    href = "//duckduckgo.com/l/?uddg=https%3A%2F%2Freal.example%2Fpage&rut=abc"
+    assert _ddg_real_url(href) == "https://real.example/page"
 
 
-async def test_search_web_falls_back_to_ddg_when_serpapi_key_missing():
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.search_provider = "serpapi"
-        mock_settings.serpapi_key = ""
-        mock_settings.google_search_api_key = ""
-        with patch("pawgrab.engine.search_provider._search_duckduckgo", new_callable=AsyncMock, return_value=[]) as mock_ddg:
-            await search_web("test")
-    mock_ddg.assert_called_once()
+def test_ddg_real_url_direct_and_invalid():
+    assert _ddg_real_url("https://direct.example/x") == "https://direct.example/x"
+    assert _ddg_real_url("javascript:void(0)") is None
+    assert _ddg_real_url("") is None
 
 
-async def test_search_duckduckgo_success():
-    mock_ddgs = MagicMock()
-    mock_ddgs.__enter__ = MagicMock(return_value=mock_ddgs)
-    mock_ddgs.__exit__ = MagicMock(return_value=False)
-    mock_ddgs.text.return_value = [
-        {"href": "https://example.com/1"},
-        {"href": "https://example.com/2"},
-    ]
-    with patch("duckduckgo_search.DDGS", return_value=mock_ddgs):
-        result = await _search_duckduckgo("python", 5)
-    assert result == ["https://example.com/1", "https://example.com/2"]
+def test_bing_real_url_direct():
+    assert _bing_real_url("https://real.example/p") == "https://real.example/p"
 
 
-async def test_search_duckduckgo_skips_empty_href():
-    mock_ddgs = MagicMock()
-    mock_ddgs.__enter__ = MagicMock(return_value=mock_ddgs)
-    mock_ddgs.__exit__ = MagicMock(return_value=False)
-    mock_ddgs.text.return_value = [
-        {"href": "https://example.com/1"},
-        {"href": ""},
-        {"title": "no href"},
-    ]
-    with patch("duckduckgo_search.DDGS", return_value=mock_ddgs):
-        assert await _search_duckduckgo("python", 5) == ["https://example.com/1"]
+def test_bing_real_url_decodes_ck_redirect():
+    import base64
+
+    target = "https://decoded.example/page"
+    token = "a1" + base64.urlsafe_b64encode(target.encode()).decode().rstrip("=")
+    href = f"https://www.bing.com/ck/a?u={token}&p=1"
+    assert _bing_real_url(href) == target
 
 
-async def test_search_duckduckgo_exception_returns_empty():
-    with patch("duckduckgo_search.DDGS", side_effect=ImportError("not installed")):
-        assert await _search_duckduckgo("test", 5) == []
+# --- URL normalization / merge (SearXNG scoring) ------------------------------
 
 
-async def test_search_serpapi_success():
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-    mock_session.get = AsyncMock(
-        return_value=MagicMock(
-            json=lambda: {
-                "organic_results": [
-                    {"link": "https://serpapi-result.com/1"},
-                    {"link": "https://serpapi-result.com/2"},
-                ]
-            }
-        )
-    )
-
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.serpapi_key = "test_key"
-        with patch("pawgrab.engine.search_provider.AsyncSession", return_value=mock_session):
-            result = await _search_serpapi("test", 5)
-
-    assert result == ["https://serpapi-result.com/1", "https://serpapi-result.com/2"]
+def test_normalize_url_strips_www_and_trailing_slash():
+    assert _normalize_url("https://www.Example.com/path/") == _normalize_url("https://example.com/path")
 
 
-async def test_search_serpapi_exception_returns_empty():
-    with patch("pawgrab.engine.search_provider.AsyncSession", side_effect=Exception("network error")):
-        assert await _search_serpapi("test", 5) == []
+def test_merge_dedupes_and_scores_cross_engine_agreement_higher():
+    # 'shared' is #1 on both engines; 'solo' only on ddg at #2.
+    engine_results = {
+        "duckduckgo": [("https://shared.example/", "Shared", "s"), ("https://solo.example/", "Solo", "s")],
+        "bing": [("https://shared.example", "Shared bing", "longer snippet here")],
+    }
+    merged = _merge(engine_results)
+    assert merged[0].url.startswith("https://shared.example")
+    # Shared appears in both engines -> higher score than the single-engine result.
+    assert merged[0].score > merged[1].score
+    top = merged[0]
+    assert top.engines == {"duckduckgo", "bing"}
+    # Merge kept the longer snippet.
+    assert top.content == "longer snippet here"
 
 
-async def test_search_google_success():
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-    mock_session.get = AsyncMock(
-        return_value=MagicMock(
-            json=lambda: {
-                "items": [
-                    {"link": "https://google-result.com/1"},
-                    {"link": "https://google-result.com/2"},
-                ]
-            }
-        )
-    )
-
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.google_search_api_key = "gkey"
-        mock_settings.google_search_cx = "cx"
-        with patch("pawgrab.engine.search_provider.AsyncSession", return_value=mock_session):
-            result = await _search_google("test", 5)
-
-    assert result == ["https://google-result.com/1", "https://google-result.com/2"]
+def test_merge_prefers_https():
+    r = _merge({"a": [("http://x.example/p", "t", "c")], "b": [("https://x.example/p", "t", "c")]})
+    assert r[0].url == "https://x.example/p"
 
 
-async def test_search_google_exception_returns_empty():
-    with patch("pawgrab.engine.search_provider.AsyncSession", side_effect=Exception("timeout")):
-        assert await _search_google("test", 5) == []
+# --- engine scraping ----------------------------------------------------------
 
 
-async def test_search_web_searxng():
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.search_provider = "searxng"
-        mock_settings.serpapi_key = ""
-        mock_settings.google_search_api_key = ""
-        mock_settings.searxng_base_url = "https://searx.example"
+async def test_engine_duckduckgo_scrapes():
+    html = """
+    <div class="result web-result">
+      <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fone.example%2F">One</a>
+      <a class="result__snippet">first snippet</a>
+    </div>
+    <div class="result web-result">
+      <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Ftwo.example%2F">Two</a>
+    </div>
+    """
+    with patch("pawgrab.engine.search_provider.AsyncSession", return_value=_session_returning(html)):
+        out = await _engine_duckduckgo("test", 5)
+    assert [u for u, _, _ in out] == ["https://one.example/", "https://two.example/"]
+    assert out[0][2] == "first snippet"
+
+
+async def test_engine_bing_scrapes():
+    html = """
+    <ol id="b_results">
+      <li class="b_algo"><h2><a href="https://first.example/">First</a></h2><p>desc</p></li>
+      <li class="b_algo"><h2><a href="https://second.example/">Second</a></h2></li>
+    </ol>
+    """
+    with patch("pawgrab.engine.search_provider.AsyncSession", return_value=_session_returning(html)):
+        out = await _engine_bing("test", 5)
+    assert [u for u, _, _ in out] == ["https://first.example/", "https://second.example/"]
+
+
+async def test_engine_duckduckgo_bad_status_returns_empty():
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=False)
+    session.get = AsyncMock(return_value=MagicMock(status_code=429, text=""))
+    with patch("pawgrab.engine.search_provider.AsyncSession", return_value=session):
+        assert await _engine_duckduckgo("test", 5) == []
+
+
+# --- public API + dispatch ----------------------------------------------------
+
+
+async def test_search_web_returns_urls():
+    with patch("pawgrab.engine.search_provider.settings") as s:
+        s.search_provider = "duckduckgo"
+        s.google_search_api_key = ""
         with patch(
-            "pawgrab.engine.search_provider._search_searxng",
+            "pawgrab.engine.search_provider._engine_duckduckgo",
             new_callable=AsyncMock,
-            return_value=["https://sx.com"],
-        ) as mock_sx:
-            from pawgrab.engine.search_provider import search_web
-
-            assert await search_web("q") == ["https://sx.com"]
-            mock_sx.assert_awaited_once()
+            return_value=[("https://a.com", "A", ""), ("https://b.com", "B", "")],
+        ):
+            assert await search_web("q") == ["https://a.com", "https://b.com"]
 
 
-async def test_search_searxng_success():
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-    mock_session.get = AsyncMock(
-        return_value=MagicMock(
-            status_code=200,
-            json=lambda: {
-                "results": [
-                    {"url": "https://a.com"},
-                    {"url": "https://b.com"},
-                    {"url": "https://a.com"},  # duplicate -> deduped
-                ]
-            },
-        )
-    )
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.searxng_base_url = "https://searx.example/"
-        mock_settings.searxng_engines = ""
-        with patch("pawgrab.engine.search_provider.AsyncSession", return_value=mock_session):
-            from pawgrab.engine.search_provider import _search_searxng
-
-            result = await _search_searxng("test", 5)
-    assert result == ["https://a.com", "https://b.com"]
+async def test_search_structured_shape_and_ranking():
+    with patch("pawgrab.engine.search_provider.settings") as s:
+        s.search_provider = "auto"
+        s.google_search_api_key = ""
+        with (
+            patch(
+                "pawgrab.engine.search_provider._engine_duckduckgo",
+                new_callable=AsyncMock,
+                return_value=[("https://shared.com", "Shared", "x")],
+            ),
+            patch(
+                "pawgrab.engine.search_provider._engine_bing",
+                new_callable=AsyncMock,
+                return_value=[("https://shared.com", "Shared", "x")],
+            ),
+        ):
+            results = await search_structured("q", 5)
+    assert results[0]["link"] == "https://shared.com"
+    assert set(results[0]["engines"]) == {"duckduckgo", "bing"}
+    assert results[0]["position"] == 1
+    assert "score" in results[0]
 
 
-async def test_search_searxng_bad_status_returns_empty():
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-    mock_session.get = AsyncMock(return_value=MagicMock(status_code=403, json=lambda: {}))
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.searxng_base_url = "https://searx.example"
-        mock_settings.searxng_engines = ""
-        with patch("pawgrab.engine.search_provider.AsyncSession", return_value=mock_session):
-            from pawgrab.engine.search_provider import _search_searxng
+async def test_search_engine_failure_is_isolated():
+    with patch("pawgrab.engine.search_provider.settings") as s:
+        s.search_provider = "auto"
+        s.google_search_api_key = ""
+        with (
+            patch("pawgrab.engine.search_provider._engine_duckduckgo", new_callable=AsyncMock, side_effect=Exception("down")),
+            patch(
+                "pawgrab.engine.search_provider._engine_bing",
+                new_callable=AsyncMock,
+                return_value=[("https://ok.com", "OK", "")],
+            ),
+        ):
+            results = await search_web("q")
+    assert results == ["https://ok.com"]
 
-            assert await _search_searxng("test", 5) == []
+
+async def test_google_without_key_falls_back_to_meta():
+    from pawgrab.engine.search_provider import _select_engines
+
+    with patch("pawgrab.engine.search_provider.settings") as s:
+        s.google_search_api_key = ""
+        assert _select_engines("google") == ["duckduckgo", "bing"]
 
 
-async def test_search_serpapi_error_field_returns_empty():
-    mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-    mock_session.get = AsyncMock(return_value=MagicMock(json=lambda: {"error": "Invalid API key"}))
-    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
-        mock_settings.serpapi_key = "bad"
-        with patch("pawgrab.engine.search_provider.AsyncSession", return_value=mock_session):
-            assert await _search_serpapi("test", 5) == []
+def test_search_result_dataclass_defaults():
+    r = SearchResult(url="https://x.com")
+    assert r.engines == set() and r.positions == [] and r.score == 0.0

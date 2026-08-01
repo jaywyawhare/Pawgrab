@@ -38,7 +38,7 @@ def test_defaults(attr, expected):
         ("PAWGRAB_RATE_LIMIT_RPM", "rate_limit_rpm", "120", 120),
         ("PAWGRAB_BROWSER_POOL_SIZE", "browser_pool_size", "10", 10),
         ("PAWGRAB_PROXY_ROTATION_POLICY", "proxy_rotation_policy", "random", "random"),
-        ("PAWGRAB_SEARCH_PROVIDER", "search_provider", "serpapi", "serpapi"),
+        ("PAWGRAB_SEARCH_PROVIDER", "search_provider", "bing", "bing"),
         ("PAWGRAB_STORAGE_BACKEND", "storage_backend", "filesystem", "filesystem"),
     ],
 )

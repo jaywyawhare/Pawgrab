@@ -38,7 +38,6 @@ dependencies = [
     "aiolimiter>=1.2",
     "typer[all]>=0.15",
     "structlog>=24.4",
-    "duckduckgo-search>=7.0",
     "pymupdf>=1.24",
     "orjson>=3.10",
     "croniter>=2.0",
