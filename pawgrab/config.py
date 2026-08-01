@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # huge pages (a chunked extract would otherwise fan out unboundedly).
     llm_max_chunks: int = Field(default=20, ge=1, le=200)
     llm_max_output_tokens: int = Field(default=4096, ge=256, le=32768)
+    # LLM resilience: bounded retries with backoff, then an optional fallback
+    # provider (empty = none) so a transient primary-provider outage degrades
+    # gracefully instead of failing the extraction.
+    llm_max_retries: int = Field(default=2, ge=0, le=5)
+    llm_fallback_provider: Literal["", "openai", "anthropic", "gemini", "ollama"] = ""
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
     gemini_api_key: str = ""

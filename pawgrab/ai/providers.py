@@ -143,18 +143,59 @@ class OllamaProvider(LLMProvider):
             raise RuntimeError(f"Ollama API error: {exc}") from exc
 
 
-def get_llm_provider(provider: str | None = None) -> LLMProvider:
-    """Get the configured LLM provider."""
-    provider = provider or settings.llm_provider
+class ResilientProvider(LLMProvider):
+    """Wrap a primary provider with bounded retries + an optional fallback.
 
+    Transient LLM failures retry with exponential backoff; if the primary is
+    still failing and a fallback provider is configured, the request is tried
+    once against the fallback so a single-provider outage degrades gracefully.
+    """
+
+    def __init__(self, primary: LLMProvider, fallback: LLMProvider | None, max_retries: int):
+        self._primary = primary
+        self._fallback = fallback
+        self._max_retries = max_retries
+
+    async def extract(self, content, prompt, schema_hint=None, json_schema=None):
+        import asyncio
+
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                return await self._primary.extract(content, prompt, schema_hint, json_schema=json_schema)
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("llm_extract_attempt_failed", attempt=attempt + 1, error=str(exc))
+                if attempt < self._max_retries:
+                    await asyncio.sleep(min(2**attempt, 8))
+        if self._fallback is not None:
+            logger.info("llm_falling_back_to_secondary")
+            return await self._fallback.extract(content, prompt, schema_hint, json_schema=json_schema)
+        raise last_exc if last_exc else RuntimeError("LLM extraction failed")
+
+
+def _build_provider(provider: str) -> LLMProvider:
     if provider == "anthropic":
         return AnthropicProvider()
     elif provider == "gemini":
         return GeminiProvider()
     elif provider == "ollama":
         return OllamaProvider()
-    else:
-        # Default to OpenAI
-        from pawgrab.ai.openai_provider import OpenAIProvider
+    from pawgrab.ai.openai_provider import OpenAIProvider
 
-        return OpenAIProvider()
+    return OpenAIProvider()
+
+
+def get_llm_provider(provider: str | None = None) -> LLMProvider:
+    """Get the configured LLM provider, wrapped with retry + fallback."""
+    provider = provider or settings.llm_provider
+    primary = _build_provider(provider)
+
+    fallback = None
+    fb = settings.llm_fallback_provider
+    if fb and fb != provider:
+        fallback = _build_provider(fb)
+
+    if settings.llm_max_retries == 0 and fallback is None:
+        return primary
+    return ResilientProvider(primary, fallback, settings.llm_max_retries)
