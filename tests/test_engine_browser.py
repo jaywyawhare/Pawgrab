@@ -286,3 +286,31 @@ def test_context_kwargs_geo_overrides_profile():
     # Geolocation is seeded from the proxy coordinates.
     assert kw["geolocation"]["latitude"] == 35.6
     assert kw["proxy"] == {"server": "http://p:8080"}
+
+
+async def test_acquire_self_heals_on_timeout(monkeypatch):
+    """A starved pool queue mints a page instead of hanging forever (H7)."""
+    from unittest.mock import AsyncMock
+
+    from pawgrab.engine.browser import BrowserPool
+
+    pool = BrowserPool()
+    sentinel = object()
+    pool._mint_page = AsyncMock(return_value=sentinel)
+    # Empty queue + tiny timeout -> wait_for times out -> _mint_page.
+    page = await pool.acquire(timeout=0.05)
+    assert page is sentinel
+    pool._mint_page.assert_awaited_once()
+
+
+async def test_release_isolated_page_closes_context():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from pawgrab.engine.browser import BrowserPool
+
+    pool = BrowserPool()
+    page = MagicMock()
+    page.context = MagicMock()
+    page.context.close = AsyncMock()
+    await pool.release_isolated_page(page)
+    page.context.close.assert_awaited_once()

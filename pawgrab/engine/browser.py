@@ -977,9 +977,7 @@ class BrowserPool:
                 )
             # Align timezone/locale/geolocation to the proxy exit IP (best-effort).
             geo = await resolve_proxy_geo(proxy_url)
-            ctx_kwargs = self._context_kwargs(
-                proxy_url=proxy_url, geolocation=geolocation, profile=profile, geo=geo
-            )
+            ctx_kwargs = self._context_kwargs(proxy_url=proxy_url, geolocation=geolocation, profile=profile, geo=geo)
             ctx = await self._proxy_browser.new_context(**ctx_kwargs)
             if settings.stealth_mode:
                 await _apply_stealth(ctx)
@@ -1083,9 +1081,71 @@ class BrowserPool:
         await self._close_page(old_page)
         return await self._new_stealth_page(proxy_url=proxy_url, geolocation=geolocation)
 
-    async def acquire(self) -> Page:
+    async def new_isolated_page(
+        self,
+        *,
+        proxy_url: str | None = None,
+        geolocation: dict[str, float] | None = None,
+    ) -> Page:
+        """Create a page in a FRESH context, never the shared persistent one.
+
+        Used for requests carrying caller-supplied cookies so credentials/session
+        state never bleed into the shared cookie jar (multi-tenant isolation).
+        Caller MUST release via :meth:`release_isolated_page`.
+        """
+        if self._proxy_browser is None:
+            launcher = await self._get_browser_launcher()
+            is_chromium = self._browser_type == "chromium"
+            self._proxy_browser = await launcher.launch(
+                headless=True,
+                args=list(_STEALTH_CHROMIUM_ARGS) if is_chromium else None,
+                ignore_default_args=list(_HARMFUL_DEFAULT_ARGS) if is_chromium else None,
+            )
+        profile = build_profile(settings.fingerprint_seed or None)
+        geo = await resolve_proxy_geo(proxy_url) if proxy_url else None
+        ctx_kwargs = self._context_kwargs(proxy_url=proxy_url, geolocation=geolocation, profile=profile, geo=geo)
+        ctx = await self._proxy_browser.new_context(**ctx_kwargs)
+        if settings.stealth_mode:
+            await _apply_stealth(ctx)
+            await ctx.add_init_script(_build_evasion_script(browser_type=self._browser_type, profile=profile))
+        await ctx.route("**/*", _route_handler)
+        return await ctx.new_page()
+
+    async def release_isolated_page(self, page: Page) -> None:
+        """Close an isolated page's context (frees cookies/state)."""
+        try:
+            await page.context.close()
+        except Exception:
+            pass
+
+    async def _mint_page(self) -> Page:
+        """Create a page on demand when the pool queue is starved (self-heal)."""
+        if self._persistent_ctx is not None:
+            try:
+                page = await self._persistent_ctx.new_page()
+                self._degraded = False
+                return page
+            except Exception:
+                pass
+        try:
+            page = await self._new_stealth_page()
+            self._degraded = False
+            return page
+        except Exception:
+            pass
+        page = await self.new_isolated_page()
+        self._degraded = False
+        return page
+
+    async def acquire(self, timeout: float = 30.0) -> Page:
         t0 = time.monotonic()
-        page = await self._pages.get()
+        try:
+            page = await asyncio.wait_for(self._pages.get(), timeout=timeout)
+        except TimeoutError:
+            # Queue starved — possibly drained by a degraded pool. Mint a page
+            # directly instead of hanging forever (self-heal).
+            logger.warning("browser_pool_acquire_timeout_minting_page")
+            page = await self._mint_page()
         elapsed_ms = (time.monotonic() - t0) * 1000
         self.metrics.record_acquire(elapsed_ms)
         return page
@@ -1180,9 +1240,7 @@ class BrowserPool:
 
             if settings.stealth_mode:
                 await _apply_stealth(ctx)
-                evasion_js = _build_evasion_script(
-                    browser_type=self._browser_type, profile=session_profile
-                )
+                evasion_js = _build_evasion_script(browser_type=self._browser_type, profile=session_profile)
                 await ctx.add_init_script(evasion_js)
             await ctx.route("**/*", _route_handler)
             self._session_contexts[session_id] = ctx

@@ -277,3 +277,37 @@ def test_captcha_types_need_solver_to_be_browser_solvable():
         gs.return_value.available = True
         assert _is_browser_solvable(_FakeChallenge("recaptcha")) is True
         assert _is_browser_solvable(_FakeChallenge("hcaptcha")) is True
+
+
+async def test_cookies_use_isolated_page():
+    """A browser fetch carrying caller cookies uses an isolated context (H5)."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from pawgrab.engine.fetcher import _fetch_with_browser
+
+    page = AsyncMock()
+    page.url = "https://example.com"
+    page.content = AsyncMock(return_value="<html><body>ok</body></html>")
+    page.goto = AsyncMock(return_value=MagicMock(status=200, headers={}))
+    page.context = MagicMock()
+    page.context.add_cookies = AsyncMock()
+
+    pool = MagicMock()
+    pool.new_isolated_page = AsyncMock(return_value=page)
+    pool.release_isolated_page = AsyncMock()
+    # acquire / release must NOT be used when cookies force isolation.
+    pool.acquire = AsyncMock()
+    pool.release = AsyncMock()
+
+    with patch("pawgrab.engine.fetcher.detect_challenge") as det:
+        det.return_value = MagicMock(detected=False)
+        await _fetch_with_browser(
+            "https://example.com",
+            pool=pool,
+            cookies={"session": "abc"},
+            timeout=30000,
+        )
+
+    pool.new_isolated_page.assert_awaited_once()
+    pool.release_isolated_page.assert_awaited_once()
+    pool.acquire.assert_not_called()

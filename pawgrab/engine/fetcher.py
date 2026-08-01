@@ -720,19 +720,30 @@ async def _fetch_with_browser(
         timeout = _CF_MIN_TIMEOUT
 
     use_session = session_id and settings.browser_session_profiles and hasattr(pool, "acquire_session_page")
+    # Requests carrying caller cookies get a fresh, isolated context so those
+    # credentials never bleed into the shared persistent cookie jar (H5).
+    use_isolated = bool(cookies) and not use_session and hasattr(pool, "new_isolated_page")
+
     if use_session:
         page = await pool.acquire_session_page(session_id)
+    elif use_isolated:
+        page = await pool.new_isolated_page(proxy_url=proxy_url, geolocation=geolocation)
     else:
         page = await pool.acquire()
 
+    async def _release(pg):
+        if use_session:
+            await pool.release_session_page(pg)
+        elif use_isolated:
+            await pool.release_isolated_page(pg)
+        else:
+            await pool.release(pg)
+
     try:
-        if proxy_url and hasattr(pool, "replace_with_proxied_page") and not use_session:
+        if proxy_url and not use_isolated and hasattr(pool, "replace_with_proxied_page") and not use_session:
             page = await pool.replace_with_proxied_page(page, proxy_url, geolocation=geolocation)
     except Exception:
-        if use_session:
-            await pool.release_session_page(page)
-        else:
-            await pool.release(page)
+        await _release(page)
         raise
 
     tracing = enable_trace or settings.browser_trace_enabled
@@ -742,6 +753,12 @@ async def _fetch_with_browser(
 
     network_requests: list[dict] = [] if capture_network else None
     console_logs: list[dict] = [] if capture_console else None
+
+    # Track listeners/routes so they can be removed before the page is recycled —
+    # otherwise they accumulate across reuses of a pooled page (H6). Defined before
+    # the try so the finally can always reference them.
+    _listeners: list[tuple[str, object]] = []
+    _routes: list[object] = []
 
     try:
         if headers:
@@ -760,45 +777,50 @@ async def _fetch_with_browser(
                 return await route.continue_()
 
             await page.route("**/*", _media_block_handler)
+            _routes.append(_media_block_handler)
 
         if capture_network:
-            page.on(
-                "request",
-                lambda req: network_requests.append(
+
+            def _on_request(req):
+                network_requests.append(
                     {
                         "url": req.url,
                         "method": req.method,
                         "resource_type": req.resource_type,
                         "headers": dict(req.headers),
                     }
-                ),
-            )
-            page.on(
-                "response",
-                lambda resp: network_requests.append(
-                    {
-                        "url": resp.url,
-                        "status": resp.status,
-                        "headers": dict(resp.headers),
-                    }
-                ),
-            )
+                )
+
+            def _on_response(resp):
+                network_requests.append({"url": resp.url, "status": resp.status, "headers": dict(resp.headers)})
+
+            page.on("request", _on_request)
+            page.on("response", _on_response)
+            _listeners.append(("request", _on_request))
+            _listeners.append(("response", _on_response))
 
         if capture_console:
-            page.on(
-                "console",
-                lambda msg: console_logs.append(
+
+            def _on_console(msg):
+                console_logs.append(
                     {
                         "type": msg.type,
                         "text": msg.text,
                         "location": str(msg.location) if hasattr(msg, "location") else None,
                     }
-                ),
-            )
+                )
+
+            page.on("console", _on_console)
+            _listeners.append(("console", _on_console))
 
         websocket_messages: list[dict] = [] if capture_websocket else None
         if capture_websocket:
-            page.on("websocket", lambda ws: _setup_ws_capture(ws, websocket_messages))
+
+            def _on_ws(ws):
+                _setup_ws_capture(ws, websocket_messages)
+
+            page.on("websocket", _on_ws)
+            _listeners.append(("websocket", _on_ws))
 
         try:
             response = await page.goto(url, timeout=timeout, wait_until="load")
@@ -1009,10 +1031,19 @@ async def _fetch_with_browser(
             result.trace_path = trace_path
         return result
     finally:
-        if use_session:
-            await pool.release_session_page(page)
-        else:
-            await pool.release(page)
+        # Remove per-fetch listeners/routes so they don't accumulate on a pooled
+        # page that gets reused (H6). Best-effort — never mask the real result.
+        for event, handler in _listeners:
+            try:
+                page.remove_listener(event, handler)
+            except Exception:
+                pass
+        for handler in _routes:
+            try:
+                await page.unroute("**/*", handler)
+            except Exception:
+                pass
+        await _release(page)
 
 
 async def _capture_ssl_info(page, url: str) -> dict | None:
