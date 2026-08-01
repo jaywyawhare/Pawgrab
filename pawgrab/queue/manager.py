@@ -58,13 +58,110 @@ def _results_key(prefix: str, job_id: str) -> str:
     return f"pawgrab:{prefix}:{job_id}:results"
 
 
+def _jobs_index(prefix: str) -> str:
+    return f"pawgrab:{prefix}:index"
+
+
 async def _create_job(prefix: str, fields: dict[str, Any], *, webhook_url: str | None = None) -> str:
     job_id = uuid.uuid4().hex[:12]
     redis = await get_redis()
-    fields.update({"job_id": job_id, "status": CrawlStatus.QUEUED.value, "error": "", "webhook_url": webhook_url or ""})
+    now = int(time.time())
+    fields.update(
+        {
+            "job_id": job_id,
+            "status": CrawlStatus.QUEUED.value,
+            "error": "",
+            "webhook_url": webhook_url or "",
+            "created_at": now,
+        }
+    )
     await redis.hset(_key(prefix, job_id), mapping=fields)
     await redis.expire(_key(prefix, job_id), _job_ttl())
+    # Register in a sorted index (by creation time) so jobs can be listed.
+    await redis.zadd(_jobs_index(prefix), {job_id: now})
     return job_id
+
+
+async def _list_jobs(prefix: str, *, page: int = 1, limit: int = 50) -> tuple[list[dict], int]:
+    """List jobs for a prefix, newest first, with their status snapshots."""
+    redis = await get_redis()
+    index = _jobs_index(prefix)
+    total = await redis.zcard(index)
+    start = (page - 1) * limit
+    job_ids = await redis.zrevrange(index, start, start + limit - 1)
+    jobs = []
+    for jid in job_ids:
+        data = await redis.hgetall(_key(prefix, jid))
+        if not data:
+            # Job hash expired — drop the stale index entry.
+            await redis.zrem(index, jid)
+            continue
+        jobs.append(
+            {
+                "job_id": jid,
+                "status": data.get("status", "unknown"),
+                "created_at": int(data.get("created_at", 0) or 0),
+                "error": data.get("error") or None,
+            }
+        )
+    return jobs, total
+
+
+async def _request_cancel(prefix: str, job_id: str) -> bool:
+    """Flag a job for cancellation. Returns False if the job doesn't exist."""
+    if not JOB_ID_RE.match(job_id):
+        return False
+    redis = await get_redis()
+    key = _key(prefix, job_id)
+    if not await redis.exists(key):
+        return False
+    status = await redis.hget(key, "status")
+    if status in (CrawlStatus.COMPLETED.value, CrawlStatus.FAILED.value, CrawlStatus.CANCELLED.value):
+        return False
+    await redis.hset(key, mapping={"cancel_requested": "1"})
+    await redis.expire(key, _job_ttl())
+    return True
+
+
+async def is_cancel_requested(prefix: str, job_id: str) -> bool:
+    redis = await get_redis()
+    return (await redis.hget(_key(prefix, job_id), "cancel_requested")) == "1"
+
+
+_DLQ_KEY = "pawgrab:dead_letter"
+_DLQ_MAX = 1000
+
+
+async def record_dead_letter(job_type: str, job_id: str, error: str, *, meta: dict | None = None) -> None:
+    """Record a terminally-failed job for inspection/replay (dead-letter queue)."""
+    try:
+        redis = await get_redis()
+        entry = orjson.dumps(
+            {
+                "job_type": job_type,
+                "job_id": job_id,
+                "error": error[:2000],
+                "ts": int(time.time()),
+                "meta": meta or {},
+            }
+        ).decode()
+        await redis.lpush(_DLQ_KEY, entry)
+        await redis.ltrim(_DLQ_KEY, 0, _DLQ_MAX - 1)  # keep newest _DLQ_MAX
+    except Exception as exc:
+        logger.warning("dead_letter_record_failed", job_id=job_id, error=str(exc))
+
+
+async def get_dead_letters(limit: int = 100) -> list[dict]:
+    """Return the most recent dead-lettered jobs."""
+    redis = await get_redis()
+    raw = await redis.lrange(_DLQ_KEY, 0, max(0, limit - 1))
+    out = []
+    for r in raw:
+        try:
+            out.append(orjson.loads(r))
+        except orjson.JSONDecodeError:
+            continue
+    return out
 
 
 async def _get_job_data(prefix: str, job_id: str, *, page: int = 1, limit: int = 50) -> tuple[dict, list, int] | None:
@@ -159,6 +256,30 @@ async def append_result(job_id: str, result_dict: dict):
 
 async def get_webhook_url(job_id: str) -> str | None:
     return await _get_webhook_url("crawl", job_id)
+
+
+async def list_crawl_jobs(*, page: int = 1, limit: int = 50) -> tuple[list[dict], int]:
+    return await _list_jobs("crawl", page=page, limit=limit)
+
+
+async def cancel_crawl_job(job_id: str) -> bool:
+    return await _request_cancel("crawl", job_id)
+
+
+async def crawl_cancel_requested(job_id: str) -> bool:
+    return await is_cancel_requested("crawl", job_id)
+
+
+async def list_batch_jobs(*, page: int = 1, limit: int = 50) -> tuple[list[dict], int]:
+    return await _list_jobs("batch", page=page, limit=limit)
+
+
+async def cancel_batch_job(job_id: str) -> bool:
+    return await _request_cancel("batch", job_id)
+
+
+async def batch_cancel_requested(job_id: str) -> bool:
+    return await is_cancel_requested("batch", job_id)
 
 
 async def create_batch_job(urls: list[str], formats: list[str], *, webhook_url: str | None = None) -> str:

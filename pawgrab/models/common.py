@@ -21,6 +21,7 @@ class JobStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class AsyncJobResponse(BaseModel):

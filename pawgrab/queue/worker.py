@@ -27,11 +27,13 @@ from pawgrab.models.crawl import CrawlStatus
 from pawgrab.queue.manager import (
     append_batch_result,
     append_result,
+    crawl_cancel_requested,
     delete_checkpoint,
     get_batch_webhook_url,
     get_webhook_url,
     load_checkpoint,
     publish_event,
+    record_dead_letter,
     save_checkpoint,
     update_batch_job,
     update_job,
@@ -231,8 +233,15 @@ async def crawl_job(
 
     checkpoint_interval = settings.checkpoint_interval
 
+    cancelled = False
     try:
         while not strategy.is_empty and pages_scraped < max_pages:
+            # Honor a cancellation request between pages (graceful stop).
+            if await crawl_cancel_requested(job_id):
+                cancelled = True
+                logger.info("crawl_cancelled", job_id=job_id, pages_scraped=pages_scraped)
+                break
+
             item = strategy.next()
             if item is None:
                 break
@@ -309,9 +318,14 @@ async def crawl_job(
                         break
                     strategy.add(href, depth + 1)
 
-        await update_job(job_id, status=CrawlStatus.COMPLETED)
-        await delete_checkpoint(job_id)
-        await publish_event(job_id, "completed", {"pages_scraped": pages_scraped})
+        if cancelled:
+            await update_job(job_id, status=CrawlStatus.CANCELLED)
+            await delete_checkpoint(job_id)
+            await publish_event(job_id, "cancelled", {"pages_scraped": pages_scraped})
+        else:
+            await update_job(job_id, status=CrawlStatus.COMPLETED)
+            await delete_checkpoint(job_id)
+            await publish_event(job_id, "completed", {"pages_scraped": pages_scraped})
 
     except Exception as exc:
         job_error = str(exc)
@@ -325,6 +339,9 @@ async def crawl_job(
             pages_scraped=pages_scraped,
             cookie_jar=cookie_jar,
         )
+        # Only dead-letter once ARQ retries are exhausted (final attempt).
+        if ctx.get("job_try", 1) >= ctx.get("max_tries", 1):
+            await record_dead_letter("crawl", job_id, job_error, meta={"url": url, "pages_scraped": pages_scraped})
 
     webhook_url = await get_webhook_url(job_id)
     if webhook_url:

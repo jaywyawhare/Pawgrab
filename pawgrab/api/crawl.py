@@ -10,7 +10,13 @@ from fastapi.responses import StreamingResponse
 from pawgrab.exceptions import PawgrabError
 from pawgrab.models.common import JOB_ID_RESPONSES, QUEUE_RESPONSES
 from pawgrab.models.crawl import CrawlRequest, CrawlResponse, CrawlStatus
-from pawgrab.queue.manager import create_job, get_job, subscribe_events
+from pawgrab.queue.manager import (
+    cancel_crawl_job,
+    create_job,
+    get_job,
+    list_crawl_jobs,
+    subscribe_events,
+)
 from pawgrab.queue.pool import JOB_ID_RE, get_arq_pool
 
 logger = structlog.get_logger()
@@ -74,6 +80,29 @@ async def start_crawl(req: CrawlRequest):
         raise PawgrabError.queue_unavailable() from exc
 
     return CrawlResponse(job_id=job_id, status=CrawlStatus.QUEUED, url=url)
+
+
+@router.get("/crawl")
+async def list_crawls(
+    page: int = Query(default=1, ge=1, description="Page number"),
+    limit: int = Query(default=50, ge=1, le=200, description="Jobs per page"),
+):
+    """List crawl jobs (newest first) with their status."""
+    jobs, total = await list_crawl_jobs(page=page, limit=limit)
+    return {"jobs": jobs, "total": total, "page": page, "limit": limit, "has_next": page * limit < total}
+
+
+@router.delete(
+    "/crawl/{job_id}",
+    responses=JOB_ID_RESPONSES,
+)
+async def cancel_crawl(job_id: str):
+    """Request cancellation of a running crawl job (graceful stop between pages)."""
+    _require_valid_job_id(job_id)
+    ok = await cancel_crawl_job(job_id)
+    if not ok:
+        raise PawgrabError.not_found(job_id)
+    return {"job_id": job_id, "status": "cancelling"}
 
 
 @router.get(

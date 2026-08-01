@@ -39,6 +39,16 @@ async def browser_pool_metrics():
     return pool.stats()
 
 
+@router.get("/v1/dead-letters")
+async def dead_letters(limit: int = 100):
+    """List terminally-failed jobs captured in the dead-letter queue."""
+    from pawgrab.queue.manager import get_dead_letters
+
+    limit = max(1, min(limit, 1000))
+    entries = await get_dead_letters(limit=limit)
+    return {"dead_letters": entries, "count": len(entries)}
+
+
 @router.get("/v1/usage")
 async def usage_summary():
     """Get aggregate usage analytics."""
