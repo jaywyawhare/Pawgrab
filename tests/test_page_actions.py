@@ -122,9 +122,7 @@ class TestExecuteActions:
         page = AsyncMock()
         # page.locator is sync in Playwright; return a locator whose bounding_box awaits.
         locator = MagicMock()
-        locator.first.bounding_box = AsyncMock(
-            return_value={"x": 10, "y": 20, "width": 40, "height": 10}
-        )
+        locator.first.bounding_box = AsyncMock(return_value={"x": 10, "y": 20, "width": 40, "height": 10})
         page.locator = MagicMock(return_value=locator)
         page.mouse = MagicMock()
         page.mouse.move = AsyncMock()

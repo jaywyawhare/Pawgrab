@@ -71,9 +71,7 @@ async def test_human_click_falls_back_on_error():
 async def test_human_type_types_each_character():
     page = _fake_page()
     await human_type(page, "#q", "hi")
-    typed = "".join(
-        c.args[0] for c in page.keyboard.type.await_args_list if c.args
-    )
+    typed = "".join(c.args[0] for c in page.keyboard.type.await_args_list if c.args)
     # Every real character appears (typo corrections may add extras).
     assert "h" in typed and "i" in typed
 
@@ -90,7 +88,4 @@ async def test_human_scroll_uses_wheel_and_resets():
     await human_scroll(page, max_scrolls=3)
     assert page.mouse.wheel.await_count >= 1
     # Final call resets to top.
-    assert any(
-        "scrollTo(0, 0)" in (c.args[0] if c.args else "")
-        for c in page.evaluate.await_args_list
-    )
+    assert any("scrollTo(0, 0)" in (c.args[0] if c.args else "") for c in page.evaluate.await_args_list)

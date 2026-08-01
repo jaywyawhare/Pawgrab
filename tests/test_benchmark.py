@@ -73,6 +73,4 @@ def test_end_to_end_extraction_does_not_collapse():
         # Recall guards against dropping real content; tolerant of minor
         # reformatting/tokenization differences.
         assert score.recall >= 0.8, f"{name} dropped main content: {score.as_dict()}"
-    assert mean_f1(scores) >= 0.5, {
-        name: score.as_dict() for name, score, _ in results
-    }
+    assert mean_f1(scores) >= 0.5, {name: score.as_dict() for name, score, _ in results}
