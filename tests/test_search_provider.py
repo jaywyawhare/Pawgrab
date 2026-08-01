@@ -137,3 +137,71 @@ async def test_search_google_success():
 async def test_search_google_exception_returns_empty():
     with patch("pawgrab.engine.search_provider.AsyncSession", side_effect=Exception("timeout")):
         assert await _search_google("test", 5) == []
+
+
+async def test_search_web_searxng():
+    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
+        mock_settings.search_provider = "searxng"
+        mock_settings.serpapi_key = ""
+        mock_settings.google_search_api_key = ""
+        mock_settings.searxng_base_url = "https://searx.example"
+        with patch(
+            "pawgrab.engine.search_provider._search_searxng",
+            new_callable=AsyncMock,
+            return_value=["https://sx.com"],
+        ) as mock_sx:
+            from pawgrab.engine.search_provider import search_web
+
+            assert await search_web("q") == ["https://sx.com"]
+            mock_sx.assert_awaited_once()
+
+
+async def test_search_searxng_success():
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.get = AsyncMock(
+        return_value=MagicMock(
+            status_code=200,
+            json=lambda: {
+                "results": [
+                    {"url": "https://a.com"},
+                    {"url": "https://b.com"},
+                    {"url": "https://a.com"},  # duplicate -> deduped
+                ]
+            },
+        )
+    )
+    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
+        mock_settings.searxng_base_url = "https://searx.example/"
+        mock_settings.searxng_engines = ""
+        with patch("pawgrab.engine.search_provider.AsyncSession", return_value=mock_session):
+            from pawgrab.engine.search_provider import _search_searxng
+
+            result = await _search_searxng("test", 5)
+    assert result == ["https://a.com", "https://b.com"]
+
+
+async def test_search_searxng_bad_status_returns_empty():
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.get = AsyncMock(return_value=MagicMock(status_code=403, json=lambda: {}))
+    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
+        mock_settings.searxng_base_url = "https://searx.example"
+        mock_settings.searxng_engines = ""
+        with patch("pawgrab.engine.search_provider.AsyncSession", return_value=mock_session):
+            from pawgrab.engine.search_provider import _search_searxng
+
+            assert await _search_searxng("test", 5) == []
+
+
+async def test_search_serpapi_error_field_returns_empty():
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.get = AsyncMock(return_value=MagicMock(json=lambda: {"error": "Invalid API key"}))
+    with patch("pawgrab.engine.search_provider.settings") as mock_settings:
+        mock_settings.serpapi_key = "bad"
+        with patch("pawgrab.engine.search_provider.AsyncSession", return_value=mock_session):
+            assert await _search_serpapi("test", 5) == []

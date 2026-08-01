@@ -13,13 +13,16 @@ logger = structlog.get_logger()
 async def search_web(query: str, num_results: int = 5) -> list[str]:
     """Search the web and return a list of URLs.
 
-    Dispatches to configured provider (duckduckgo, serpapi, google).
+    Dispatches to the configured provider (duckduckgo, serpapi, google, searxng),
+    falling back to DuckDuckGo when the selected provider isn't configured.
     """
     provider = settings.search_provider
     if provider == "serpapi" and settings.serpapi_key:
         return await _search_serpapi(query, num_results)
     elif provider == "google" and settings.google_search_api_key:
         return await _search_google(query, num_results)
+    elif provider == "searxng" and settings.searxng_base_url:
+        return await _search_searxng(query, num_results)
     else:
         return await _search_duckduckgo(query, num_results)
 
@@ -53,15 +56,55 @@ async def _search_serpapi(query: str, num_results: int) -> list[str]:
                 params={
                     "q": query,
                     "api_key": settings.serpapi_key,
-                    "num": num_results,
+                    "num": max(1, min(num_results, 100)),
                     "engine": "google",
                 },
                 timeout=15,
             )
         data = resp.json()
-        return [r["link"] for r in data.get("organic_results", []) if r.get("link")]
+        # SerpAPI reports quota/auth problems as an "error" field with a 200 body.
+        if isinstance(data, dict) and data.get("error"):
+            logger.warning("serpapi_error", error=data["error"])
+            return []
+        links = [r["link"] for r in data.get("organic_results", []) if r.get("link")]
+        return links[:num_results]
     except Exception as exc:
         logger.warning("serpapi_search_failed", error=str(exc))
+        return []
+
+
+async def _search_searxng(query: str, num_results: int) -> list[str]:
+    """Search using a self-hosted SearXNG instance (JSON API, no key required)."""
+    base = settings.searxng_base_url.rstrip("/")
+    params: dict = {"q": query, "format": "json"}
+    if settings.searxng_engines:
+        params["engines"] = settings.searxng_engines
+    try:
+        async with AsyncSession() as session:
+            resp = await session.get(
+                f"{base}/search",
+                params=params,
+                # Some instances gate the JSON API behind a browser-ish UA.
+                headers={"Accept": "application/json"},
+                timeout=15,
+            )
+        if resp.status_code != 200:
+            logger.warning("searxng_bad_status", status=resp.status_code)
+            return []
+        data = resp.json()
+        results = data.get("results", []) if isinstance(data, dict) else []
+        seen: set[str] = set()
+        urls: list[str] = []
+        for r in results:
+            link = r.get("url")
+            if link and link not in seen:
+                seen.add(link)
+                urls.append(link)
+            if len(urls) >= num_results:
+                break
+        return urls
+    except Exception as exc:
+        logger.warning("searxng_search_failed", error=str(exc))
         return []
 
 

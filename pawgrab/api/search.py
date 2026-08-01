@@ -29,7 +29,7 @@ _SEARCH_CONCURRENCY = 5
 async def search(req: SearchRequest):
     """Search the web and scrape each result page.
 
-    Uses the configured search provider (DuckDuckGo, SerpAPI, or Google)
+    Uses the configured search provider (DuckDuckGo, SerpAPI, Google, or SearXNG)
     to find URLs, then scrapes each one in parallel and returns the content.
     """
     try:
