@@ -154,3 +154,28 @@ class TestExtractorFactory:
     def test_missing_config_raises(self):
         with pytest.raises(ValueError, match="requires"):
             get_extractor("css")
+
+
+def test_regex_redos_pattern_bounded():
+    """A catastrophic-backtracking pattern must not hang the extractor (H8)."""
+    import time
+
+    from pawgrab.engine.extractors import RegexExtractor
+
+    ex = RegexExtractor({"evil": r"(a+)+$"})
+    html = "<html><body>" + "a" * 60 + "!</body></html>"
+    t0 = time.time()
+    result = ex.extract(html)
+    elapsed = time.time() - t0
+    # Bounded well under the 5s per-pattern timeout; returns cleanly (no hang).
+    assert elapsed < 6
+    assert isinstance(result, list)
+
+
+def test_regex_pattern_length_capped():
+    from pawgrab.engine.extractors import RegexExtractor
+
+    import pytest
+
+    with pytest.raises(ValueError):
+        RegexExtractor({"toolong": "a" * 5000})

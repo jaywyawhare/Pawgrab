@@ -11,11 +11,33 @@ from lxml import etree
 
 from pawgrab.utils.text import make_soup
 
+# The `regex` module supports a real ``timeout=`` that is checked *during*
+# matching, so it can actually abort catastrophic backtracking — unlike stdlib
+# ``re`` run in a thread (a thread cannot be interrupted, so the timeout only
+# stops waiting, while the runaway match keeps burning a pool worker forever).
+try:
+    import regex as _regex
+
+    _HAS_REGEX = True
+except ImportError:  # pragma: no cover - regex is a declared dependency
+    _regex = None
+    _HAS_REGEX = False
+
 _REGEX_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+# Reject absurdly long user patterns outright (a cheap first line against ReDoS).
+_MAX_PATTERN_LEN = 2000
 
 
 def _safe_findall(pattern: str, text: str, timeout: int) -> list:
-    """re.findall with a thread-based timeout to prevent catastrophic backtracking."""
+    """findall that can truly abort on catastrophic backtracking."""
+    if _HAS_REGEX:
+        try:
+            return _regex.findall(pattern, text, _regex.MULTILINE | _regex.DOTALL, timeout=timeout)
+        except TimeoutError:
+            return []
+        except _regex.error:
+            return []
     try:
         future = _REGEX_POOL.submit(re.findall, pattern, text, re.MULTILINE | re.DOTALL)
         return future.result(timeout=timeout)
@@ -23,8 +45,15 @@ def _safe_findall(pattern: str, text: str, timeout: int) -> list:
         return []
 
 
-def _safe_finditer(pattern: str, text: str, timeout: int) -> list[re.Match]:
-    """re.finditer with a thread-based timeout. Returns list since threads can't yield."""
+def _safe_finditer(pattern: str, text: str, timeout: int) -> list:
+    """finditer that can truly abort on catastrophic backtracking (returns a list)."""
+    if _HAS_REGEX:
+        try:
+            return list(_regex.finditer(pattern, text, _regex.MULTILINE | _regex.DOTALL, timeout=timeout))
+        except TimeoutError:
+            return []
+        except _regex.error:
+            return []
     try:
         future = _REGEX_POOL.submit(lambda: list(re.finditer(pattern, text, re.MULTILINE | re.DOTALL)))
         return future.result(timeout=timeout)
@@ -170,11 +199,15 @@ class RegexExtractor(BaseExtractor):
     def __init__(self, patterns: dict[str, str] | str):
         if isinstance(patterns, dict):
             for name, p in patterns.items():
+                if len(p) > _MAX_PATTERN_LEN:
+                    raise ValueError(f"Regex for '{name}' exceeds {_MAX_PATTERN_LEN} chars")
                 try:
                     re.compile(p)
                 except re.error as exc:
                     raise ValueError(f"Invalid regex for '{name}': {exc}") from exc
         else:
+            if len(patterns) > _MAX_PATTERN_LEN:
+                raise ValueError(f"Regex pattern exceeds {_MAX_PATTERN_LEN} chars")
             try:
                 re.compile(patterns)
             except re.error as exc:
