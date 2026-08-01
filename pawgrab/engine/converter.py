@@ -200,6 +200,13 @@ def html_to_markdown(html_str: str) -> str:
             _emit_tail(el)
             return
 
+        if tag == "table":
+            _nl()
+            parts.append(_render_gfm_table(el))
+            _nl()
+            _emit_tail(el)
+            return
+
         if tag in ("td", "th"):
             t = el.text_content().strip()
             if t:
@@ -241,6 +248,41 @@ def html_to_markdown(html_str: str) -> str:
     md = "".join(parts)
     lines = (re.sub(r"[ \t]+", " ", line).strip() for line in md.splitlines())
     return _BLANK_COLLAPSE_RE.sub("\n\n", "\n".join(lines)).strip()
+
+
+def _render_gfm_table(table_el) -> str:
+    """Render an lxml <table> as a valid GitHub-Flavored-Markdown table.
+
+    Emits the required ``| --- |`` separator row after the header, expands
+    colspans, sizes every row to the widest, and scopes rows to this table (not
+    nested ones).
+    """
+    rows: list[list[str]] = []
+    # Direct-descendant rows only (skip rows belonging to a nested table).
+    for tr in table_el.xpath("./tr | ./thead/tr | ./tbody/tr | ./tfoot/tr"):
+        cells: list[str] = []
+        for cell in tr.xpath("./td | ./th"):
+            text = " ".join((cell.text_content() or "").split())
+            span = cell.get("colspan")
+            try:
+                repeat = max(1, int(span)) if span else 1
+            except ValueError:
+                repeat = 1
+            cells.append(text)
+            cells.extend([""] * (repeat - 1))
+        if cells:
+            rows.append(cells)
+
+    if not rows:
+        return ""
+
+    width = max(len(r) for r in rows)
+    rows = [r + [""] * (width - len(r)) for r in rows]
+
+    lines = ["| " + " | ".join(rows[0]) + " |", "| " + " | ".join(["---"] * width) + " |"]
+    for r in rows[1:]:
+        lines.append("| " + " | ".join(r) + " |")
+    return "\n".join(lines)
 
 
 def html_to_text(html: str) -> str:

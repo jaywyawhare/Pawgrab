@@ -10,6 +10,47 @@ from bs4 import BeautifulSoup
 logger = structlog.get_logger()
 
 
+def _int_attr(value, default: int = 1) -> int:
+    try:
+        n = int(value)
+        return n if n > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _own_rows(table):
+    """<tr> elements belonging directly to *table*, not to a nested table."""
+    return [tr for tr in table.find_all("tr") if tr.find_parent("table") is table]
+
+
+def _own_cells(tr):
+    """<td>/<th> belonging directly to *tr*, not to a nested table's row."""
+    return [c for c in tr.find_all(["td", "th"]) if c.find_parent("tr") is tr]
+
+
+def _build_grid(table) -> list[list[str]]:
+    """Expand a table into a dense grid, honoring colspan and rowspan."""
+    occupied: dict[tuple[int, int], str] = {}
+    max_col = 0
+    for r, tr in enumerate(_own_rows(table)):
+        c = 0
+        for cell in _own_cells(tr):
+            while (r, c) in occupied:
+                c += 1
+            text = cell.get_text(strip=True)
+            cspan = _int_attr(cell.get("colspan"))
+            rspan = _int_attr(cell.get("rowspan"))
+            for dr in range(rspan):
+                for dc in range(cspan):
+                    occupied[(r + dr, c + dc)] = text
+            c += cspan
+            max_col = max(max_col, c)
+    if not occupied:
+        return []
+    n_rows = max(k[0] for k in occupied) + 1
+    return [[occupied.get((r, c), "") for c in range(max_col)] for r in range(n_rows)]
+
+
 def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[str, Any]]:
     """Extract HTML tables into structured data.
 
@@ -37,43 +78,41 @@ def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[st
         caption_tag = table.find("caption")
         caption = caption_tag.get_text(strip=True) if caption_tag else None
 
-        headers = []
-        thead = table.find("thead")
-        if thead:
-            header_row = thead.find("tr")
-            if header_row:
-                headers = [th.get_text(strip=True) for th in header_row.find_all(["th", "td"])]
+        grid = _build_grid(table)
+        if not grid:
+            results.append(
+                {
+                    "index": table_index if table_index is not None else idx,
+                    "caption": caption,
+                    "headers": [],
+                    "rows": [],
+                    "raw_rows": [],
+                    "row_count": 0,
+                    "column_count": 0,
+                }
+            )
+            continue
 
-        if not headers:
-            first_row = table.find("tr")
-            if first_row:
-                ths = first_row.find_all("th")
-                if ths:
-                    headers = [th.get_text(strip=True) for th in ths]
+        column_count = max(len(r) for r in grid)
 
-        raw_rows = []
+        # Header row: from <thead>/first row if it has <th>, else the first row.
+        first_tr = _own_rows(table)[0] if _own_rows(table) else None
+        has_header = bool(table.find("thead")) or (first_tr is not None and any(c.name == "th" for c in _own_cells(first_tr)))
+        if has_header:
+            headers = grid[0]
+            body = grid[1:]
+        else:
+            headers = []
+            body = grid
+
+        raw_rows = body
         row_dicts = []
-        tbody = table.find("tbody") or table
-        for tr in tbody.find_all("tr"):
-            cells = tr.find_all(["td", "th"])
-            if not cells:
-                continue
-
-            # Skip header row if we already extracted headers from it
-            cell_texts = [cell.get_text(strip=True) for cell in cells]
-            if cell_texts == headers:
-                continue
-
-            raw_rows.append(cell_texts)
-
-            if headers and len(cell_texts) <= len(headers):
+        if headers:
+            for row in body:
                 row_dict = {}
-                for i, value in enumerate(cell_texts):
-                    key = headers[i] if i < len(headers) else f"column_{i}"
+                for i, value in enumerate(row):
+                    key = headers[i] if i < len(headers) and headers[i] else f"column_{i}"
                     row_dict[key] = value
-                row_dicts.append(row_dict)
-            elif headers:
-                row_dict = {headers[i]: cell_texts[i] for i in range(len(headers)) if i < len(cell_texts)}
                 row_dicts.append(row_dict)
 
         results.append(
@@ -84,7 +123,7 @@ def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[st
                 "rows": row_dicts,
                 "raw_rows": raw_rows,
                 "row_count": len(raw_rows),
-                "column_count": len(headers),
+                "column_count": column_count,
             }
         )
 

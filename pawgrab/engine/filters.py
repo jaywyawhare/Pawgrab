@@ -22,10 +22,13 @@ _BOILERPLATE_TAGS = frozenset(
     }
 )
 
+# Word-boundary anchored so "share" doesn't match "shareholder", "nav" doesn't
+# match "navy", etc. Class/id separators (-, space) are non-word chars, so tokens
+# like "social-share" or "nav-menu" still match on the whole word.
 _BOILERPLATE_PATTERNS = re.compile(
-    r"(sidebar|footer|header|nav|menu|breadcrumb|widget|banner|advert|cookie|"
+    r"\b(sidebar|footer|header|nav|menu|breadcrumb|widget|banner|advert|cookie|"
     r"social|share|comment|related|popup|modal|overlay|newsletter|signup|"
-    r"pagination|pager|copyright|disclaimer|masthead|topbar|toolbar)",
+    r"pagination|pager|copyright|disclaimer|masthead|topbar|toolbar)\b",
     re.IGNORECASE,
 )
 

@@ -181,25 +181,47 @@ async def compare_screenshots(url: str, current_screenshot: bytes, *, ttl: int |
 
 
 def _pixel_diff_percentage(img1_bytes: bytes, img2_bytes: bytes) -> float:
-    """Calculate percentage of differing pixels between two PNG images.
+    """Percentage of differing pixels between two PNG images.
 
-    Uses a simple byte-level comparison when images are the same size,
-    or reports 100% diff when sizes differ.
+    Decodes both PNGs to raw pixel arrays (via pymupdf) and compares pixel-by-
+    pixel — comparing the *compressed* streams is meaningless because a one-pixel
+    change reflows the whole compressed output. Falls back to a byte compare only
+    if decoding is unavailable.
     """
     if img1_bytes == img2_bytes:
         return 0.0
 
-    # If lengths differ significantly, likely different dimensions
+    decoded = _decode_pixels(img1_bytes)
+    decoded2 = _decode_pixels(img2_bytes)
+    if decoded is not None and decoded2 is not None:
+        (w1, h1, n1, s1), (w2, h2, _n2, s2) = decoded, decoded2
+        if (w1, h1) != (w2, h2):
+            return 100.0  # different dimensions => fully changed
+        stride = max(1, n1)
+        total = min(len(s1), len(s2)) // stride
+        if total == 0:
+            return 100.0
+        diff = sum(1 for i in range(0, total * stride, stride) if s1[i : i + stride] != s2[i : i + stride])
+        return (diff / total) * 100
+
+    # Fallback: rough byte comparison of the compressed streams.
     len_ratio = min(len(img1_bytes), len(img2_bytes)) / max(len(img1_bytes), len(img2_bytes))
     if len_ratio < 0.8:
         return 100.0
-
-    # Byte-level comparison (rough but dependency-free)
     min_len = min(len(img1_bytes), len(img2_bytes))
     diff_count = sum(1 for i in range(0, min_len, 4) if img1_bytes[i : i + 4] != img2_bytes[i : i + 4])
     total_chunks = min_len // 4
-
     if total_chunks == 0:
         return 100.0
-
     return (diff_count / total_chunks) * 100
+
+
+def _decode_pixels(img_bytes: bytes):
+    """Decode a PNG to ``(width, height, channels, samples)`` or None on failure."""
+    try:
+        import fitz  # pymupdf
+
+        pix = fitz.Pixmap(img_bytes)
+        return pix.width, pix.height, pix.n, pix.samples
+    except Exception:
+        return None

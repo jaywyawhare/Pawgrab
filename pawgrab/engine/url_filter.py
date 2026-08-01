@@ -146,8 +146,20 @@ class DuplicateFilter(URLFilter):
     @staticmethod
     def _normalize(url: str) -> str:
         parsed = urlparse(url)
+        # Lowercase host, drop default ports and any leading "www.", drop the
+        # fragment, and sort query params so trivially-equivalent URLs collapse.
+        host = (parsed.hostname or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        if parsed.port and parsed.port not in (80, 443):
+            host = f"{host}:{parsed.port}"
         path = parsed.path.rstrip("/") or "/"
-        return f"{parsed.scheme}://{parsed.netloc}{path}?{parsed.query}" if parsed.query else f"{parsed.scheme}://{parsed.netloc}{path}"
+        if parsed.query:
+            from urllib.parse import parse_qsl, urlencode
+
+            query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+            return f"{parsed.scheme}://{host}{path}?{query}"
+        return f"{parsed.scheme}://{host}{path}"
 
     def reset(self):
         self._seen.clear()
