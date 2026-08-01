@@ -73,12 +73,20 @@ async def _chunked_extract(
 ) -> dict[str, Any]:
     """Extract from large content by chunking, extracting each chunk, then merging."""
     from pawgrab.ai.chunking import get_chunker
+    from pawgrab.config import settings
 
     chunker = get_chunker(chunk_strategy, chunk_size=chunk_size, overlap=chunk_overlap)
     chunks = chunker.chunk(markdown)
 
     if len(chunks) <= 1:
         return await provider.extract(markdown, prompt, schema_hint, json_schema=json_schema)
+
+    # Cap total chunks to bound cost/latency; log what was dropped (no silent
+    # truncation) so callers know the tail of a huge page wasn't processed.
+    max_chunks = settings.llm_max_chunks
+    if len(chunks) > max_chunks:
+        logger.warning("chunk_cap_applied", total_chunks=len(chunks), processed=max_chunks, dropped=len(chunks) - max_chunks)
+        chunks = chunks[:max_chunks]
 
     logger.info("chunked_extraction", num_chunks=len(chunks), strategy=chunk_strategy)
 

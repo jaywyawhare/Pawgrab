@@ -199,6 +199,12 @@ async def crawl_job(
     kw_list = orjson.loads(keywords) if keywords else None
     strategy = get_strategy(strategy_name, keywords=kw_list)
 
+    # An ARQ auto-retry (job_try > 1) must resume from the last checkpoint rather
+    # than re-crawl from scratch — otherwise results are appended twice and
+    # pages_scraped double-counts.
+    if ctx.get("job_try", 1) > 1:
+        resume = True
+
     await update_job(job_id, status=CrawlStatus.IN_PROGRESS)
 
     visited: set[str] = set()

@@ -22,7 +22,11 @@ _redis: Redis | None = None
 _redis_lock = asyncio.Lock()
 
 _HEARTBEAT_INTERVAL = 15
-_JOB_TTL = 3600
+
+
+def _job_ttl() -> int:
+    """Status-hash lifetime, refreshed on every update (see config.job_ttl_seconds)."""
+    return settings.job_ttl_seconds
 
 
 async def get_redis() -> Redis:
@@ -59,7 +63,7 @@ async def _create_job(prefix: str, fields: dict[str, Any], *, webhook_url: str |
     redis = await get_redis()
     fields.update({"job_id": job_id, "status": CrawlStatus.QUEUED.value, "error": "", "webhook_url": webhook_url or ""})
     await redis.hset(_key(prefix, job_id), mapping=fields)
-    await redis.expire(_key(prefix, job_id), _JOB_TTL)
+    await redis.expire(_key(prefix, job_id), _job_ttl())
     return job_id
 
 
@@ -86,14 +90,17 @@ async def _update_job(prefix: str, job_id: str, **fields: Any) -> None:
     updates = {k: v.value if hasattr(v, "value") else v for k, v in fields.items() if v is not None}
     if updates:
         redis = await get_redis()
-        await redis.hset(_key(prefix, job_id), mapping=updates)
+        key = _key(prefix, job_id)
+        await redis.hset(key, mapping=updates)
+        # Refresh TTL so a long-running job's status never expires mid-run.
+        await redis.expire(key, _job_ttl())
 
 
 async def _append_result(prefix: str, job_id: str, result_dict: dict) -> None:
     redis = await get_redis()
     key = _results_key(prefix, job_id)
     await redis.rpush(key, orjson.dumps(result_dict).decode())
-    await redis.expire(key, _JOB_TTL)
+    await redis.expire(key, _job_ttl())
 
 
 async def _get_webhook_url(prefix: str, job_id: str) -> str | None:

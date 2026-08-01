@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
 
     llm_provider: str = "openai"
+    # Hard cap on chunks sent to the LLM per extraction — bounds cost/latency on
+    # huge pages (a chunked extract would otherwise fan out unboundedly).
+    llm_max_chunks: int = Field(default=20, ge=1, le=200)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
     gemini_api_key: str = ""
@@ -115,6 +118,9 @@ class Settings(BaseSettings):
     worker_max_jobs: int = Field(default=5, ge=1, le=50)
     worker_job_timeout: int = Field(default=600, ge=30, le=7200)
     checkpoint_interval: int = Field(default=10, ge=1, le=100)
+    # Lifetime of a job's Redis status hash. Refreshed on every update so a long
+    # crawl's status never expires mid-run; must exceed worker_job_timeout.
+    job_ttl_seconds: int = Field(default=14400, ge=3600)
 
     sse_max_duration: int = Field(default=3600, ge=60, le=86400)
 
