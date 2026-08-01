@@ -12,7 +12,14 @@ logger = structlog.get_logger()
 
 
 class UsageTracker:
-    """Track API usage per client key."""
+    """Track API usage per client key.
+
+    In-memory only (per-process): stats reset on restart and are not aggregated
+    across workers. Client cardinality is bounded by LRU eviction so a flood of
+    distinct keys can't grow memory without limit.
+    """
+
+    _MAX_CLIENTS = 10_000
 
     def __init__(self):
         self._lock = Lock()
@@ -23,10 +30,21 @@ class UsageTracker:
         self._last_seen: dict[str, float] = {}
         self._first_seen: dict[str, float] = {}
 
+    def _evict_if_needed(self, incoming: str) -> None:
+        """Drop the least-recently-seen client when over the cardinality cap."""
+        if incoming in self._requests or len(self._requests) < self._MAX_CLIENTS:
+            return
+        oldest = min(self._last_seen, key=self._last_seen.get, default=None)
+        if oldest is None:
+            return
+        for d in (self._requests, self._bandwidth, self._endpoints, self._errors, self._last_seen, self._first_seen):
+            d.pop(oldest, None)
+
     def record_request(self, client_key: str, endpoint: str, response_size: int = 0, is_error: bool = False):
         """Record an API request."""
         now = time.time()
         with self._lock:
+            self._evict_if_needed(client_key)
             self._requests[client_key] += 1
             self._bandwidth[client_key] += response_size
             self._endpoints[client_key][endpoint] += 1
