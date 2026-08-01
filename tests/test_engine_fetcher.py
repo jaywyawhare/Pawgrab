@@ -277,6 +277,9 @@ def test_captcha_types_need_solver_to_be_browser_solvable():
         gs.return_value.available = True
         assert _is_browser_solvable(_FakeChallenge("recaptcha")) is True
         assert _is_browser_solvable(_FakeChallenge("hcaptcha")) is True
+        # Cookie-based vendors now escalate too (solved via provider cookie tasks).
+        for t in ("datadome", "imperva", "aws_waf", "perimeterx", "akamai"):
+            assert _is_browser_solvable(_FakeChallenge(t)) is True
 
 
 async def test_cookies_use_isolated_page():

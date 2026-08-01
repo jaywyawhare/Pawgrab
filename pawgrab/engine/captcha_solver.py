@@ -92,6 +92,60 @@ class CaptchaSolver:
             )
         return None
 
+    # Cookie-based anti-bot vendors (DataDome / Imperva / AWS-WAF). These return a
+    # cookie (or token) via the same 2Captcha/CapSolver backends used above; the
+    # caller injects it and reloads. Vendors with no generic provider task type
+    # (PerimeterX, Akamai — proxy-service based) return None rather than pretend.
+    _CAPSOLVER_TASKS = {
+        "datadome": "DatadomeSliderTask",
+        "imperva": "AntiImpervaTask",
+        "aws_waf": "AntiAwsWafTask",
+    }
+    _2CAPTCHA_METHODS = {
+        "datadome": "datadome",
+        "aws_waf": "amazon_waf",
+    }
+
+    async def solve_cookie_challenge(
+        self,
+        challenge_type: str,
+        *,
+        page_url: str,
+        captcha_url: str | None = None,
+        user_agent: str | None = None,
+        proxy: str | None = None,
+    ) -> str | None:
+        """Solve a cookie-based anti-bot challenge; returns a cookie/token or None."""
+        if not self.available:
+            return None
+        if self._provider == "capsolver":
+            task_type = self._CAPSOLVER_TASKS.get(challenge_type)
+            if not task_type:
+                logger.info("capsolver_no_task_for_vendor", vendor=challenge_type)
+                return None
+            params: dict = {"websiteURL": page_url}
+            if captcha_url:
+                params["captchaUrl"] = captcha_url
+            if user_agent:
+                params["userAgent"] = user_agent
+            if proxy:
+                params["proxy"] = proxy
+            return await self._solve_capsolver(task_type, params)
+        if self._provider == "2captcha":
+            method = self._2CAPTCHA_METHODS.get(challenge_type)
+            if not method:
+                logger.info("2captcha_no_method_for_vendor", vendor=challenge_type)
+                return None
+            params = {"pageurl": page_url}
+            if captcha_url:
+                params["captcha_url"] = captcha_url
+            if user_agent:
+                params["userAgent"] = user_agent
+            if proxy:
+                params["proxy"] = proxy
+            return await self._solve_2captcha(method, params)
+        return None
+
     async def _solve_2captcha(self, method: str, params: dict) -> str | None:
         """Submit and poll 2Captcha API."""
         try:
@@ -160,7 +214,9 @@ class CaptchaSolver:
                     status = result.get("status")
                     if status == "ready":
                         solution = result.get("solution", {})
-                        token = solution.get("gRecaptchaResponse") or solution.get("token")
+                        # Token-based (reCAPTCHA/hCaptcha/Turnstile/AWS-WAF) or
+                        # cookie-based (DataDome/Imperva) solutions.
+                        token = solution.get("gRecaptchaResponse") or solution.get("token") or solution.get("cookie")
                         logger.info("capsolver_solved", task_type=task_type)
                         return token
                     if status == "failed":
@@ -268,4 +324,83 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
 
     except Exception as exc:
         logger.warning("captcha_solve_failed", url=url, error=str(exc))
+        return False
+
+
+# The challenge-script URL DataDome/Imperva embed (needed by the solver task).
+_COOKIE_CHALLENGE_URL_JS = """() => {
+    const sel = [
+        'script[src*="captcha-delivery.com"]',
+        'script[src*="datadome"]',
+        'iframe[src*="captcha-delivery.com"]',
+        'script[src*="imperva"]',
+        'script[src*="incapsula"]',
+    ];
+    for (const s of sel) {
+        const el = document.querySelector(s);
+        if (el) return el.src;
+    }
+    return null;
+}"""
+
+
+async def solve_cookie_challenge_on_page(page, url: str, challenge_type: str, *, proxy: str | None = None) -> bool:
+    """Solve a cookie-based anti-bot challenge (DataDome/Imperva/AWS-WAF) via the
+    external solver, set the returned cookie on the context, and reload.
+
+    Returns True if the challenge cleared. Vendors the configured provider has no
+    task for (e.g. PerimeterX/Akamai) resolve to None and return False cleanly.
+    """
+    solver = get_solver()
+    if not solver.available:
+        return False
+    try:
+        user_agent = await page.evaluate("() => navigator.userAgent")
+        captcha_url = await page.evaluate(_COOKIE_CHALLENGE_URL_JS)
+
+        cookie_or_token = await solver.solve_cookie_challenge(
+            challenge_type,
+            page_url=url,
+            captcha_url=captcha_url,
+            user_agent=user_agent,
+            proxy=proxy,
+        )
+        if not cookie_or_token:
+            return False
+
+        # AWS WAF returns a token injected into the page; DataDome/Imperva return
+        # a cookie string ("name=value; ...") that must be set on the context.
+        if challenge_type == "aws_waf":
+            await page.evaluate(
+                """(tok) => {
+                    const el = document.querySelector('[name="awswaf-response"], #awswaf-response');
+                    if (el) el.value = tok;
+                    window.awsWafCookieDomainList && (window.__awswaf_token = tok);
+                }""",
+                cookie_or_token,
+            )
+        else:
+            from urllib.parse import urlparse
+
+            name, _, rest = cookie_or_token.partition("=")
+            value = rest.split(";")[0] if rest else ""
+            if name and value:
+                await page.context.add_cookies([{"name": name.strip(), "value": value.strip(), "url": url}])
+            else:
+                # Solver returned an opaque token — set it under the vendor's cookie name.
+                cookie_name = {"datadome": "datadome", "imperva": "visid_incap"}.get(challenge_type)
+                if cookie_name:
+                    domain = urlparse(url).hostname or ""
+                    await page.context.add_cookies([{"name": cookie_name, "value": cookie_or_token, "domain": domain, "path": "/"}])
+
+        try:
+            await page.reload(wait_until="domcontentloaded", timeout=20_000)
+        except Exception:
+            pass
+        html = await page.content()
+        cleared = challenge_type.replace("_", "") not in html.lower() and "captcha-delivery" not in html.lower()
+        logger.info("cookie_challenge_attempted", url=url, type=challenge_type, cleared=cleared)
+        return cleared
+    except Exception as exc:
+        logger.warning("cookie_challenge_solve_failed", url=url, type=challenge_type, error=str(exc))
         return False

@@ -40,9 +40,12 @@ _BROWSER_SOLVABLE_CHALLENGES = frozenset(
 
 
 # Token-injection CAPTCHAs the external solver (solve_captcha_on_page) can clear.
-# DataDome/Sucuri need a different (cookie-based) flow that isn't implemented, so
-# they're excluded — escalating them would only waste a browser slot.
 _SOLVER_REQUIRED_CHALLENGES = frozenset({"recaptcha", "hcaptcha"})
+
+# Cookie-based anti-bot vendors solved via the external provider's cookie tasks
+# (solve_cookie_challenge_on_page). Only worth a browser slot when a solver is
+# configured; vendors the provider has no task for degrade gracefully.
+_COOKIE_SOLVABLE_CHALLENGES = frozenset({"datadome", "imperva", "aws_waf", "perimeterx", "akamai"})
 
 
 def _is_browser_solvable(challenge) -> bool:
@@ -50,9 +53,9 @@ def _is_browser_solvable(challenge) -> bool:
         return False
     if challenge.challenge_type in _BROWSER_SOLVABLE_CHALLENGES:
         return True
-    # reCAPTCHA/hCaptcha/DataDome are only worth a browser slot if a solver is
-    # configured to actually crack them — otherwise it just hardens the block.
-    if challenge.challenge_type in _SOLVER_REQUIRED_CHALLENGES:
+    # CAPTCHA / cookie-vendor challenges are only worth a browser slot if a solver
+    # is configured to actually crack them — otherwise it just hardens the block.
+    if challenge.challenge_type in _SOLVER_REQUIRED_CHALLENGES or challenge.challenge_type in _COOKIE_SOLVABLE_CHALLENGES:
         from pawgrab.engine.captcha_solver import get_solver
 
         return get_solver().available
@@ -945,6 +948,28 @@ async def _fetch_with_browser(
             from pawgrab.engine.captcha_solver import get_solver, solve_captcha_on_page
 
             if get_solver().available and await solve_captcha_on_page(page, url, challenge.challenge_type):
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=_CF_SETTLE_MS)
+                except Exception:
+                    pass
+                html = await page.content()
+                if not detect_challenge(status, {}, html).detected:
+                    return FetchResult(
+                        html=html,
+                        status_code=200,
+                        url=page.url,
+                        used_browser=True,
+                        action_warnings=action_warnings,
+                        network_requests=network_requests,
+                        console_logs=console_logs,
+                    )
+
+        # Cookie-based vendors (DataDome / Imperva / AWS-WAF / …): solve via the
+        # external provider's cookie task, inject the cookie, and reload.
+        if challenge.detected and challenge.challenge_type in _COOKIE_SOLVABLE_CHALLENGES:
+            from pawgrab.engine.captcha_solver import get_solver, solve_cookie_challenge_on_page
+
+            if get_solver().available and await solve_cookie_challenge_on_page(page, url, challenge.challenge_type, proxy=proxy_url):
                 try:
                     await page.wait_for_load_state("networkidle", timeout=_CF_SETTLE_MS)
                 except Exception:
