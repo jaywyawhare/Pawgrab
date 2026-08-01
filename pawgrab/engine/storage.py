@@ -36,12 +36,25 @@ class FilesystemStorage(StorageBackend):
         self._base_dir = Path(base_dir or settings.storage_path)
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _safe_segment(value: str, *, field: str) -> str:
+        """Reject path-traversal / separator characters in a key or prefix."""
+        if not value or value in (".", "..") or "/" in value or "\\" in value or "\x00" in value:
+            raise ValueError(f"unsafe storage {field}: {value!r}")
+        return value
+
     def _path(self, key: str, prefix: str = "") -> Path:
+        key = self._safe_segment(key, field="key")
+        base = self._base_dir
         if prefix:
-            d = self._base_dir / prefix
-            d.mkdir(parents=True, exist_ok=True)
-            return d / f"{key}.json"
-        return self._base_dir / f"{key}.json"
+            prefix = self._safe_segment(prefix, field="prefix")
+            base = self._base_dir / prefix
+            base.mkdir(parents=True, exist_ok=True)
+        path = (base / f"{key}.json").resolve()
+        # Defense in depth: the resolved path must stay under base_dir.
+        if not path.is_relative_to(self._base_dir.resolve()):
+            raise ValueError(f"storage path escapes base dir: {key!r}")
+        return path
 
     async def store(self, key: str, data: dict, *, prefix: str = "") -> str:
         import asyncio

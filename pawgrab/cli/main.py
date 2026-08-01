@@ -82,6 +82,21 @@ def serve(
     """Start the Pawgrab API server."""
     import uvicorn
 
+    from pawgrab.config import settings
+
+    # Fail closed: refuse to expose an unauthenticated server on a non-loopback
+    # interface unless the operator explicitly opted in.
+    loopback = host in ("127.0.0.1", "localhost", "::1")
+    if not settings.api_key and not settings.allow_unauthenticated and not loopback:
+        console.print(
+            "[red]Refusing to start:[/red] no PAWGRAB_API_KEY set and binding a "
+            f"public interface ({host}). Set PAWGRAB_API_KEY, or "
+            "PAWGRAB_ALLOW_UNAUTHENTICATED=true to run open, or bind 127.0.0.1."
+        )
+        raise typer.Exit(code=1)
+    if not settings.api_key:
+        console.print("[yellow]Warning:[/yellow] running without authentication (no PAWGRAB_API_KEY).")
+
     uvicorn.run("pawgrab.main:app", host=host, port=port, reload=reload)
 
 

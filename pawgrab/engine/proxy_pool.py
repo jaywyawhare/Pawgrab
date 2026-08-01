@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import structlog
 
 from pawgrab.config import settings
+from pawgrab.utils.url_safety import redact_url_creds
 
 logger = structlog.get_logger()
 
@@ -179,7 +180,7 @@ class ProxyPool:
         if parsed.scheme not in _VALID_PROXY_SCHEMES:
             logger.warning(
                 "proxy_invalid_scheme",
-                url=url,
+                url=redact_url_creds(url),
                 scheme=parsed.scheme,
                 valid=sorted(_VALID_PROXY_SCHEMES),
             )
@@ -220,10 +221,7 @@ class ProxyPool:
 
             want_tier = "premium" if premium else "standard"
             offer_limit = settings.proxy_offer_limit
-            candidates = [
-                e for e in self._entries
-                if e.tier == want_tier and not e.should_skip(offer_limit)
-            ]
+            candidates = [e for e in self._entries if e.tier == want_tier and not e.should_skip(offer_limit)]
             if not candidates:
                 return None
 
@@ -274,7 +272,7 @@ class ProxyPool:
                 if entry.ok and entry.should_evict(threshold):
                     entry.ok = False
                     entry.reanimate_after = time.monotonic() + backoff
-                    logger.info("proxy_evicted", url=entry.url, recent_failures=entry.recent_failures)
+                    logger.info("proxy_evicted", url=redact_url_creds(entry.url), recent_failures=entry.recent_failures)
 
     async def _check_one_proxy(self, entry: ProxyEntry) -> None:
         """Health-check a single proxy entry."""
@@ -289,14 +287,14 @@ class ProxyPool:
                 if resp.status_code == 200:
                     latency = time.monotonic() - t0
                     entry.mark_success(speed=latency)
-                    logger.info("proxy_health_ok", url=entry.url, latency=round(latency, 3), socks=entry.is_socks)
+                    logger.info("proxy_health_ok", url=redact_url_creds(entry.url), latency=round(latency, 3), socks=entry.is_socks)
                 else:
                     entry.mark_failure(backoff_seconds=settings.proxy_backoff_seconds)
-                    logger.info("proxy_health_fail", url=entry.url, status=resp.status_code, socks=entry.is_socks)
+                    logger.info("proxy_health_fail", url=redact_url_creds(entry.url), status=resp.status_code, socks=entry.is_socks)
         except Exception as exc:
             is_timeout = "timeout" in str(exc).lower()
             entry.mark_failure(is_timeout=is_timeout, backoff_seconds=settings.proxy_backoff_seconds)
-            logger.info("proxy_health_error", url=entry.url, error=str(exc), socks=entry.is_socks)
+            logger.info("proxy_health_error", url=redact_url_creds(entry.url), error=str(exc), socks=entry.is_socks)
 
     async def _health_check_loop(self) -> None:
         """Periodically check all proxy health concurrently via IP-check endpoints."""

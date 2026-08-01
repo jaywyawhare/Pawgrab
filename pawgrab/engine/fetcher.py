@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import structlog
 from curl_cffi import CurlHttpVersion
@@ -22,6 +22,7 @@ from pawgrab.engine.antibot import (
 )
 from pawgrab.engine.detector import needs_js_rendering
 from pawgrab.engine.pdf_extractor import is_pdf_content
+from pawgrab.utils.url_safety import assert_public_url
 
 logger = structlog.get_logger()
 
@@ -441,6 +442,9 @@ async def fetch_page(
     return result
 
 
+_REDIRECT_STATUS = (301, 302, 303, 307, 308)
+
+
 async def _fetch_with_curl(
     url: str,
     *,
@@ -457,30 +461,44 @@ async def _fetch_with_curl(
     """
     timeout_s = timeout / 1000
     session = await _get_session(impersonate, proxy=proxy)
-    try:
-        resp = await session.get(
-            url,
+
+    async def _single(target: str, verify: bool):
+        # allow_redirects=False so we follow hops manually and SSRF-check each one.
+        return await session.get(
+            target,
             timeout=timeout_s,
-            allow_redirects=True,
+            allow_redirects=False,
             headers=headers,
             cookies=cookies,
+            verify=verify,
         )
-    except SSLError as exc:
-        # Misconfigured / expired certs are common on long-tail sites. Retry once
-        # without verification so a self-signed cert doesn't cost us the page.
-        logger.warning("curl_ssl_retry_no_verify", url=url, impersonate=impersonate, error=str(exc))
+
+    async def _guarded_get(target: str):
         try:
-            resp = await session.get(
-                url,
-                timeout=timeout_s,
-                allow_redirects=True,
-                headers=headers,
-                cookies=cookies,
-                verify=False,
-            )
-        except Exception as exc2:
-            logger.warning("curl_fetch_failed", url=url, impersonate=impersonate, error=str(exc2))
-            raise
+            return await _single(target, True)
+        except SSLError as exc:
+            # Misconfigured / expired certs are common on long-tail sites, but
+            # silently disabling verification is a MITM risk — opt-in only.
+            if not settings.allow_insecure_ssl:
+                logger.warning("curl_ssl_error", url=target, impersonate=impersonate, error=str(exc))
+                raise
+            logger.warning("curl_ssl_retry_no_verify", url=target, impersonate=impersonate, error=str(exc))
+            return await _single(target, False)
+
+    try:
+        current = url
+        resp = None
+        for _hop in range(settings.max_redirects + 1):
+            resp = await _guarded_get(current)
+            location = resp.headers.get("location") or resp.headers.get("Location")
+            if resp.status_code in _REDIRECT_STATUS and location:
+                nxt = urljoin(current, location)
+                # Re-validate every hop: an attacker-controlled 3xx can point at
+                # 169.254.169.254 even when the initial URL was public.
+                await assert_public_url(nxt)
+                current = nxt
+                continue
+            break
     except Exception as exc:
         logger.warning("curl_fetch_failed", url=url, impersonate=impersonate, error=str(exc))
         raise
@@ -541,15 +559,11 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
             match action.type:
                 case ActionType.CLICK:
                     if humanize:
-                        box = await page.locator(action.selector).first.bounding_box(
-                            timeout=per_action_timeout
-                        )
+                        box = await page.locator(action.selector).first.bounding_box(timeout=per_action_timeout)
                         if box:
                             from pawgrab.engine.humanize import human_click
 
-                            await human_click(
-                                page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-                            )
+                            await human_click(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
                         else:
                             await page.click(action.selector, timeout=per_action_timeout)
                     else:
@@ -644,6 +658,7 @@ def _load_readability_js() -> str:
     global _READABILITY_JS
     if _READABILITY_JS is None:
         import pathlib
+
         js_path = pathlib.Path(__file__).parent / "readability.js"
         if js_path.exists():
             _READABILITY_JS = js_path.read_text(encoding="utf-8")
@@ -850,9 +865,7 @@ async def _fetch_with_browser(
         ):
             from pawgrab.engine.captcha_solver import get_solver, solve_captcha_on_page
 
-            if get_solver().available and await solve_captcha_on_page(
-                page, url, challenge.challenge_type
-            ):
+            if get_solver().available and await solve_captcha_on_page(page, url, challenge.challenge_type):
                 try:
                     await page.wait_for_load_state("networkidle", timeout=_CF_SETTLE_MS)
                 except Exception:

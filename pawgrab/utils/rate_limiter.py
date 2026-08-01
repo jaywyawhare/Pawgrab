@@ -35,9 +35,15 @@ async def wait_for_slot(url: str) -> None:
 
 
 async def guard_url(url: str) -> None:
-    """Check robots.txt and wait for a rate limit slot. Raises PermissionError if blocked."""
-    from pawgrab.engine.robots import is_allowed
+    """Validate a fetch target, check robots.txt, and wait for a rate-limit slot.
 
+    Raises ``SSRFError`` for private/internal targets and ``PermissionError`` for
+    robots-disallowed URLs.
+    """
+    from pawgrab.engine.robots import is_allowed
+    from pawgrab.utils.url_safety import assert_public_url
+
+    await assert_public_url(url)
     if not await is_allowed(url):
         raise PermissionError(f"URL blocked by robots.txt: {url}")
     await wait_for_slot(url)

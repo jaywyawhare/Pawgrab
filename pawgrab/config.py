@@ -42,10 +42,28 @@ class Settings(BaseSettings):
     robots_cache_ttl: int = Field(default=3600, ge=0)
     robots_fetch_timeout: int = Field(default=10, ge=1, le=60)
 
+    # SSRF protection: block fetch/webhook targets that resolve to private,
+    # loopback, link-local (cloud-metadata), or reserved addresses. Disable only
+    # for trusted local development. allow_private_urls fully bypasses the check.
+    ssrf_protection: bool = True
+    allow_private_urls: bool = False
+    # Max redirect hops to follow on the curl path (each hop is SSRF-revalidated).
+    max_redirects: int = Field(default=10, ge=0, le=30)
+    # Retry a failed TLS handshake with verification disabled. Off by default —
+    # enabling it silently downgrades security for self-signed/expired-cert sites.
+    allow_insecure_ssl: bool = False
+
     stealth_mode: bool = True
     max_challenge_retries: int = Field(default=3, ge=0, le=10)
     impersonate: str = ""
     solve_cloudflare: bool = True
+
+    # Auth / CORS. With no api_key the API is unauthenticated; that is only
+    # allowed when allow_unauthenticated is explicitly set (else `serve` refuses
+    # to start). CORS origins are configured independently of the api_key —
+    # wildcard is never paired with open auth automatically.
+    allow_unauthenticated: bool = False
+    cors_allow_origins: str = ""  # comma-separated; empty = no cross-origin
 
     # Human-like input on the browser path (Bezier mouse, per-char typing, wheel
     # scroll). Scores higher against behavioural anti-bot layers than instant clicks.
@@ -80,6 +98,9 @@ class Settings(BaseSettings):
 
     webhook_timeout: int = Field(default=15, ge=1, le=120)
     webhook_retries: int = Field(default=3, ge=0, le=10)
+    # HMAC-SHA256 signing secret for webhook payloads. When set, deliveries carry
+    # an X-Pawgrab-Signature header so receivers can verify authenticity.
+    webhook_secret: str = ""
 
     sitemap_fetch_timeout: int = Field(default=15, ge=1, le=120)
 

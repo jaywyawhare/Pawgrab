@@ -49,3 +49,35 @@ async def test_scrape_without_auth_key_passes(client):
     resp = await client.post("/v1/scrape", json={"url": "not-valid"})
     # Should get 422 (validation error), NOT 401
     assert resp.status_code == 422
+
+
+async def test_metrics_requires_auth_when_key_set():
+    """/metrics and /dashboard are no longer auth-exempt; they need the key."""
+    from unittest.mock import patch
+
+    from httpx import ASGITransport, AsyncClient
+
+    from pawgrab.config import settings
+    from pawgrab.main import create_app
+
+    with patch.object(settings, "api_key", "test-secret-key"):
+        app = create_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r_noauth = await c.get("/metrics")
+            r_auth = await c.get("/metrics", headers={"Authorization": "Bearer test-secret-key"})
+
+    assert r_noauth.status_code == 401
+    assert r_auth.status_code != 401
+
+
+async def test_bad_request_id_header_is_replaced():
+    """A malformed client X-Request-ID must not be reflected verbatim."""
+    from httpx import ASGITransport, AsyncClient
+
+    from pawgrab.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        resp = await c.get("/health", headers={"X-Request-ID": "bad id\r\ninjected: 1"})
+    returned = resp.headers.get("x-request-id", "")
+    assert returned != "bad id\r\ninjected: 1"
+    assert "\n" not in returned and " " not in returned

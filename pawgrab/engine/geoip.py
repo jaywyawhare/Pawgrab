@@ -109,7 +109,9 @@ async def _lookup(proxy_url: str) -> ProxyGeo | None:
                 return None
             data = resp.json()
     except Exception as exc:
-        logger.debug("geoip_lookup_failed", proxy=proxy_url, error=str(exc))
+        from pawgrab.utils.url_safety import redact_url_creds
+
+        logger.debug("geoip_lookup_failed", proxy=redact_url_creds(proxy_url), error=str(exc))
         return None
 
     if not isinstance(data, dict) or data.get("status") != "success":
@@ -129,7 +131,9 @@ async def _lookup(proxy_url: str) -> ProxyGeo | None:
         longitude=float(data.get("lon", 0.0) or 0.0),
         country=country,
     )
-    logger.info("geoip_resolved", proxy=proxy_url, ip=geo.ip, tz=geo.timezone, country=country)
+    from pawgrab.utils.url_safety import redact_url_creds
+
+    logger.info("geoip_resolved", proxy=redact_url_creds(proxy_url), ip=geo.ip, tz=geo.timezone, country=country)
     return geo
 
 

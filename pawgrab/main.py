@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -75,9 +76,15 @@ _STATUS_TO_CODE = {
 }
 
 
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex[:12])
+        # Validate client-supplied IDs before binding into logs / reflecting in
+        # the response — an unvalidated value enables log forging / header injection.
+        client_id = request.headers.get("X-Request-ID", "")
+        request_id = client_id if _REQUEST_ID_RE.match(client_id) else uuid.uuid4().hex[:12]
         request.state.request_id = request_id
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
@@ -117,7 +124,9 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    SKIP_PATHS = {"/health", "/status", "/docs", "/openapi.json", "/redoc", "/dashboard", "/metrics"}
+    # /metrics and /dashboard expose Prometheus data and per-client analytics —
+    # they require the API key like any other endpoint (not in the skip set).
+    SKIP_PATHS = {"/health", "/status", "/docs", "/openapi.json", "/redoc"}
 
     async def dispatch(self, request: Request, call_next):
         if not settings.api_key:
@@ -211,9 +220,15 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIDMiddleware)
 
     app.add_middleware(GZipMiddleware, minimum_size=1000)
+    # CORS origins are explicit and independent of api_key. Wildcard is only ever
+    # used when the operator has explicitly opted into unauthenticated mode —
+    # never as a silent side effect of leaving api_key unset.
+    cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+    if not cors_origins and settings.allow_unauthenticated:
+        cors_origins = ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if not settings.api_key else [],
+        allow_origins=cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
