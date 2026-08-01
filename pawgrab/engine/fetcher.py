@@ -527,10 +527,11 @@ async def _fetch_with_curl(
 
     content_type = resp_headers.get("content-type", resp_headers.get("Content-Type", ""))
     content_bytes: bytes | None = None
-    html_text = resp.text
     if is_pdf_content(content_type, str(resp.url)):
         content_bytes = resp.content
         html_text = ""
+    else:
+        html_text = _decode_body(resp, content_type)
 
     return FetchResult(
         html=html_text,
@@ -540,6 +541,43 @@ async def _fetch_with_curl(
         cookies=resp_cookies,
         content_bytes=content_bytes,
     )
+
+
+_CHARSET_RE = re.compile(rb'charset=["\']?\s*([\w\-]+)', re.IGNORECASE)
+
+
+def _decode_body(resp, content_type: str) -> str:
+    """Decode a response body, detecting the charset when the server's is missing/wrong.
+
+    curl_cffi's ``resp.text`` uses the declared charset, which is often absent or
+    wrong on long-tail sites, producing mojibake. When the declared encoding is
+    missing or a bare fallback, sniff the real one from the bytes (meta charset,
+    then charset-normalizer) so downstream extraction sees correct text.
+    """
+    declared = (resp.encoding or "").lower()
+    # Trust an explicit, non-fallback server/meta charset.
+    if declared and declared not in ("iso-8859-1", "ascii", "us-ascii"):
+        return resp.text
+    body = resp.content
+    if not body:
+        return resp.text
+    # <meta charset=...> in the first few KB wins over the HTTP fallback.
+    m = _CHARSET_RE.search(body[:4096])
+    if m:
+        enc = m.group(1).decode("ascii", "ignore")
+        try:
+            return body.decode(enc, errors="replace")
+        except (LookupError, ValueError):
+            pass
+    try:
+        from charset_normalizer import from_bytes
+
+        best = from_bytes(body).best()
+        if best is not None:
+            return str(best)
+    except Exception:
+        pass
+    return resp.text
 
 
 def _setup_ws_capture(ws, messages: list[dict]):

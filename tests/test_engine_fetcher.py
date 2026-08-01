@@ -311,3 +311,35 @@ async def test_cookies_use_isolated_page():
     pool.new_isolated_page.assert_awaited_once()
     pool.release_isolated_page.assert_awaited_once()
     pool.acquire.assert_not_called()
+
+
+def test_decode_body_detects_charset():
+    """Mojibake is avoided when the server declares no/fallback charset."""
+    from unittest.mock import MagicMock
+
+    from pawgrab.engine.fetcher import _decode_body
+
+    text = "日本語のテキスト"
+    body = text.encode("shift_jis")
+    resp = MagicMock(encoding=None, content=body, text=body.decode("iso-8859-1"))
+    assert text in _decode_body(resp, "text/html")
+
+
+def test_decode_body_honors_meta_charset():
+    from unittest.mock import MagicMock
+
+    from pawgrab.engine.fetcher import _decode_body
+
+    html = '<html><head><meta charset="windows-1251"></head><body>Привет</body></html>'
+    body = html.encode("windows-1251")
+    resp = MagicMock(encoding="iso-8859-1", content=body, text=body.decode("iso-8859-1"))
+    assert "Привет" in _decode_body(resp, "text/html")
+
+
+def test_decode_body_trusts_explicit_charset():
+    from unittest.mock import MagicMock
+
+    from pawgrab.engine.fetcher import _decode_body
+
+    resp = MagicMock(encoding="utf-8", content=b"caf\xc3\xa9", text="café")
+    assert _decode_body(resp, "text/html; charset=utf-8") == "café"
