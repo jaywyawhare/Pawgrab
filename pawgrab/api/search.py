@@ -41,6 +41,7 @@ async def search(req: SearchRequest):
             time_range=req.time_range,
             safesearch=req.safesearch,
             region=req.region,
+            category=req.category,
         )
     except Exception as exc:
         logger.error("search_failed", query=req.query, error=str(exc))
@@ -53,18 +54,21 @@ async def search(req: SearchRequest):
     serp_items = serp["results"]
     urls = [r["link"] for r in serp_items]
 
+    def _serp_fields() -> dict:
+        return {
+            "search_results": serp_items,
+            "answers": serp["answers"],
+            "infoboxes": serp["infoboxes"],
+            "suggestions": serp["suggestions"],
+            "corrections": serp["corrections"],
+            "unresponsive_engines": serp["unresponsive_engines"],
+            "timings": serp["timings"],
+            "page": serp["page"],
+        }
+
     # SERP-only mode (SerpAPI-style): return ranked metadata without scraping.
     if not req.scrape or not urls:
-        return SearchResponse(
-            success=True,
-            query=req.query,
-            results=[],
-            total=0,
-            search_results=serp_items,
-            suggestions=serp["suggestions"],
-            unresponsive_engines=serp["unresponsive_engines"],
-            page=serp["page"],
-        )
+        return SearchResponse(success=True, query=req.query, results=[], total=0, **_serp_fields())
 
     pool = await try_browser_pool()
 
@@ -100,8 +104,5 @@ async def search(req: SearchRequest):
         results=results,
         total=len(results),
         failed_urls=failed_urls,
-        search_results=serp_items,
-        suggestions=serp["suggestions"],
-        unresponsive_engines=serp["unresponsive_engines"],
-        page=serp["page"],
+        **_serp_fields(),
     )

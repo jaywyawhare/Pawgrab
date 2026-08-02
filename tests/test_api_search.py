@@ -9,9 +9,16 @@ def _envelope(links, suggestions=None, unresponsive=None, page=1):
     return {
         "query": "test",
         "page": page,
-        "results": [{"position": i + 1, "title": "", "link": u, "snippet": "", "engines": ["duckduckgo"], "score": 1.0} for i, u in enumerate(links)],
+        "category": "general",
+        "results": [
+            {"position": i + 1, "title": "", "link": u, "snippet": "", "type": "general", "thumbnail": "", "engines": ["duckduckgo"], "score": 1.0} for i, u in enumerate(links)
+        ],
+        "answers": [],
+        "infoboxes": [],
         "suggestions": suggestions or [],
+        "corrections": [],
         "unresponsive_engines": unresponsive or [],
+        "timings": [],
         "number_of_results": len(links),
     }
 

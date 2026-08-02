@@ -109,9 +109,14 @@ class Settings(BaseSettings):
     # Search is a vendored-in meta-search engine that scrapes SERPs natively — no
     # API key or external service. "auto" merges multiple engines (SearXNG-style);
     # "google" is the one keyed option, via Google's own Custom Search JSON API.
-    search_provider: Literal["duckduckgo", "bing", "brave", "auto", "google"] = "duckduckgo"
+    search_provider: Literal["duckduckgo", "bing", "brave", "mojeek", "yahoo", "startpage", "auto", "google"] = "duckduckgo"
     google_search_api_key: str = ""
     google_search_cx: str = ""
+    # Per-engine wall-clock budget in the meta-search; a slow/blocked engine is
+    # dropped (reported as unresponsive) instead of holding up the whole query.
+    search_engine_timeout: float = Field(default=12.0, ge=1.0, le=60.0)
+    # DuckDuckGo Instant Answer API for answers/infoboxes (keyless). Disable to skip.
+    search_instant_answers: bool = True
 
     webhook_timeout: int = Field(default=15, ge=1, le=120)
     webhook_retries: int = Field(default=3, ge=0, le=10)
