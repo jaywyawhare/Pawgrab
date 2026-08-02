@@ -1,3 +1,5 @@
 */node_modules
 */dist
 __pycache__
+# Benchmark run outputs
+wcxb_predictions_*.json
