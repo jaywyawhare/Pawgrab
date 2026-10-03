@@ -8,26 +8,19 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     model_config = {"env_prefix": "PAWGRAB_"}
-
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "info"
     api_key: str = ""
-
     redis_url: str = "redis://localhost:6379/0"
     redis_operation_timeout: float = Field(default=5.0, ge=0.5, le=30.0)
-
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
-
     llm_provider: Literal["openai", "anthropic", "gemini", "ollama"] = "openai"
-    # Hard cap on chunks sent to the LLM per extraction — bounds cost/latency on
-    # huge pages (a chunked extract would otherwise fan out unboundedly).
+
     llm_max_chunks: int = Field(default=20, ge=1, le=200)
     llm_max_output_tokens: int = Field(default=4096, ge=256, le=32768)
-    # LLM resilience: bounded retries with backoff, then an optional fallback
-    # provider (empty = none) so a transient primary-provider outage degrades
-    # gracefully instead of failing the extraction.
+
     llm_max_retries: int = Field(default=2, ge=0, le=5)
     llm_fallback_provider: Literal["", "openai", "anthropic", "gemini", "ollama"] = ""
     anthropic_api_key: str = ""
@@ -36,68 +29,60 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.0-flash"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
-
     browser_pool_size: int = Field(default=5, ge=1, le=20)
-    # Max concurrent per-session browser contexts before LRU eviction (bounds
-    # context + temp-dir growth when sessions are never explicitly closed).
+
     browser_max_sessions: int = Field(default=50, ge=1, le=500)
     browser_type: str = "chromium"
+    # Connect to an externally-run, fingerprint-patched Chromium (e.g. CloakBrowser)
+    # over CDP instead of launching Patchright locally. Empty = launch locally as
+    # before. When set, the remote browser owns its own flags/proxy/user-data; the
+    # per-context JS stealth, fingerprint seeding and routing still apply on top.
+    browser_cdp_url: str = ""
+    browser_cdp_timeout_ms: int = Field(default=30000, ge=1000, le=120000)
     browser_standby_recycle: bool = True
     browser_session_profiles: bool = True
     browser_trace_enabled: bool = False
-
     rate_limit_rpm: int = Field(default=60, ge=1)
     api_rate_limit_rpm: int = Field(default=600, ge=1)
     api_rate_limits: str = ""
-
     respect_robots: bool = True
     robots_cache_ttl: int = Field(default=3600, ge=0)
     robots_fetch_timeout: int = Field(default=10, ge=1, le=60)
-    # On a transient robots.txt fetch error: fail open (allow, default) or closed
-    # (deny). A clean 404 always means "no robots.txt" => allowed, regardless.
+
     robots_fail_closed: bool = False
 
-    # SSRF protection: block fetch/webhook targets that resolve to private,
-    # loopback, link-local (cloud-metadata), or reserved addresses. Disable only
-    # for trusted local development. allow_private_urls fully bypasses the check.
     ssrf_protection: bool = True
     allow_private_urls: bool = False
-    # Max redirect hops to follow on the curl path (each hop is SSRF-revalidated).
-    max_redirects: int = Field(default=10, ge=0, le=30)
-    # Retry a failed TLS handshake with verification disabled. Off by default —
-    # enabling it silently downgrades security for self-signed/expired-cert sites.
-    allow_insecure_ssl: bool = False
 
+    max_redirects: int = Field(default=10, ge=0, le=30)
+
+    allow_insecure_ssl: bool = False
     stealth_mode: bool = True
     max_challenge_retries: int = Field(default=3, ge=0, le=10)
     impersonate: str = ""
     solve_cloudflare: bool = True
+    # When a fetch ends blocked (403/406/429/challenge), retry once with a fresh
+    # TLS identity, the premium proxy tier, and forced JS rendering.
+    fetch_escalation_retry: bool = True
 
-    # Auth / CORS. With no api_key the API is unauthenticated; that is only
-    # allowed when allow_unauthenticated is explicitly set (else `serve` refuses
-    # to start). CORS origins are configured independently of the api_key —
-    # wildcard is never paired with open auth automatically.
     allow_unauthenticated: bool = False
-    cors_allow_origins: str = ""  # comma-separated; empty = no cross-origin
+    cors_allow_origins: str = ""
 
-    # Human-like input on the browser path (Bezier mouse, per-char typing, wheel
-    # scroll). Scores higher against behavioural anti-bot layers than instant clicks.
     humanize_interactions: bool = True
-    # Resolve a proxy's exit-IP geolocation and align the browser timezone/locale/
-    # geolocation to it, so the fingerprint agrees with the IP the site sees.
+
     geoip_coherence: bool = True
     geoip_timeout_seconds: float = Field(default=5.0, ge=0.5, le=30.0)
-    # Deterministic fingerprint seed. 0 = fresh random identity per context; any
-    # non-zero value pins one coherent identity (GPU/screen/UA/timezone) across runs.
+
     fingerprint_seed: int = 0
 
+    fingerprint_platform: Literal["macos", "windows"] = "macos"
+
+    session_warming: bool = True
     captcha_provider: str = ""
     captcha_api_key: str = ""
-
     proxy_url: str = ""
     proxy_urls: str = ""
-    # Premium tier (residential/mobile). Escalated to on anti-bot blocks (403/429/
-    # challenge) — the datacenter->residential "auto" pattern. Empty = no escalation.
+
     proxy_urls_premium: str = ""
     proxy_rotation_policy: Literal["round_robin", "random", "least_used"] = "round_robin"
     proxy_health_check: bool = True
@@ -106,50 +91,33 @@ class Settings(BaseSettings):
     proxy_evict_after_failures: int = Field(default=3, ge=1)
     proxy_backoff_seconds: int = Field(default=60, ge=1)
 
-    # Search is a vendored-in meta-search engine that scrapes SERPs natively — no
-    # API key or external service. "auto" merges multiple engines (SearXNG-style);
-    # "google" is the one keyed option, via Google's own Custom Search JSON API.
     search_provider: Literal["duckduckgo", "bing", "brave", "mojeek", "yahoo", "startpage", "auto", "google"] = "duckduckgo"
     google_search_api_key: str = ""
     google_search_cx: str = ""
-    # Per-engine wall-clock budget in the meta-search; a slow/blocked engine is
-    # dropped (reported as unresponsive) instead of holding up the whole query.
-    search_engine_timeout: float = Field(default=12.0, ge=1.0, le=60.0)
-    # DuckDuckGo Instant Answer API for answers/infoboxes (keyless). Disable to skip.
-    search_instant_answers: bool = True
 
+    search_engine_timeout: float = Field(default=12.0, ge=1.0, le=60.0)
+
+    search_instant_answers: bool = True
     webhook_timeout: int = Field(default=15, ge=1, le=120)
     webhook_retries: int = Field(default=3, ge=0, le=10)
-    # HMAC-SHA256 signing secret for webhook payloads. When set, deliveries carry
-    # an X-Pawgrab-Signature header so receivers can verify authenticity.
+
     webhook_secret: str = ""
-
     sitemap_fetch_timeout: int = Field(default=15, ge=1, le=120)
-
     monitor_ttl: int = Field(default=86400, ge=0)
-
     http3: bool = False
-
     memory_threshold_percent: float = Field(default=85.0, ge=0, le=100)
     min_concurrency: int = Field(default=1, ge=1)
     max_concurrency: int = Field(default=10, ge=1)
-
     worker_max_jobs: int = Field(default=5, ge=1, le=50)
     worker_job_timeout: int = Field(default=600, ge=30, le=7200)
     checkpoint_interval: int = Field(default=10, ge=1, le=100)
-    # Lifetime of a job's Redis status hash. Refreshed on every update so a long
-    # crawl's status never expires mid-run; must exceed worker_job_timeout.
+
     job_ttl_seconds: int = Field(default=14400, ge=3600)
-
     sse_max_duration: int = Field(default=3600, ge=60, le=86400)
-
     cache_ttl: int = Field(default=0, ge=0)
-
     max_timeout: int = Field(default=120000, ge=1000)
-
     plugins: str = ""
     trusted_proxy_ips: str = ""
-
     storage_backend: str = ""
     storage_path: str = "./pawgrab_data"
     s3_bucket: str = ""

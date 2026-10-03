@@ -89,34 +89,41 @@ Closing this means swapping the browser **binary**, not writing more Python. It 
 the same infra-bound ceiling already documented for CF-solving and fetch coverage —
 code changes do not cross it.
 
+**Update — the connect seam is now built.** `PAWGRAB_BROWSER_CDP_URL` makes the pool
+`connect_over_cdp` to an externally-run patched Chromium (e.g. CloakBrowser) instead
+of launching Patchright locally; every request then runs through a fresh context on
+that browser with Pawgrab's JS stealth + seeded fingerprint layered on top. This does
+not itself add the 66 C++ patches — the operator must run the patched binary — but the
+Python side no longer blocks it. Per-context proxy can't be applied over CDP (the
+remote browser's proxy is fixed at its own launch); Pawgrab logs and skips it.
+
 ---
 
 ## Remaining / optional (not done — decide before doing)
 
-1. **Adopt a fingerprint-patched Chromium binary** (the real moat). Options:
-   run CloakBrowser's own binary via CDP `connect_over_cdp`, or another
-   compile-time-patched Chromium. Large infra change; trades Pawgrab's lean
-   pip-installable design. **Requires user decision.**
+1. **Adopt a fingerprint-patched Chromium binary** (the real moat). ✅ **code seam
+   done** — set `PAWGRAB_BROWSER_CDP_URL` to a running CloakBrowser's CDP endpoint and
+   the pool connects over `connect_over_cdp` instead of launching locally. What remains
+   is purely operational: run the patched binary (separately, e.g. in Docker) and point
+   Pawgrab at it. No further Python needed.
 
 2. **Humanize tuning knobs** — CloakBrowser exposes `human_config`
    (`mistype_chance`, `typing_delay`, `idle_between_actions`) and presets
    (`default`/`careful`). Pawgrab has these as module constants; could lift to
    config if per-request control is wanted. Low value unless requested.
 
-3. **WebRTC public-IP spoof to proxy exit IP in JS** — CloakBrowser's
-   `--fingerprint-webrtc-ip=auto`. Pawgrab already forces proxied-only UDP so the
-   observed candidate is the proxy IP; an explicit JS ICE-candidate rewrite would
-   be belt-and-suspenders. Marginal; skipped deliberately.
+3. **WebRTC public-IP spoof** — ✅ handled: proxied-only UDP flags + a JS
+   `RTCPeerConnection` block in `browser.py`, so the observed candidate is the proxy
+   IP. An explicit JS ICE-candidate rewrite would be belt-and-suspenders; skipped.
 
 4. **Live validation** — run the new stack against a detection site
    (BrowserScan / bot.incolumitas / fingerprint.com) to measure real-world lift.
    Needs a working browser + (ideally) a residential proxy in the environment.
    Not run here.
 
-5. **Platform selection flag** (`windows`/`macos`) — CloakBrowser lets you pick.
-   Pawgrab commits to a coherent macOS/Safari identity (matches its TLS + UA), so
-   a Windows profile would need a matching Chrome UA + TLS target to stay coherent.
-   Only worth it if a Windows identity is specifically needed.
+5. **Platform selection flag** (`windows`/`macos`) — ✅ done:
+   `PAWGRAB_FINGERPRINT_PLATFORM` selects a coherent macOS/Safari or Windows/Chrome
+   identity (UA, GPU, viewport, client-hints kept coherent in `fingerprint.py`).
 
 ---
 

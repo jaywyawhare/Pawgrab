@@ -23,9 +23,15 @@ Env vars with `PAWGRAB_` prefix. See `.env.example`.
 - `PAWGRAB_BROWSER_POOL_SIZE` - default `3` (Patchright instances)
 - `PAWGRAB_BROWSER_TIMEOUT` - default `30000` ms
 - `PAWGRAB_BROWSER_TYPE` - `chromium`, `firefox`, or `webkit` (default `chromium`)
+- `PAWGRAB_BROWSER_CDP_URL` - connect to an externally-run, fingerprint-patched Chromium (e.g. CloakBrowser) over CDP instead of launching locally; empty = launch locally. Chromium only. The remote browser owns its own launch flags and proxy (a per-request proxy can't be applied over CDP); Pawgrab's per-context JS stealth and seeded fingerprint still apply on top.
+- `PAWGRAB_BROWSER_CDP_TIMEOUT_MS` - CDP connect timeout, default `30000` ms
 - `PAWGRAB_STEALTH_MODE` - default `true` (fingerprint evasion)
 - `PAWGRAB_MAX_CHALLENGE_RETRIES` - default `2`
 - `PAWGRAB_IMPERSONATE` - curl_cffi target e.g. `chrome124`, empty = random
+- `PAWGRAB_FINGERPRINT_PLATFORM` - `macos` (Safari identity) or `windows` (Chrome identity); UA, GPU, viewport and TLS fingerprint stay coherent
+- `PAWGRAB_FINGERPRINT_SEED` - default `0` (random per context); non-zero pins one stable identity
+- `PAWGRAB_SESSION_WARMING` - default `true`; fetches the origin root before deep URLs to collect CDN/anti-bot cookies first
+- `PAWGRAB_FETCH_ESCALATION_RETRY` - default `true`; when a fetch ends blocked (403/406/429/challenge), retries once with a fresh TLS identity, the premium proxy tier, and forced JS rendering
 
 ## Rate Limiting
 

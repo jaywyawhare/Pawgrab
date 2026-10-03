@@ -15,46 +15,21 @@ import structlog
 from patchright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from pawgrab.config import settings
-from pawgrab.engine.antibot import random_user_agent, stealth_headers
+from pawgrab.engine.antibot import stealth_headers
 from pawgrab.engine.fingerprint import build_profile
 from pawgrab.engine.geoip import resolve_proxy_geo
 
 logger = structlog.get_logger()
 
-_VIEWPORTS = [
-    {"width": 1920, "height": 1080},
-    {"width": 1440, "height": 900},
-    {"width": 1536, "height": 864},
-    {"width": 1366, "height": 768},
-    {"width": 2560, "height": 1440},
-]
 
-_TIMEZONES = [
-    "America/New_York",
-    "America/Chicago",
-    "America/Denver",
-    "America/Los_Angeles",
-    "Europe/London",
-    "Europe/Berlin",
-    "Europe/Paris",
-]
+def _redact_endpoint(url: str) -> str:
+    """scheme://host:port only — drops path/query so CDP auth tokens never log."""
+    try:
+        p = urlparse(url)
+        return f"{p.scheme}://{p.hostname}:{p.port}" if p.hostname else "<endpoint>"
+    except Exception:
+        return "<endpoint>"
 
-_LOCALES = ["en-US", "en-GB", "en-CA", "en-AU"]
-
-_APPLE_GPU_PROFILES = [
-    ("Apple M1", 8, 30),
-    ("Apple M1 Pro", 10, 15),
-    ("Apple M1 Max", 10, 5),
-    ("Apple M2", 8, 20),
-    ("Apple M2 Pro", 12, 8),
-    ("Apple M2 Max", 12, 3),
-    ("Apple M3", 8, 10),
-    ("Apple M3 Pro", 12, 5),
-    ("Intel(R) Iris(TM) Plus Graphics 640", 4, 2),
-    ("Intel(R) Iris(TM) Plus Graphics", 4, 2),
-]
-
-_APPLE_RENDERERS = [p[0] for p in _APPLE_GPU_PROFILES]
 
 _HARMFUL_DEFAULT_ARGS = frozenset(
     {
@@ -65,7 +40,6 @@ _HARMFUL_DEFAULT_ARGS = frozenset(
         "--disable-extensions",
     }
 )
-
 _STEALTH_CHROMIUM_ARGS = (
     "--disable-blink-features=AutomationControlled",
     "--no-first-run",
@@ -154,12 +128,10 @@ _STEALTH_CHROMIUM_ARGS = (
     "--accept-lang=en-US,en;q=0.9",
     "--disable-features=IsolateOrigins,site-per-process,TranslateUI,AutofillServerCommunication,AudioServiceOutOfProcess,BlinkGenPropertyTrees",
 )
-
 _FINGERPRINT_EVASION_JS = """
 (function() {
-    const VENDOR = "Apple Inc.";
+    const VENDOR = "__WEBGL_VENDOR__";
     const RENDERER = "__RENDERER__";
-
     function patchGetParameter(proto) {
         const orig = proto.getParameter;
         proto.getParameter = function(param) {
@@ -168,23 +140,19 @@ _FINGERPRINT_EVASION_JS = """
             return orig.call(this, param);
         };
     }
-
     patchGetParameter(WebGLRenderingContext.prototype);
     if (typeof WebGL2RenderingContext !== 'undefined') {
         patchGetParameter(WebGL2RenderingContext.prototype);
     }
 })();
-
 // __BEGIN_CANVAS_NOISE__
 (function() {
     const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
     const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-
     // Per-session random noise seed (2-5% intensity, not 0.01%)
     const noiseR = (Math.random() * 3 + 1) | 0;  // 1-3 bit variation
     const noiseG = (Math.random() * 3 + 1) | 0;
     const noiseB = (Math.random() * 3 + 1) | 0;
-
     CanvasRenderingContext2D.prototype.getImageData = function() {
         const imageData = origGetImageData.apply(this, arguments);
         // Apply noise to fingerprint-sized reads (< 500KB = ~350x350 canvas)
@@ -199,7 +167,6 @@ _FINGERPRINT_EVASION_JS = """
         }
         return imageData;
     };
-
     // Also noise toDataURL for canvas fingerprinting via data: URIs
     HTMLCanvasElement.prototype.toDataURL = function() {
         const ctx = this.getContext('2d');
@@ -215,15 +182,12 @@ _FINGERPRINT_EVASION_JS = """
     };
 })();
 // __END_CANVAS_NOISE__
-
 (function() {
     if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') return;
-
     const AC = typeof AudioContext !== 'undefined' ? AudioContext : webkitAudioContext;
     const origCreateOscillator = AC.prototype.createOscillator;
     const origCreateDynamicsCompressor = AC.prototype.createDynamicsCompressor;
     const audioNoise = Math.random() * 0.0001;
-
     // Patch getFloatFrequencyData to add subtle noise
     const origGetFloat = AnalyserNode.prototype.getFloatFrequencyData;
     AnalyserNode.prototype.getFloatFrequencyData = function(array) {
@@ -233,13 +197,12 @@ _FINGERPRINT_EVASION_JS = """
         }
     };
 })();
-
 Object.defineProperty(navigator, 'vendor', {
-    get: () => 'Apple Computer, Inc.',
+    get: () => '__VENDOR__',
     configurable: true,
 });
 Object.defineProperty(navigator, 'platform', {
-    get: () => 'MacIntel',
+    get: () => '__PLATFORM__',
     configurable: true,
 });
 Object.defineProperty(navigator, 'deviceMemory', {
@@ -254,7 +217,6 @@ Object.defineProperty(navigator, 'maxTouchPoints', {
     get: () => 0,  // macOS Safari = 0 touch points
     configurable: true,
 });
-
 (function() {
     const fakePlugins = [
         {name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format',
@@ -273,7 +235,6 @@ Object.defineProperty(navigator, 'maxTouchPoints', {
          length: 1, item: function(i) { return this[i]; },
          0: {type: 'application/pdf', suffixes: 'pdf', description: ''}},
     ];
-
     Object.defineProperty(navigator, 'plugins', {
         get: () => {
             const arr = fakePlugins;
@@ -284,7 +245,6 @@ Object.defineProperty(navigator, 'maxTouchPoints', {
         },
         configurable: true,
     });
-
     Object.defineProperty(navigator, 'mimeTypes', {
         get: () => {
             const mimes = [{type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format'}];
@@ -295,7 +255,6 @@ Object.defineProperty(navigator, 'maxTouchPoints', {
         configurable: true,
     });
 })();
-
 // __BEGIN_WEBRTC_BLOCK__
 (function() {
     // Disable WebRTC data channels and peer connections to prevent real IP leak
@@ -316,7 +275,6 @@ Object.defineProperty(navigator, 'maxTouchPoints', {
     }
 })();
 // __END_WEBRTC_BLOCK__
-
 if (navigator.permissions) {
     const origQuery = navigator.permissions.query;
     navigator.permissions.query = function(desc) {
@@ -326,26 +284,116 @@ if (navigator.permissions) {
         return origQuery.call(this, desc);
     };
 }
-
-// Chromium-only — absent in Safari, so delete it to avoid detection
+// Headless reports 'denied' here while permissions.query says 'prompt' —
+// keep both sides consistent.
+try {
+    if (typeof Notification !== 'undefined') {
+        Object.defineProperty(Notification, 'permission', {
+            get: () => 'prompt',
+            configurable: true,
+        });
+    }
+} catch (e) {}
+(function() {
+    try {
+        const W = __VIEWPORT_W__, H = __VIEWPORT_H__;
+        Object.defineProperty(window, 'outerWidth', {get: () => W + __OUTER_DX__, configurable: true});
+        Object.defineProperty(window, 'outerHeight', {get: () => H + __OUTER_DY__, configurable: true});
+        Object.defineProperty(window, 'screenX', {get: () => 0, configurable: true});
+        Object.defineProperty(window, 'screenY', {get: () => __SCREEN_Y__, configurable: true});
+        const scr = window.screen;
+        Object.defineProperty(scr, 'availWidth', {get: () => scr.width, configurable: true});
+        Object.defineProperty(scr, 'availHeight', {get: () => scr.height - __AVAIL_DY__, configurable: true});
+        Object.defineProperty(scr, 'availTop', {get: () => __AVAIL_TOP__, configurable: true});
+        Object.defineProperty(scr, 'availLeft', {get: () => 0, configurable: true});
+    } catch (e) {}
+})();
+(function() {
+    if (!('gpu' in navigator) || !navigator.gpu) return;
+    const fakeInfo = {
+        vendor: '__GPU_VENDOR_LC__',
+        architecture: '__GPU_ARCH__',
+        device: '',
+        description: '',
+    };
+    const origRequestAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
+    navigator.gpu.requestAdapter = function(...args) {
+        return origRequestAdapter(...args).then(function(adapter) {
+            if (!adapter) return adapter;
+            try {
+                Object.defineProperty(adapter, 'info', {get: () => fakeInfo, configurable: true});
+            } catch (e) {}
+            if (typeof adapter.requestAdapterInfo === 'function') {
+                adapter.requestAdapterInfo = function() { return Promise.resolve(fakeInfo); };
+            }
+            return adapter;
+        });
+    };
+})();
+// __BEGIN_CHROME_ONLY__
+// The UA string is spoofed but Chromium still sends its real brand in
+// sec-ch-ua and navigator.userAgentData — both must be rewritten to match.
+(function() {
+    const brands = [
+        {brand: "Not A(Brand", version: "8"},
+        {brand: "Chromium", version: "__CHROME_MAJOR__"},
+        {brand: "Google Chrome", version: "__CHROME_MAJOR__"},
+    ];
+    const fullVersionList = [
+        {brand: "Not A(Brand", version: "8.0.0.0"},
+        {brand: "Chromium", version: "__CHROME_MAJOR__.0.0.0"},
+        {brand: "Google Chrome", version: "__CHROME_MAJOR__.0.0.0"},
+    ];
+    function makeUAD(mobile, platformStr) {
+        const data = {
+            brands: brands,
+            mobile: mobile,
+            platform: platformStr,
+            toJSON() { return {brands: brands, mobile: mobile, platform: platformStr}; },
+            getHighEntropyValues(hints) {
+                return Promise.resolve({
+                    architecture: "__UA_ARCH__",
+                    bitness: "64",
+                    model: "",
+                    platformVersion: "__UA_PLATFORM_VERSION__",
+                    uaFullVersion: "__CHROME_MAJOR__.0.0.0",
+                    fullVersionList: fullVersionList,
+                    wow64: false,
+                });
+            },
+        };
+        return data;
+    }
+    const isMobile = __MAX_TOUCH__ > 0;
+    Object.defineProperty(navigator, 'userAgentData', {
+        get: () => makeUAD(isMobile, '__UA_PLATFORM_HINT__'),
+        configurable: true,
+    });
+})();
+// __END_CHROME_ONLY__
+Object.defineProperty(navigator, 'webdriver', {
+    get: () => false,
+    configurable: true,
+});
+// __BEGIN_SAFARI_ONLY__
+// Safari identity only: Chromium exposes window.chrome/connection/getBattery/
+// bluetooth/usb natively — deleting them on a "Chrome" UA is itself a tell.
 delete window.chrome;
 Object.defineProperty(window, 'chrome', {
     get: () => undefined,
     configurable: true,
 });
-
-Object.defineProperty(navigator, 'webdriver', {
-    get: () => false,
-    configurable: true,
-});
-
+// Safari has no Client Hints — a "Safari" UA that still exposes
+// navigator.userAgentData is an instant contradiction.
+if ('userAgentData' in navigator) {
+    delete navigator.userAgentData;
+}
 if ('connection' in navigator) {
     Object.defineProperty(navigator, 'connection', {
         get: () => undefined,
         configurable: true,
     });
 }
-
 // Battery API (Safari removed it years ago)
 if ('getBattery' in navigator) {
     Object.defineProperty(navigator, 'getBattery', {
@@ -353,7 +401,6 @@ if ('getBattery' in navigator) {
         configurable: true,
     });
 }
-
 // Bluetooth API (Safari doesn't expose it)
 if ('bluetooth' in navigator) {
     Object.defineProperty(navigator, 'bluetooth', {
@@ -361,14 +408,12 @@ if ('bluetooth' in navigator) {
         configurable: true,
     });
 }
-
 if ('usb' in navigator) {
     Object.defineProperty(navigator, 'usb', {
         get: () => undefined,
         configurable: true,
     });
 }
-
 if (typeof speechSynthesis !== 'undefined') {
     const origGetVoices = speechSynthesis.getVoices;
     speechSynthesis.getVoices = function() {
@@ -379,48 +424,42 @@ if (typeof speechSynthesis !== 'undefined') {
         return voices;
     };
 }
-
+// __END_SAFARI_ONLY__
 if (navigator.mediaDevices) {
     navigator.mediaDevices.enumerateDevices = function() {
         return Promise.resolve([]);
     };
 }
-
 if ('vibrate' in navigator) {
     Object.defineProperty(navigator, 'vibrate', {
         get: () => undefined,
         configurable: true,
     });
 }
-
 if (typeof SpeechRecognition !== 'undefined') {
     Object.defineProperty(window, 'SpeechRecognition', {
         get: () => undefined,
         configurable: true,
     });
 }
-
 if ('keyboard' in navigator) {
     Object.defineProperty(navigator, 'keyboard', {
         get: () => undefined,
         configurable: true,
     });
 }
-
 if ('serial' in navigator) {
     Object.defineProperty(navigator, 'serial', {
         get: () => undefined,
         configurable: true,
     });
 }
-
 if ('hid' in navigator) {
     Object.defineProperty(navigator, 'hid', {
         get: () => undefined,
         configurable: true,
     });
 }
-
 if ('presentation' in navigator) {
     Object.defineProperty(navigator, 'presentation', {
         get: () => undefined,
@@ -428,21 +467,6 @@ if ('presentation' in navigator) {
     });
 }
 """
-
-
-def _pick_gpu_profile() -> tuple[str, int, int]:
-    """Pick a weighted-random GPU profile. Returns (renderer, hw_concurrency, device_memory)."""
-    renderers, concurrencies, weights = zip(*_APPLE_GPU_PROFILES, strict=True)
-    renderer = random.choices(renderers, weights=weights, k=1)[0]
-    idx = renderers.index(renderer)
-    hw = concurrencies[idx]
-    if "Pro" in renderer or "Max" in renderer:
-        dev_mem = random.choice([16, 32])
-    elif "Intel" in renderer:
-        dev_mem = random.choice([4, 8])
-    else:
-        dev_mem = 8
-    return renderer, hw, dev_mem
 
 
 def _strip_section(script: str, tag: str) -> str:
@@ -470,10 +494,62 @@ def _build_evasion_script(browser_type: str = "chromium", profile=None) -> str:
         hw_concurrency = profile.hardware_concurrency
         dev_memory = profile.device_memory
     else:
-        renderer, hw_concurrency, dev_memory = _pick_gpu_profile()
+        profile = build_profile()
+        renderer = profile.webgl_renderer
+        hw_concurrency = profile.hardware_concurrency
+        dev_memory = profile.device_memory
     script = _FINGERPRINT_EVASION_JS.replace("__RENDERER__", renderer)
     script = script.replace("__HARDWARE_CONCURRENCY__", str(hw_concurrency))
     script = script.replace("__DEVICE_MEMORY__", str(dev_memory))
+    vendor, platform_str, webgl_vendor = profile.vendor, profile.platform, profile.webgl_vendor
+    script = script.replace("__VENDOR__", vendor)
+    script = script.replace("__PLATFORM__", platform_str)
+    script = script.replace("__WEBGL_VENDOR__", webgl_vendor)
+
+    # Window-geometry deltas: macOS menu bar (25px) vs Windows taskbar (40px);
+    # outer dimensions add browser chrome (16/88px).
+    is_mac = platform_str == "MacIntel"
+    vw = int(profile.viewport.get("width", 1440))
+    vh = int(profile.viewport.get("height", 900))
+    script = script.replace("__VIEWPORT_W__", str(vw))
+    script = script.replace("__VIEWPORT_H__", str(vh))
+    script = script.replace("__OUTER_DX__", "16")
+    script = script.replace("__OUTER_DY__", "88")
+    script = script.replace("__SCREEN_Y__", "25" if is_mac else "0")
+    script = script.replace("__AVAIL_DY__", "25" if is_mac else "40")
+    script = script.replace("__AVAIL_TOP__", "25" if is_mac else "0")
+
+    renderer_slug = re.sub(r"[^a-z0-9]+", "-", profile.webgl_renderer.lower()).strip("-")
+    gpu_vendor_lc = (
+        "apple"
+        if "apple" in profile.webgl_vendor.lower()
+        else "nvidia"
+        if "nvidia" in webgl_vendor.lower()
+        else "amd"
+        if "amd" in webgl_vendor.lower() or "radeon" in renderer_slug
+        else "intel"
+    )
+    if not is_mac:
+        chrome_major_m = re.search(r"Chrome/(\d+)", profile.user_agent)
+        chrome_major = chrome_major_m.group(1) if chrome_major_m else "136"
+        script = script.replace("__CHROME_MAJOR__", chrome_major)
+        script = script.replace("__UA_ARCH__", "arm" if any(f"m{n}" in renderer_slug for n in (1, 2, 3, 4)) or "arm" in renderer_slug else "x86")
+        script = script.replace("__UA_PLATFORM_VERSION__", "15.0.0")
+        script = script.replace("__UA_PLATFORM_HINT__", "Windows")
+    else:
+        # Chromium exposes navigator.gpu even under the Safari identity.
+        script = script.replace("__CHROME_MAJOR__", "136")
+        script = script.replace("__UA_ARCH__", "arm")
+        script = script.replace("__UA_PLATFORM_VERSION__", "15.0.0")
+        script = script.replace("__UA_PLATFORM_HINT__", "macOS")
+    script = script.replace("__MAX_TOUCH__", str(profile.max_touch_points))
+    script = script.replace("__GPU_VENDOR_LC__", gpu_vendor_lc)
+    script = script.replace("__GPU_ARCH__", renderer_slug)
+
+    if platform_str != "MacIntel":
+        script = _strip_section(script, "SAFARI_ONLY")
+    if is_mac:
+        script = _strip_section(script, "CHROME_ONLY")
     if browser_type == "chromium":
         script = _strip_section(script, "CANVAS_NOISE")
         script = _strip_section(script, "WEBRTC_BLOCK")
@@ -506,7 +582,6 @@ _SHADOW_DOM_FLATTEN_JS = """
     }
 })(document);
 """
-
 _IFRAME_INLINE_JS = """
 (function inlineIframes() {
     const iframes = document.querySelectorAll('iframe');
@@ -524,7 +599,6 @@ _IFRAME_INLINE_JS = """
     }
 })();
 """
-
 _OVERLAY_REMOVAL_JS = """
 (function removeOverlays() {
     const selectors = [
@@ -537,7 +611,6 @@ _OVERLAY_REMOVAL_JS = """
         '[class*="gdpr"]', '[id*="gdpr"]',
         '[class*="newsletter"]', '[id*="newsletter"]',
     ];
-
     for (const sel of selectors) {
         for (const el of document.querySelectorAll(sel)) {
             const style = window.getComputedStyle(el);
@@ -548,7 +621,6 @@ _OVERLAY_REMOVAL_JS = """
             }
         }
     }
-
     for (const el of document.querySelectorAll('*')) {
         const style = window.getComputedStyle(el);
         if ((style.position === 'fixed' || style.position === 'sticky')
@@ -557,19 +629,16 @@ _OVERLAY_REMOVAL_JS = """
             el.remove();
         }
     }
-
     document.body.style.overflow = 'auto';
     document.documentElement.style.overflow = 'auto';
 })();
 """
-
 _SCROLL_TO_BOTTOM_JS = """
 async function scrollToBottom() {
     const delay = ms => new Promise(r => setTimeout(r, ms));
     let prevHeight = 0;
     let attempts = 0;
     const maxAttempts = 30;
-
     while (attempts < maxAttempts) {
         window.scrollTo(0, document.body.scrollHeight);
         await delay(800);
@@ -586,7 +655,6 @@ async function scrollToBottom() {
 }
 await scrollToBottom();
 """
-
 _AD_TRACKER_DOMAINS = frozenset(
     {
         "doubleclick.net",
@@ -617,7 +685,6 @@ _AD_TRACKER_DOMAINS = frozenset(
         "taboola.com",
     }
 )
-
 _BLOCKED_MEDIA_TYPES = frozenset({"image", "media", "font"})
 
 
@@ -691,19 +758,16 @@ async def solve_cloudflare(page, *, max_retries: int = 2, max_seconds: float | N
         await page.wait_for_load_state("networkidle", timeout=5_000)
     except Exception:
         pass
-
     html = await _cf_page_content(page)
     cf_type = _detect_cloudflare(html)
     if cf_type is None:
         return False
-
     logger.info("cf_challenge_detected", cf_type=cf_type)
-
     for attempt in range(max_retries + 1):
         if _expired():
             return False
         if cf_type == "non-interactive":
-            for _wait_iter in range(30):  # cap at 30 s to prevent infinite loop
+            for _wait_iter in range(30):
                 if _expired():
                     return False
                 if "<title>Just a moment...</title>" not in await _cf_page_content(page):
@@ -719,85 +783,66 @@ async def solve_cloudflare(page, *, max_retries: int = 2, max_seconds: float | N
                 return False
             await asyncio.sleep(2)
             continue
-
         try:
             if cf_type != "embedded_turnstile":
                 while "Verifying you are human." in await _cf_page_content(page):
                     if _expired():
                         return False
                     await page.wait_for_timeout(500)
-
             outer_box = None
             cf_frame = None
             for frame in page.frames:
                 if _CF_CHALLENGE_RE.match(frame.url or ""):
                     cf_frame = frame
                     break
-
             if cf_frame is not None:
                 await page.wait_for_load_state("load", timeout=5_000)
-
                 if cf_type != "embedded_turnstile":
                     frame_el = await cf_frame.frame_element()
                     for _ in range(20):
                         if await frame_el.is_visible():
                             break
                         await page.wait_for_timeout(500)
-
                 frame_el = await cf_frame.frame_element()
                 outer_box = await frame_el.bounding_box()
-
             if not cf_frame or not outer_box:
                 if await _cf_is_solved(page):
                     return True
                 box_sel = _CF_BOX_SELECTOR if cf_type == "embedded_turnstile" else _CF_INTERSTITIAL_BOX_SELECTOR
                 try:
-                    # Short timeout: the default 30 s locator wait would blow the
-                    # solve budget and leak a pending future when the box is absent.
                     outer_box = await page.locator(box_sel).last.bounding_box(timeout=3_000)
                 except Exception:
                     pass
-
             if not outer_box:
                 if attempt == max_retries:
                     return False
                 await asyncio.sleep(2)
                 continue
-
             x = outer_box["x"] + random.randint(26, 28)
             y = outer_box["y"] + random.randint(25, 27)
             if settings.humanize_interactions:
-                # Curved approach + realistic hold reads as human to the Turnstile
-                # behavioural check, not a teleport-click.
                 from pawgrab.engine.humanize import human_click
 
                 await human_click(page, x, y)
             else:
                 await page.mouse.click(x, y, delay=random.randint(100, 200), button="left")
-
             try:
                 await page.wait_for_load_state("networkidle", timeout=10_000)
             except Exception:
                 pass
-
             if cf_type != "embedded_turnstile":
                 for _ in range(100):
                     if await _cf_is_solved(page):
                         break
                     await page.wait_for_timeout(100)
-
             await page.wait_for_load_state("load", timeout=5_000)
-
             if await _cf_is_solved(page):
                 return True
-
             logger.debug("cf_still_present_retrying", attempt=attempt)
         except Exception:
             logger.debug("cf_solve_attempt_failed", attempt=attempt)
-
         if attempt < max_retries:
             await asyncio.sleep(2)
-
     return False
 
 
@@ -871,6 +916,7 @@ class BrowserPool:
     def __init__(self, pool_size: int | None = None, browser_type: str | None = None):
         self._pool_size = pool_size or settings.browser_pool_size
         self._browser_type = browser_type or settings.browser_type
+        self._cdp_url = settings.browser_cdp_url.strip()
         self._browser: Browser | None = None
         self._pages: asyncio.Queue[Page] = asyncio.Queue()
         self._playwright = None
@@ -909,22 +955,29 @@ class BrowserPool:
             locale = profile.locale
             accept_language = profile.accept_language
         else:
-            ua = random_user_agent()
-            viewport = random.choice(_VIEWPORTS)
-            timezone = random.choice(_TIMEZONES)
-            locale = random.choice(_LOCALES)
-            accept_language = None
+            profile = build_profile()
+            ua = profile.user_agent
+            viewport = dict(profile.viewport)
+            timezone = profile.timezone
+            locale = profile.locale
+            accept_language = profile.accept_language
 
-        # Proxy exit-IP geo wins: align timezone/locale to the visible IP.
         if geo is not None:
             timezone = geo.timezone
             locale = geo.locale
             accept_language = geo.accept_language
-
         headers = stealth_headers(user_agent=ua, timezone=timezone)
         if accept_language:
             headers["Accept-Language"] = accept_language
         extra = {k: v for k, v in headers.items() if k not in ("User-Agent", "Accept-Encoding")}
+        if profile.platform == "Win32":
+            # Chromium sends its real brand in sec-ch-ua even when the UA is
+            # overridden; rewrite them to match.
+            chrome_m = re.search(r"Chrome/(\d+)", ua)
+            chrome_v = chrome_m.group(1) if chrome_m else "136"
+            extra["sec-ch-ua"] = f'"Not A(Brand";v="8", "Chromium";v="{chrome_v}", "Google Chrome";v="{chrome_v}"'
+            extra["sec-ch-ua-mobile"] = "?0"
+            extra["sec-ch-ua-platform"] = '"Windows"'
         kwargs: dict = dict(
             user_agent=ua,
             locale=locale,
@@ -938,7 +991,8 @@ class BrowserPool:
             has_touch=False,
             service_workers="allow",
             ignore_https_errors=True,
-            permissions=["geolocation", "notifications"],
+            # No notifications grant — the evasion script reports 'prompt'.
+            permissions=["geolocation"],
         )
         if proxy_url:
             kwargs["proxy"] = {"server": proxy_url}
@@ -965,29 +1019,25 @@ class BrowserPool:
         """
         if not proxy_url and self._persistent_ctx is not None:
             return await self._persistent_ctx.new_page()
-
         profile = build_profile(settings.fingerprint_seed or None)
-
         if proxy_url:
-            if self._proxy_browser is None:
-                launcher = await self._get_browser_launcher()
-                is_chromium = self._browser_type == "chromium"
-                self._proxy_browser = await launcher.launch(
-                    headless=True,
-                    args=list(_STEALTH_CHROMIUM_ARGS) if is_chromium else None,
-                    ignore_default_args=list(_HARMFUL_DEFAULT_ARGS) if is_chromium else None,
-                )
-            # Align timezone/locale/geolocation to the proxy exit IP (best-effort).
-            geo = await resolve_proxy_geo(proxy_url)
-            ctx_kwargs = self._context_kwargs(proxy_url=proxy_url, geolocation=geolocation, profile=profile, geo=geo)
-            ctx = await self._proxy_browser.new_context(**ctx_kwargs)
+            browser = await self._ensure_proxy_browser()
+            if self._cdp:
+                # A CDP-connected browser's proxy is fixed at its own launch; a
+                # per-context proxy can't be applied. Egress is whatever the
+                # remote (CloakBrowser) is configured with.
+                logger.warning("browser_cdp_proxy_ignored", endpoint=_redact_endpoint(self._cdp_url))
+                ctx_kwargs = self._context_kwargs(geolocation=geolocation, profile=profile)
+            else:
+                geo = await resolve_proxy_geo(proxy_url)
+                ctx_kwargs = self._context_kwargs(proxy_url=proxy_url, geolocation=geolocation, profile=profile, geo=geo)
+            ctx = await browser.new_context(**ctx_kwargs)
             if settings.stealth_mode:
                 await _apply_stealth(ctx)
                 evasion_js = _build_evasion_script(browser_type=self._browser_type, profile=profile)
                 await ctx.add_init_script(evasion_js)
             await ctx.route("**/*", _route_handler)
             return await ctx.new_page()
-
         assert self._browser is not None
         ctx_kwargs = self._context_kwargs(geolocation=geolocation, profile=profile)
         ctx = await self._browser.new_context(**ctx_kwargs)
@@ -1008,17 +1058,80 @@ class BrowserPool:
             case _:
                 return self._playwright.chromium
 
+    @property
+    def _cdp(self) -> bool:
+        """True when connecting to an external patched Chromium over CDP.
+
+        CDP connect is Chromium-only; a non-chromium ``browser_type`` falls back
+        to a local launch even if a CDP URL is set.
+        """
+        return bool(self._cdp_url) and self._browser_type == "chromium"
+
+    async def _connect_cdp(self) -> Browser:
+        """Connect to the externally-run patched Chromium (e.g. CloakBrowser).
+
+        The remote browser's compile-time fingerprint patches are the point of
+        connecting; Pawgrab layers its per-context JS stealth, seeded fingerprint
+        and request routing on top via ``new_context``.
+        """
+        browser = await self._playwright.chromium.connect_over_cdp(
+            self._cdp_url,
+            timeout=settings.browser_cdp_timeout_ms,
+        )
+        logger.info("browser_cdp_connected", endpoint=_redact_endpoint(self._cdp_url))
+        return browser
+
+    async def _ensure_proxy_browser(self) -> Browser:
+        """Return the browser used for fresh/proxied contexts, creating it lazily.
+
+        On the CDP path the connected browser is reused (we cannot spawn a second
+        process, and its proxy is fixed at its own launch); otherwise a dedicated
+        local browser is launched on first use.
+        """
+        if self._cdp:
+            if self._browser is None:
+                self._browser = await self._connect_cdp()
+            return self._browser
+        if self._proxy_browser is None:
+            launcher = await self._get_browser_launcher()
+            is_chromium = self._browser_type == "chromium"
+            self._proxy_browser = await launcher.launch(
+                headless=True,
+                args=list(_STEALTH_CHROMIUM_ARGS) if is_chromium else None,
+                ignore_default_args=list(_HARMFUL_DEFAULT_ARGS) if is_chromium else None,
+            )
+        return self._proxy_browser
+
     async def start(self):
         if self._started:
             return
         self._playwright = await async_playwright().start()
         launcher = await self._get_browser_launcher()
         is_chromium = self._browser_type == "chromium"
-
-        if is_chromium:
+        if self._cdp:
+            # External patched Chromium: connect, then run every request through a
+            # fresh context on it. No local user-data dir, args or headless flag —
+            # those belong to the remote browser's own launch.
+            self._browser = await self._connect_cdp()
+            profile = build_profile(settings.fingerprint_seed or None)
+            ctx_kwargs = self._context_kwargs(profile=profile)
+            ctx_kwargs.pop("permissions", None)
+            self._persistent_ctx = await self._browser.new_context(**ctx_kwargs)
+            if settings.stealth_mode:
+                await _apply_stealth(self._persistent_ctx)
+                evasion_js = _build_evasion_script(browser_type="chromium", profile=profile)
+                await self._persistent_ctx.add_init_script(evasion_js)
+            await self._persistent_ctx.route("**/*", _route_handler)
+            try:
+                await self._persistent_ctx.grant_permissions(["geolocation", "notifications"])
+            except Exception:
+                pass
+            for _ in range(self._pool_size):
+                page = await self._persistent_ctx.new_page()
+                await self._pages.put(page)
+        elif is_chromium:
             self._user_data_dir = tempfile.mkdtemp(prefix="pawgrab_chrome_")
-            # One coherent identity for the shared context: viewport/screen/GPU/
-            # timezone/UA all drawn from a single seed instead of independently.
+
             profile = build_profile(settings.fingerprint_seed or None)
             ctx_kwargs = self._context_kwargs(profile=profile)
             ctx_kwargs.pop("permissions", None)
@@ -1049,7 +1162,6 @@ class BrowserPool:
             for _ in range(self._pool_size):
                 page = await self._new_stealth_page()
                 await self._pages.put(page)
-
         self._started = True
         logger.info(
             "browser_pool_started",
@@ -1106,18 +1218,14 @@ class BrowserPool:
         state never bleed into the shared cookie jar (multi-tenant isolation).
         Caller MUST release via :meth:`release_isolated_page`.
         """
-        if self._proxy_browser is None:
-            launcher = await self._get_browser_launcher()
-            is_chromium = self._browser_type == "chromium"
-            self._proxy_browser = await launcher.launch(
-                headless=True,
-                args=list(_STEALTH_CHROMIUM_ARGS) if is_chromium else None,
-                ignore_default_args=list(_HARMFUL_DEFAULT_ARGS) if is_chromium else None,
-            )
+        browser = await self._ensure_proxy_browser()
         profile = build_profile(settings.fingerprint_seed or None)
+        if proxy_url and self._cdp:
+            logger.warning("browser_cdp_proxy_ignored", endpoint=_redact_endpoint(self._cdp_url))
+            proxy_url = None
         geo = await resolve_proxy_geo(proxy_url) if proxy_url else None
         ctx_kwargs = self._context_kwargs(proxy_url=proxy_url, geolocation=geolocation, profile=profile, geo=geo)
-        ctx = await self._proxy_browser.new_context(**ctx_kwargs)
+        ctx = await browser.new_context(**ctx_kwargs)
         if settings.stealth_mode:
             await _apply_stealth(ctx)
             await ctx.add_init_script(_build_evasion_script(browser_type=self._browser_type, profile=profile))
@@ -1155,8 +1263,6 @@ class BrowserPool:
         try:
             page = await asyncio.wait_for(self._pages.get(), timeout=timeout)
         except TimeoutError:
-            # Queue starved — possibly drained by a degraded pool. Mint a page
-            # directly instead of hanging forever (self-heal).
             logger.warning("browser_pool_acquire_timeout_minting_page")
             page = await self._mint_page()
         elapsed_ms = (time.monotonic() - t0) * 1000
@@ -1173,6 +1279,8 @@ class BrowserPool:
         try:
             await page.goto("about:blank", timeout=5_000)
             await page.evaluate(_PAGE_RESET_JS)
+
+            await page.context.clear_cookies()
             self.metrics.total_recycles += 1
             return page
         except Exception:
@@ -1185,19 +1293,16 @@ class BrowserPool:
 
     async def release(self, page: Page):
         self.metrics.total_releases += 1
-
         if self._degraded:
             await self._close_page(page)
             return
         if not self._persistent_ctx and not self._browser:
             await self._close_page(page)
             return
-
         recycled = await self._recycle_page(page)
         if recycled is not None:
             await self._pages.put(recycled)
             return
-
         await self._close_page(page)
         new_page = None
         try:
@@ -1215,7 +1320,6 @@ class BrowserPool:
             except Exception:
                 logger.error("page_creation_failed_pool_degraded")
                 self._degraded = True
-
         if new_page is not None:
             await self._pages.put(new_page)
 
@@ -1223,24 +1327,24 @@ class BrowserPool:
         """Acquire a page bound to a persistent context for the given session."""
         t0 = time.monotonic()
 
-        # Lock the check-then-create so concurrent calls for the same session
-        # don't each launch a context (leaking one + its temp dir).
         async with self._session_lock:
             ctx = self._session_contexts.get(session_id)
             if ctx is None:
                 await self._evict_idle_sessions()
                 launcher = await self._get_browser_launcher()
                 is_chromium = self._browser_type == "chromium"
-                user_data_dir = tempfile.mkdtemp(prefix=f"pawgrab_session_{session_id[:8]}_")
-                self._session_dirs[session_id] = user_data_dir
 
-                # Seed the fingerprint from the session id so the identity stays
-                # stable across every page in this session (a returning visitor).
                 session_profile = build_profile(settings.fingerprint_seed or session_id)
                 ctx_kwargs = self._context_kwargs(profile=session_profile)
                 ctx_kwargs.pop("permissions", None)
-
-                if is_chromium:
+                if self._cdp:
+                    # Isolated context on the connected browser; per-session state
+                    # lives in-process (no persistent user-data dir on the remote).
+                    browser = await self._ensure_proxy_browser()
+                    ctx = await browser.new_context(**ctx_kwargs)
+                elif is_chromium:
+                    user_data_dir = tempfile.mkdtemp(prefix=f"pawgrab_session_{session_id[:8]}_")
+                    self._session_dirs[session_id] = user_data_dir
                     ctx = await launcher.launch_persistent_context(
                         user_data_dir,
                         headless=True,
@@ -1252,7 +1356,6 @@ class BrowserPool:
                     if self._browser is None:
                         self._browser = await launcher.launch(headless=True)
                     ctx = await self._browser.new_context(**ctx_kwargs)
-
                 if settings.stealth_mode:
                     await _apply_stealth(ctx)
                     evasion_js = _build_evasion_script(browser_type=self._browser_type, profile=session_profile)
@@ -1260,9 +1363,7 @@ class BrowserPool:
                 await ctx.route("**/*", _route_handler)
                 self._session_contexts[session_id] = ctx
                 logger.info("session_context_created", session_id=session_id)
-
             self._session_last_used[session_id] = time.monotonic()
-
         page = await ctx.new_page()
         elapsed_ms = (time.monotonic() - t0) * 1000
         self.metrics.record_acquire(elapsed_ms)
@@ -1339,54 +1440,44 @@ class BrowserPool:
     async def stop(self):
         if not self._started:
             return
-
         for sid in list(self._session_contexts):
             await self.close_session(sid)
-
         for ctx in self._persistent_contexts.values():
             try:
                 await ctx.close()
             except Exception:
                 pass
         self._persistent_contexts.clear()
-
         while not self._pages.empty():
             page = self._pages.get_nowait()
             try:
                 await page.close()
             except Exception:
                 pass
-
         if self._persistent_ctx:
             try:
                 await self._persistent_ctx.close()
             except Exception:
                 pass
             self._persistent_ctx = None
-
         if self._proxy_browser:
             try:
                 await self._proxy_browser.close()
             except Exception:
                 pass
             self._proxy_browser = None
-
         if self._browser:
             await self._browser.close()
             self._browser = None
-
         if self._playwright:
             await self._playwright.stop()
             self._playwright = None
-
         if self._user_data_dir:
             shutil.rmtree(self._user_data_dir, ignore_errors=True)
             self._user_data_dir = None
-
         if self._trace_dir:
             shutil.rmtree(self._trace_dir, ignore_errors=True)
             self._trace_dir = None
-
         self._started = False
         final_metrics = self.metrics.snapshot()
         logger.info("browser_pool_stopped", **final_metrics)

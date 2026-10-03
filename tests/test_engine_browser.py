@@ -1,18 +1,13 @@
 """Tests for browser pool fingerprint evasion."""
 
 from pawgrab.engine.browser import (
-    _APPLE_GPU_PROFILES,
-    _APPLE_RENDERERS,
     _HARMFUL_DEFAULT_ARGS,
-    _LOCALES,
     _STEALTH_CHROMIUM_ARGS,
-    _TIMEZONES,
-    _VIEWPORTS,
     _build_evasion_script,
     _detect_cloudflare,
-    _pick_gpu_profile,
     _strip_section,
 )
+from pawgrab.engine.fingerprint import build_profile
 
 
 def test_build_evasion_script_contains_webgl_spoof():
@@ -52,28 +47,31 @@ def test_build_evasion_script_removes_chrome_markers():
 
 
 def test_build_evasion_script_uses_valid_renderer():
-    script = _build_evasion_script()
-    assert any(r in script for r in _APPLE_RENDERERS)
+    profile = build_profile()
+    script = _build_evasion_script(profile=profile)
+    assert profile.webgl_renderer in script
+
+
+def test_build_evasion_script_matches_platform_identity():
+    mac = build_profile(platform="macos")
+    mac_script = _build_evasion_script(profile=mac)
+    assert "MacIntel" in mac_script
+    assert "Apple Computer, Inc." in mac_script
+
+    assert "delete window.chrome" in mac_script
+    win = build_profile(platform="windows")
+    win_script = _build_evasion_script(profile=win)
+    assert "Win32" in win_script
+    assert "Google Inc." in win_script
+    assert win.webgl_renderer in win_script
+
+    assert "delete window.chrome" not in win_script
+    assert "Samantha" not in win_script
 
 
 def test_build_evasion_script_varies():
     scripts = {_build_evasion_script() for _ in range(20)}
     assert len(scripts) > 1
-
-
-def test_timezones_and_locales_populated():
-    assert len(_TIMEZONES) >= 5
-    assert len(_LOCALES) >= 3
-    assert all(isinstance(tz, str) for tz in _TIMEZONES)
-    assert all(isinstance(loc, str) for loc in _LOCALES)
-
-
-def test_viewports_have_required_keys():
-    for vp in _VIEWPORTS:
-        assert "width" in vp
-        assert "height" in vp
-        assert vp["width"] > 0
-        assert vp["height"] > 0
 
 
 def test_build_evasion_script_has_plugins_spoof():
@@ -115,33 +113,6 @@ def test_build_evasion_script_removes_bluetooth():
 def test_build_evasion_script_has_speech_synthesis():
     script = _build_evasion_script()
     assert "speechSynthesis" in script
-
-
-def test_gpu_profiles_have_weights():
-    for renderer, concurrency, weight in _APPLE_GPU_PROFILES:
-        assert isinstance(renderer, str)
-        assert concurrency > 0
-        assert weight > 0
-
-
-def test_pick_gpu_profile_returns_consistent_tuple():
-    renderer, hw, dev_mem = _pick_gpu_profile()
-    assert renderer in _APPLE_RENDERERS
-    assert hw in (4, 8, 10, 12)
-    assert dev_mem in (4, 8, 16, 32)
-
-
-def test_pick_gpu_profile_pro_gets_more_memory():
-    """Pro/Max GPUs should get 16 or 32 GB device memory."""
-    for _ in range(50):
-        renderer, hw, dev_mem = _pick_gpu_profile()
-        if "Pro" in renderer or "Max" in renderer:
-            assert dev_mem in (16, 32)
-
-
-def test_pick_gpu_profile_varies():
-    profiles = {_pick_gpu_profile()[0] for _ in range(100)}
-    assert len(profiles) > 2
 
 
 def test_canvas_noise_multi_channel():
@@ -269,7 +240,7 @@ def test_context_kwargs_geo_overrides_profile():
     from pawgrab.engine.geoip import ProxyGeo
 
     pool = BrowserPool()
-    profile = build_profile(42069)  # some American/European tz
+    profile = build_profile(42069)
     geo = ProxyGeo(
         ip="1.2.3.4",
         timezone="Asia/Tokyo",
@@ -280,10 +251,10 @@ def test_context_kwargs_geo_overrides_profile():
         country="JP",
     )
     kw = pool._context_kwargs(proxy_url="http://p:8080", profile=profile, geo=geo)
-    # Proxy exit-IP geo wins over the profile's random timezone.
+
     assert kw["timezone_id"] == "Asia/Tokyo"
     assert kw["extra_http_headers"]["Accept-Language"] == geo.accept_language
-    # Geolocation is seeded from the proxy coordinates.
+
     assert kw["geolocation"]["latitude"] == 35.6
     assert kw["proxy"] == {"server": "http://p:8080"}
 
@@ -297,7 +268,7 @@ async def test_acquire_self_heals_on_timeout(monkeypatch):
     pool = BrowserPool()
     sentinel = object()
     pool._mint_page = AsyncMock(return_value=sentinel)
-    # Empty queue + tiny timeout -> wait_for times out -> _mint_page.
+
     page = await pool.acquire(timeout=0.05)
     assert page is sentinel
     pool._mint_page.assert_awaited_once()
@@ -314,3 +285,153 @@ async def test_release_isolated_page_closes_context():
     page.context.close = AsyncMock()
     await pool.release_isolated_page(page)
     page.context.close.assert_awaited_once()
+
+
+def test_evasion_script_chrome_identity_has_client_hints():
+    from pawgrab.engine.fingerprint import build_profile
+
+    win = build_profile(seed=7, platform="windows")
+    script = _build_evasion_script(browser_type="chromium", profile=win)
+    assert "getHighEntropyValues" in script
+    assert 'brand: "Google Chrome"' in script
+    import re
+
+    assert not [t for t in re.split(r"__", script) if t.isupper() and t not in ("BEGIN_CHROME_ONLY", "END_CHROME_ONLY")]
+
+
+def test_evasion_script_safari_identity_drops_user_agent_data():
+    from pawgrab.engine.fingerprint import build_profile
+
+    mac = build_profile(seed=7, platform="macos")
+    script = _build_evasion_script(browser_type="chromium", profile=mac)
+    assert "delete navigator.userAgentData" in script
+    assert "getHighEntropyValues" not in script
+
+
+def test_evasion_script_geometry_and_notification():
+    script = _build_evasion_script()
+    assert "outerHeight" in script
+    assert "availHeight" in script
+    assert "Notification, 'permission'" in script.replace("Object.defineProperty(Notification, 'permission'", "Notification, 'permission'")
+    assert "requestAdapterInfo" in script
+
+
+def test_context_kwargs_windows_gets_sec_ch_ua_headers():
+
+    from pawgrab.engine.browser import BrowserPool
+    from pawgrab.engine.fingerprint import build_profile
+
+    pool = BrowserPool()
+    profile = build_profile(seed=7, platform="windows")
+    kwargs = pool._context_kwargs(profile=profile)
+    extra = kwargs["extra_http_headers"]
+    assert "sec-ch-ua" in extra
+    assert "Windows" in extra["sec-ch-ua-platform"]
+    assert kwargs["permissions"] == ["geolocation"]
+
+
+def test_context_kwargs_safari_no_client_hint_headers():
+    from pawgrab.engine.browser import BrowserPool
+    from pawgrab.engine.fingerprint import build_profile
+
+    pool = BrowserPool()
+    profile = build_profile(seed=7, platform="macos")
+    kwargs = pool._context_kwargs(profile=profile)
+    extra = kwargs["extra_http_headers"]
+    assert "sec-ch-ua" not in extra
+
+
+def test_redact_endpoint_drops_path_and_query():
+    from pawgrab.engine.browser import _redact_endpoint
+
+    # A token in the query must never reach the logs.
+    assert _redact_endpoint("ws://cloak.host:9222/devtools/browser?token=secret") == "ws://cloak.host:9222"
+    assert _redact_endpoint("not a url") == "<endpoint>"
+
+
+def test_cdp_property_chromium_only(monkeypatch):
+    from pawgrab.config import settings
+    from pawgrab.engine.browser import BrowserPool
+
+    monkeypatch.setattr(settings, "browser_cdp_url", "ws://localhost:9222")
+    assert BrowserPool()._cdp is True
+    assert BrowserPool(browser_type="firefox")._cdp is False
+    monkeypatch.setattr(settings, "browser_cdp_url", "")
+    assert BrowserPool()._cdp is False
+
+
+def test_cdp_url_whitespace_stripped(monkeypatch):
+    from pawgrab.config import settings
+    from pawgrab.engine.browser import BrowserPool
+
+    monkeypatch.setattr(settings, "browser_cdp_url", "  ws://localhost:9222  ")
+    assert BrowserPool()._cdp_url == "ws://localhost:9222"
+
+
+def _fake_cdp_playwright(monkeypatch):
+    """Patch async_playwright so start() connects to a mock CDP browser."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    import pawgrab.engine.browser as browser_mod
+
+    ctx = MagicMock()
+    ctx.new_page = AsyncMock(side_effect=lambda: MagicMock())
+    ctx.add_init_script = AsyncMock()
+    ctx.route = AsyncMock()
+    ctx.grant_permissions = AsyncMock()
+    ctx.new_context = AsyncMock()
+    browser = MagicMock()
+    browser.new_context = AsyncMock(return_value=ctx)
+    browser.close = AsyncMock()
+    chromium = MagicMock()
+    chromium.connect_over_cdp = AsyncMock(return_value=browser)
+    # launch_persistent_context must never be called on the CDP path.
+    chromium.launch_persistent_context = AsyncMock(side_effect=AssertionError("should not launch"))
+    chromium.launch = AsyncMock(side_effect=AssertionError("should not launch"))
+    pw = MagicMock()
+    pw.chromium = chromium
+    pw.stop = AsyncMock()
+    starter = MagicMock()
+    starter.start = AsyncMock(return_value=pw)
+    monkeypatch.setattr(browser_mod, "async_playwright", lambda: starter)
+    return browser, ctx, chromium
+
+
+async def test_start_connects_over_cdp(monkeypatch):
+    from pawgrab.config import settings
+    from pawgrab.engine.browser import BrowserPool
+
+    monkeypatch.setattr(settings, "browser_cdp_url", "ws://cloak:9222/dt?token=x")
+    monkeypatch.setattr(settings, "stealth_mode", False)
+    browser, ctx, chromium = _fake_cdp_playwright(monkeypatch)
+
+    pool = BrowserPool(pool_size=2)
+    await pool.start()
+
+    chromium.connect_over_cdp.assert_awaited_once()
+    assert chromium.connect_over_cdp.await_args.args[0] == "ws://cloak:9222/dt?token=x"
+    assert chromium.connect_over_cdp.await_args.kwargs["timeout"] == settings.browser_cdp_timeout_ms
+    chromium.launch_persistent_context.assert_not_called()
+    assert pool._browser is browser
+    assert pool._persistent_ctx is ctx
+    assert pool._user_data_dir is None  # nothing to clean up on the remote
+    assert pool._pages.qsize() == 2
+
+    await pool.stop()
+    browser.close.assert_awaited_once()  # disconnect, not kill
+
+
+async def test_cdp_ensure_proxy_browser_reuses_connection(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from pawgrab.config import settings
+    from pawgrab.engine.browser import BrowserPool
+
+    monkeypatch.setattr(settings, "browser_cdp_url", "ws://cloak:9222")
+    browser, _ctx, chromium = _fake_cdp_playwright(monkeypatch)
+
+    pool = BrowserPool()
+    pool._playwright = MagicMock(chromium=chromium)  # _ensure_proxy_browser connects lazily
+    got = await pool._ensure_proxy_browser()
+    assert got is browser
+    assert pool._proxy_browser is None  # never spawns a second browser
