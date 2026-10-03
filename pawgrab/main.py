@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from pawgrab._version import __version__
-from pawgrab.api import batch, crawl, extract, health, map, proxy, schedule, scrape, search, session
+from pawgrab.api import batch, crawl, extract, health, map, parse, proxy, schedule, scrape, search, session
 from pawgrab.api import metrics as metrics_api
 from pawgrab.config import settings
 from pawgrab.dependencies import shutdown_browser_pool, shutdown_proxy_pool
@@ -30,7 +30,6 @@ from pawgrab.models.common import ErrorResponse
 from pawgrab.queue.manager import close_redis
 
 _is_production = settings.log_level.lower() not in ("debug",)
-
 if _is_production:
     structlog.configure(
         processors=[
@@ -48,7 +47,6 @@ else:
             structlog.dev.ConsoleRenderer(),
         ],
     )
-
 logger = structlog.get_logger()
 
 
@@ -74,29 +72,23 @@ _STATUS_TO_CODE = {
     503: ErrorCode.QUEUE_UNAVAILABLE,
     504: ErrorCode.TIMEOUT,
 }
-
-
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Validate client-supplied IDs before binding into logs / reflecting in
-        # the response — an unvalidated value enables log forging / header injection.
+
         client_id = request.headers.get("X-Request-ID", "")
         request_id = client_id if _REQUEST_ID_RE.match(client_id) else uuid.uuid4().hex[:12]
         request.state.request_id = request_id
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
-
         start = time.perf_counter()
         response = await call_next(request)
         duration_ms = round((time.perf_counter() - start) * 1000, 1)
-
         from pawgrab.engine.metrics import metrics
 
         metrics.request_duration.observe(duration_ms / 1000)
-
         from pawgrab.engine.analytics import usage_tracker
 
         raw_key = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
@@ -104,15 +96,12 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         content_length = int(response.headers.get("content-length", "0") or "0")
         is_error = response.status_code >= 400
         usage_tracker.record_request(client_key, request.url.path, response_size=content_length, is_error=is_error)
-
         response.headers["X-Request-ID"] = request_id
         response.headers["X-API-Version"] = __version__
         response.headers["X-Response-Time"] = f"{duration_ms}ms"
-
         if request.url.path.startswith("/v1/"):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Vary"] = "Authorization"
-
         logger.info(
             "request_completed",
             method=request.method,
@@ -124,17 +113,13 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    # /metrics and /dashboard expose Prometheus data and per-client analytics —
-    # they require the API key like any other endpoint (not in the skip set).
     SKIP_PATHS = {"/health", "/status", "/docs", "/openapi.json", "/redoc"}
 
     async def dispatch(self, request: Request, call_next):
         if not settings.api_key:
             return await call_next(request)
-
         if request.url.path in self.SKIP_PATHS:
             return await call_next(request)
-
         key = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
         if not hmac.compare_digest(key, settings.api_key):
             return JSONResponse(
@@ -218,11 +203,8 @@ def create_app() -> FastAPI:
     if settings.api_key:
         app.add_middleware(APIKeyMiddleware)
     app.add_middleware(RequestIDMiddleware)
-
     app.add_middleware(GZipMiddleware, minimum_size=1000)
-    # CORS origins are explicit and independent of api_key. Wildcard is only ever
-    # used when the operator has explicitly opted into unauthenticated mode —
-    # never as a silent side effect of leaving api_key unset.
+
     cors_origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
     if not cors_origins and settings.allow_unauthenticated:
         cors_origins = ["*"]
@@ -232,7 +214,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
     app.include_router(health.router)
     app.include_router(scrape.router, prefix="/v1")
     app.include_router(crawl.router, prefix="/v1")
@@ -240,11 +221,11 @@ def create_app() -> FastAPI:
     app.include_router(batch.router, prefix="/v1")
     app.include_router(map.router, prefix="/v1")
     app.include_router(search.router, prefix="/v1")
+    app.include_router(parse.router, prefix="/v1")
     app.include_router(proxy.router, prefix="/v1")
     app.include_router(session.router, prefix="/v1")
     app.include_router(metrics_api.router)
     app.include_router(schedule.router, prefix="/v1")
-
     dashboard_dir = Path(__file__).resolve().parent.parent / "dashboard"
     if dashboard_dir.is_dir():
 
