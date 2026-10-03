@@ -1,0 +1,17 @@
+{
+  "name": "pawgrab-sdk",
+  "version": "0.1.0",
+  "description": "Pawgrab TypeScript SDK — official client for the Pawgrab web scraping API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["scraping", "web", "api", "markdown", "crawler"],
+  "license": "SEE LICENSE IN LICENSE",
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
