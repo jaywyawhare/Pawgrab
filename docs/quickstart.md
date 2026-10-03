@@ -81,11 +81,7 @@ Or with Python:
 ```python
 import requests
 
-response = requests.post("http://localhost:8000/v1/scrape", json={
-    "url": "https://news.ycombinator.com",
-    "formats": ["markdown", "text"],
-    "wait_for_js": True
-})
+response = requests.post("http://localhost:8000/v1/scrape", json={"url": "https://news.ycombinator.com", "formats": ["markdown", "text"], "wait_for_js": True})
 
 data = response.json()
 print(data["markdown"])

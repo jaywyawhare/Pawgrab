@@ -20,21 +20,29 @@ async with PawgrabClient("http://localhost:8000", api_key="your-key") as client:
     print(result.markdown)
 
     # With options
-    result = await client.scrape("https://example.com", ScrapeOptions(
-        formats=["markdown", "text"],
-        llm_ready=True,
-        cache_ttl=300,
-    ))
+    result = await client.scrape(
+        "https://example.com",
+        ScrapeOptions(
+            formats=["markdown", "text"],
+            llm_ready=True,
+            cache_ttl=300,
+        ),
+    )
 
     # Extract structured data
     from pawgrab_sdk import ExtractOptions
-    data = await client.extract("https://example.com", ExtractOptions(
-        strategy="llm",
-        prompt="Extract all product names and prices",
-    ))
+
+    data = await client.extract(
+        "https://example.com",
+        ExtractOptions(
+            strategy="llm",
+            prompt="Extract all product names and prices",
+        ),
+    )
 
     # Crawl a site
     from pawgrab_sdk import CrawlOptions
+
     job = await client.crawl("https://example.com", CrawlOptions(max_pages=50))
     status = await client.wait_for_crawl(job.job_id)
 

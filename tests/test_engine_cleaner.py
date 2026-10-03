@@ -58,7 +58,7 @@ def test_jsonld_product_description_extracted():
 
     desc = "A great widget with many useful features. " * 20
     ld = {"@type": "Product", "name": "Widget", "description": desc}
-    html = f'<html><body><script type="application/ld+json">{json.dumps(ld)}</script>' "<div>nav junk</div><p>tiny</p></body></html>"
+    html = f'<html><body><script type="application/ld+json">{json.dumps(ld)}</script><div>nav junk</div><p>tiny</p></body></html>'
     c = extract_content(html)
     assert "great widget" in c.content_html.lower()
 
@@ -69,8 +69,8 @@ def test_jsonld_does_not_override_full_article():
 
     from pawgrab.engine.cleaner import extract_content
 
-    body = "".join(f"<p>{'Real article paragraph %d with substantial content. ' % i * 5}</p>" for i in range(15))
+    body = "".join(f"<p>{f'Real article paragraph {i} with substantial content. ' * 5}</p>" for i in range(15))
     ld = {"@type": "NewsArticle", "headline": "Title", "description": "Short blurb."}
-    html = f"<html><body><article>{body}</article>" f'<script type="application/ld+json">{json.dumps(ld)}</script></body></html>'
+    html = f'<html><body><article>{body}</article><script type="application/ld+json">{json.dumps(ld)}</script></body></html>'
     c = extract_content(html)
     assert c.content_html.count("Real article paragraph") > 10
