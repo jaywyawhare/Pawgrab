@@ -1,6 +1,7 @@
 """POST /v1/search — search and scrape endpoint."""
 
 import asyncio
+from urllib.parse import urlparse
 
 import structlog
 from fastapi import APIRouter
@@ -14,8 +15,27 @@ from pawgrab.models.search import SearchRequest, SearchResponse
 
 logger = structlog.get_logger()
 router = APIRouter(tags=["Search"])
-
 _SEARCH_CONCURRENCY = 5
+
+
+def _host_matches_domain(host: str, domain: str) -> bool:
+    host = (host or "").lower().removeprefix("www.")
+    domain = domain.lower().removeprefix("www.")
+    return host == domain or host.endswith(f".{domain}")
+
+
+def _filter_domains(items: list[dict], include: list[str] | None, exclude: list[str] | None) -> list[dict]:
+    if not include and not exclude:
+        return items
+    kept = []
+    for item in items:
+        host = urlparse(item.get("link", "")).hostname or ""
+        if exclude and any(_host_matches_domain(host, d) for d in exclude):
+            continue
+        if include and not any(_host_matches_domain(host, d) for d in include):
+            continue
+        kept.append(item)
+    return kept
 
 
 @router.post(
@@ -50,8 +70,7 @@ async def search(req: SearchRequest):
             code=ErrorCode.SEARCH_FAILED,
             message=f"Search provider error: {type(exc).__name__}",
         ) from exc
-
-    serp_items = serp["results"]
+    serp_items = _filter_domains(serp["results"], req.include_domains, req.exclude_domains)
     urls = [r["link"] for r in serp_items]
 
     def _serp_fields() -> dict:
@@ -66,12 +85,9 @@ async def search(req: SearchRequest):
             "page": serp["page"],
         }
 
-    # SERP-only mode (SerpAPI-style): return ranked metadata without scraping.
     if not req.scrape or not urls:
         return SearchResponse(success=True, query=req.query, results=[], total=0, **_serp_fields())
-
     pool = await try_browser_pool()
-
     sem = asyncio.Semaphore(_SEARCH_CONCURRENCY)
 
     async def _scrape_one(url: str):
@@ -89,7 +105,6 @@ async def search(req: SearchRequest):
                 return url, None, exc
 
     outcomes = await asyncio.gather(*[_scrape_one(u) for u in urls])
-
     results = []
     failed_urls = []
     for url, response, _error in outcomes:
@@ -97,7 +112,6 @@ async def search(req: SearchRequest):
             results.append(response)
         else:
             failed_urls.append(url)
-
     return SearchResponse(
         success=len(results) > 0,
         query=req.query,
