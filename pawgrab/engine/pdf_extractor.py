@@ -5,8 +5,7 @@ from __future__ import annotations
 import structlog
 
 logger = structlog.get_logger()
-
-_MAX_PDF_SIZE = 50 * 1024 * 1024  # 50 MB
+_MAX_PDF_SIZE = 50 * 1024 * 1024
 
 
 def is_pdf_content(content_type: str, url: str) -> bool:
@@ -23,33 +22,27 @@ def extract_pdf_text(pdf_bytes: bytes) -> tuple[str, str | None]:
     """
     if len(pdf_bytes) > _MAX_PDF_SIZE:
         return "", f"PDF too large ({len(pdf_bytes)} bytes, max {_MAX_PDF_SIZE})"
-
     try:
-        import fitz  # pymupdf
+        import fitz
     except ImportError:
         return "", "pymupdf not installed — cannot extract PDF text"
-
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     except Exception as exc:
         return "", f"Failed to open PDF: {exc}"
-
     try:
         if doc.is_encrypted:
             doc.close()
             return "", "PDF is encrypted — cannot extract text"
-
         pages = []
         for page in doc:
             text = page.get_text()
             if text and text.strip():
                 pages.append(text.strip())
         doc.close()
-
         full_text = "\n\n".join(pages)
         if not full_text.strip():
             return "", "PDF contains no extractable text (possibly scanned/image-only)"
-
         return full_text, None
     except Exception as exc:
         doc.close()

@@ -51,7 +51,7 @@ class FilesystemStorage(StorageBackend):
             base = self._base_dir / prefix
             base.mkdir(parents=True, exist_ok=True)
         path = (base / f"{key}.json").resolve()
-        # Defense in depth: the resolved path must stay under base_dir.
+
         if not path.is_relative_to(self._base_dir.resolve()):
             raise ValueError(f"storage path escapes base dir: {key!r}")
         return path

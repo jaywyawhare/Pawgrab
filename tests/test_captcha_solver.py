@@ -54,11 +54,9 @@ class TestTwoCaptcha:
         mock_session.__aexit__ = AsyncMock(return_value=False)
         mock_session.post = AsyncMock(return_value=MagicMock(json=lambda: {"status": 1, "request": "task123"}))
         mock_session.get = AsyncMock(return_value=MagicMock(json=lambda: {"status": 1, "request": "token_value"}))
-
         with patch("pawgrab.engine.captcha_solver.asyncio.sleep", new_callable=AsyncMock):
             with patch("curl_cffi.requests.AsyncSession", return_value=mock_session):
                 result = await solver.solve_recaptcha_v2("site_key", "https://example.com")
-
         assert result == "token_value"
 
     @pytest.mark.asyncio
@@ -67,10 +65,8 @@ class TestTwoCaptcha:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
         mock_session.post = AsyncMock(return_value=MagicMock(json=lambda: {"status": 0, "request": "ERROR_WRONG_KEY"}))
-
         with patch("curl_cffi.requests.AsyncSession", return_value=mock_session):
             result = await solver.solve_recaptcha_v2("site_key", "https://example.com")
-
         assert result is None
 
     @pytest.mark.asyncio
@@ -95,11 +91,9 @@ class TestCapSolver:
                 MagicMock(json=lambda: {"status": "ready", "solution": {"gRecaptchaResponse": "capsolver_token"}}),
             ]
         )
-
         with patch("pawgrab.engine.captcha_solver.asyncio.sleep", new_callable=AsyncMock):
             with patch("curl_cffi.requests.AsyncSession", return_value=mock_session):
                 result = await solver.solve_recaptcha_v2("site_key", "https://example.com")
-
         assert result == "capsolver_token"
 
     @pytest.mark.asyncio
@@ -108,7 +102,6 @@ class TestCapSolver:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
         mock_session.post = AsyncMock(return_value=MagicMock(json=lambda: {"errorId": 1, "errorDescription": "Invalid API key"}))
-
         with patch("curl_cffi.requests.AsyncSession", return_value=mock_session):
             assert await solver._solve_capsolver("ReCaptchaV2TaskProxyLess", {}) is None
 
@@ -138,7 +131,6 @@ async def test_solve_cookie_challenge_capsolver_datadome():
     solver._provider = "capsolver"
     solver._api_key = "k"
     solver._solve_capsolver = AsyncMock(return_value="datadome=COOKIEVAL")
-
     out = await solver.solve_cookie_challenge("datadome", page_url="https://x.com", captcha_url="https://captcha-delivery.com/c", user_agent="UA")
     assert out == "datadome=COOKIEVAL"
     task_type = solver._solve_capsolver.await_args.args[0]
@@ -152,7 +144,7 @@ async def test_solve_cookie_challenge_unsupported_vendor_returns_none():
     solver = CaptchaSolver()
     solver._provider = "capsolver"
     solver._api_key = "k"
-    # PerimeterX has no generic CapSolver task -> None, cleanly.
+
     assert await solver.solve_cookie_challenge("perimeterx", page_url="https://x.com") is None
 
 
@@ -181,14 +173,11 @@ async def test_solve_cookie_challenge_on_page_sets_cookie_and_reloads():
     page.context.add_cookies = AsyncMock()
     page.reload = AsyncMock()
     page.content = AsyncMock(return_value="<html><body>real content</body></html>")
-
     fake_solver = MagicMock()
     fake_solver.available = True
     fake_solver.solve_cookie_challenge = AsyncMock(return_value="datadome=XYZ")
-
     with patch("pawgrab.engine.captcha_solver.get_solver", return_value=fake_solver):
         ok = await solve_cookie_challenge_on_page(page, "https://x.com/p", "datadome")
-
     assert ok is True
     page.context.add_cookies.assert_awaited_once()
     cookie = page.context.add_cookies.await_args.args[0][0]

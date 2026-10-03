@@ -24,7 +24,7 @@ class UsageTracker:
     def __init__(self):
         self._lock = Lock()
         self._requests: dict[str, int] = defaultdict(int)
-        self._bandwidth: dict[str, int] = defaultdict(int)  # bytes
+        self._bandwidth: dict[str, int] = defaultdict(int)
         self._endpoints: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self._errors: dict[str, int] = defaultdict(int)
         self._last_seen: dict[str, float] = {}
@@ -88,7 +88,6 @@ class UsageTracker:
             for client_endpoints in self._endpoints.values():
                 for ep, count in client_endpoints.items():
                     endpoint_totals[ep] += count
-
         return {
             "total_requests": total_requests,
             "total_bandwidth_bytes": total_bandwidth,
@@ -100,5 +99,4 @@ class UsageTracker:
         }
 
 
-# Global singleton
 usage_tracker = UsageTracker()

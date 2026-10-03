@@ -30,7 +30,6 @@ def test_unchanged_content():
     url = "https://example.com"
     text = "Hello World"
 
-    # Simulate previous storage
     from pawgrab.engine.diff import _content_hash
     from pawgrab.utils.text import word_count as _word_count
 
@@ -39,7 +38,6 @@ def test_unchanged_content():
         "word_count": _word_count(text),
         "text": text,
     }
-
     diff = compare_content(url, text)
     assert diff.change_type == ChangeType.UNCHANGED
     assert diff.previous_hash == diff.current_hash
@@ -50,7 +48,6 @@ def test_modified_content():
     url = "https://example.com"
     old_text = "Hello World"
     new_text = "Hello New World"
-
     from pawgrab.engine.diff import _content_hash
     from pawgrab.utils.text import word_count as _word_count
 
@@ -59,7 +56,6 @@ def test_modified_content():
         "word_count": _word_count(old_text),
         "text": old_text,
     }
-
     diff = compare_content(url, new_text)
     assert diff.change_type == ChangeType.MODIFIED
     assert diff.previous_hash != diff.current_hash
@@ -72,13 +68,10 @@ def test_modified_content():
 async def test_store_content_populates_cache():
     """store_content should update the in-memory cache."""
     url = "https://store-test.com"
-
     with patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock) as mock_redis:
         redis = AsyncMock()
         mock_redis.return_value = redis
-
         await store_content(url, "test content", ttl=3600)
-
     assert url in _content_cache
     assert _content_cache[url]["word_count"] == 2
 
@@ -87,12 +80,10 @@ async def test_store_then_compare():
     """Full cycle: store content, then compare returns UNCHANGED."""
     url = "https://cycle-test.com"
     text = "cycle test content"
-
     with patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock) as mock_redis:
         redis = AsyncMock()
         mock_redis.return_value = redis
         await store_content(url, text)
-
     diff = compare_content(url, text)
     assert diff.change_type == ChangeType.UNCHANGED
 

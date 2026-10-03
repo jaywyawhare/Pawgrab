@@ -45,7 +45,7 @@ class TestHookManager:
 
         manager.register("on_error", bad_hook)
         manager.register("on_error", good_hook)
-        # Should not raise
+
         await manager.fire("on_error", error="test")
 
     def test_invalid_event_raises(self, manager):
@@ -86,5 +86,5 @@ class TestHookManager:
         assert manager.registered_events == []
 
     async def test_fire_no_hooks(self, manager):
-        # Should not raise
+
         await manager.fire("before_fetch", url="test")

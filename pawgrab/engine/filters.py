@@ -22,9 +22,7 @@ _BOILERPLATE_TAGS = frozenset(
     }
 )
 
-# Word-boundary anchored so "share" doesn't match "shareholder", "nav" doesn't
-# match "navy", etc. Class/id separators (-, space) are non-word chars, so tokens
-# like "social-share" or "nav-menu" still match on the whole word.
+
 _BOILERPLATE_PATTERNS = re.compile(
     r"\b(sidebar|footer|header|nav|menu|breadcrumb|widget|banner|advert|cookie|"
     r"social|share|comment|related|popup|modal|overlay|newsletter|signup|"
@@ -73,13 +71,10 @@ class PruningContentFilter:
         """Return HTML with boilerplate elements removed."""
         if not html or not html.strip():
             return html
-
         soup = make_soup(html)
-
         for tag_name in _BOILERPLATE_TAGS:
             for el in soup.find_all(tag_name):
                 el.decompose()
-
         for el in list(soup.find_all(True)):
             if el.decomposed if hasattr(el, "decomposed") else el.parent is None:
                 continue
@@ -87,7 +82,6 @@ class PruningContentFilter:
             el_id = el.get("id", "")
             if _BOILERPLATE_PATTERNS.search(classes) or _BOILERPLATE_PATTERNS.search(el_id):
                 el.decompose()
-
         for el in list(soup.find_all(["div", "section", "article", "table"])):
             if el.decomposed if hasattr(el, "decomposed") else el.parent is None:
                 continue
@@ -100,7 +94,6 @@ class PruningContentFilter:
                 continue
             if _link_density(el) > self.link_density_threshold:
                 el.decompose()
-
         return str(soup)
 
 
@@ -126,60 +119,47 @@ class BM25ContentFilter:
         """Return HTML containing only query-relevant content blocks."""
         if not self._query_terms or not html or not html.strip():
             return html
-
         soup = make_soup(html)
-
         blocks: list[Tag] = []
         for el in soup.find_all(["p", "div", "section", "article", "li", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre"]):
             text = el.get_text(strip=True)
             if text and len(text) > 20:
                 blocks.append(el)
-
         if not blocks:
             return html
-
         block_tokens = [tokenize(b.get_text()) for b in blocks]
         n = len(blocks)
         df: Counter[str] = Counter()
         for tokens in block_tokens:
             for term in set(tokens):
                 df[term] += 1
-
         idf: dict[str, float] = {}
         for term in self._query_terms:
             if df[term] > 0:
                 idf[term] = math.log((n + 1) / (df[term] + 1)) + 1
             else:
                 idf[term] = math.log(n + 1) + 1
-
         scored: list[tuple[int, float, Tag]] = []
         query_vec = {t: idf.get(t, 0) for t in self._query_terms}
         query_norm = math.sqrt(sum(v * v for v in query_vec.values())) or 1.0
-
         for i, (block, tokens) in enumerate(zip(blocks, block_tokens, strict=True)):
             tf_map = Counter(tokens)
             doc_vec: dict[str, float] = {}
             for term in self._query_terms:
                 tf = tf_map.get(term, 0)
                 doc_vec[term] = tf * idf.get(term, 0)
-
             dot = sum(query_vec.get(t, 0) * doc_vec.get(t, 0) for t in self._query_terms)
             doc_norm = math.sqrt(sum(v * v for v in doc_vec.values())) or 1.0
             similarity = dot / (query_norm * doc_norm)
-
             if similarity >= self.similarity_threshold:
                 scored.append((i, similarity, block))
-
         scored.sort(key=lambda x: x[1], reverse=True)
         kept = scored[: self.top_k]
-
         if not kept:
             return html
-
         kept.sort(key=lambda x: x[0])
         new_soup = BeautifulSoup("<div></div>", "html.parser")
         container = new_soup.find("div")
         for _, _, block in kept:
             container.append(block.__copy__())
-
         return str(container)

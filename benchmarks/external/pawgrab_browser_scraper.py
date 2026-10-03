@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
-from .base import ScrapeResult, Scraper
+from .base import Scraper, ScrapeResult
 
 
 class PawgrabBrowserScraper(Scraper):

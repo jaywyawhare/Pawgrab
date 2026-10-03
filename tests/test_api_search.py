@@ -32,19 +32,17 @@ async def test_search_empty_results(client):
     with patch("pawgrab.api.search.run_search", new_callable=AsyncMock) as mock_search:
         mock_search.return_value = _envelope([], suggestions=["try this"])
         resp = await client.post("/v1/search", json={"query": "test query"})
-
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
     assert data["total"] == 0
     assert data["results"] == []
-    # SERP metadata is surfaced even with nothing to scrape.
+
     assert data["suggestions"] == ["try this"]
 
 
 async def test_search_with_results(client):
     mock_response = ScrapeResponse(success=True, url="https://example.com", markdown="# Example")
-
     with (
         patch("pawgrab.api.search.run_search", new_callable=AsyncMock) as mock_search,
         patch("pawgrab.api.search.scrape_url", new_callable=AsyncMock) as mock_scrape,
@@ -53,9 +51,7 @@ async def test_search_with_results(client):
         mock_search.return_value = _envelope(["https://example.com"])
         mock_scrape.return_value = mock_response
         mock_pool.side_effect = Exception("no browser")
-
         resp = await client.post("/v1/search", json={"query": "test query", "num_results": 3})
-
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
@@ -72,10 +68,9 @@ async def test_search_scrape_false_returns_serp_only(client):
     ):
         mock_search.return_value = _envelope(["https://a.com", "https://b.com"], suggestions=["s"])
         resp = await client.post("/v1/search", json={"query": "test", "scrape": False})
-
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total"] == 0  # nothing scraped
+    assert data["total"] == 0
     assert [r["link"] for r in data["search_results"]] == ["https://a.com", "https://b.com"]
     assert data["suggestions"] == ["s"]
     mock_scrape.assert_not_called()
@@ -96,9 +91,7 @@ async def test_search_scrape_failure_partial(client):
     ):
         mock_search.return_value = _envelope(["https://bad.com", "https://good.com"])
         mock_pool.side_effect = Exception("no browser")
-
         resp = await client.post("/v1/search", json={"query": "test"})
-
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 1

@@ -41,9 +41,6 @@ def _json_session(payload):
     return session
 
 
-# --- redirect decoding --------------------------------------------------------
-
-
 def test_ddg_real_url_decodes_redirect():
     href = "//duckduckgo.com/l/?uddg=https%3A%2F%2Freal.example%2Fpage&rut=abc"
     assert _ddg_real_url(href) == "https://real.example/page"
@@ -65,9 +62,6 @@ def test_yahoo_real_url_decodes_ru():
 
 def test_region_to_market():
     assert _region_to_market("us-en") == "en-US"
-
-
-# --- URL normalization / merge (SearXNG scoring) ------------------------------
 
 
 def test_normalize_url_strips_www_and_trailing_slash():
@@ -97,9 +91,6 @@ def test_merge_prefers_https_and_keeps_thumbnail():
     assert r[0].thumbnail == "https://t.png"
 
 
-# --- query params -------------------------------------------------------------
-
-
 def test_search_params_normalized_clamps():
     p = SearchParams(page=0, time_range="bogus", safesearch=9, category="zzz").normalized()
     assert p.page == 1 and p.time_range is None and p.safesearch == 0 and p.category == "general"
@@ -119,9 +110,6 @@ async def test_bing_applies_pagination_and_market():
         await _engine_bing("q", 5, SearchParams(page=3, safesearch=1, region="us-en"))
     sent = session.get.await_args.kwargs["params"]
     assert sent["mkt"] == "en-US" and sent["adlt"] == "moderate" and sent["first"] > 1
-
-
-# --- engine scraping ----------------------------------------------------------
 
 
 async def test_engine_duckduckgo_scrapes():
@@ -184,9 +172,6 @@ async def test_engine_yahoo_scrapes_and_decodes():
     assert out.results[0]["url"] == "https://y.example/p"
 
 
-# --- instant answers ----------------------------------------------------------
-
-
 async def test_fetch_instant_answers():
     payload = {
         "Answer": "42",
@@ -210,9 +195,6 @@ async def test_instant_answers_disabled():
         assert await _fetch_instant_answers("x") == ([], [])
 
 
-# --- engine selection / categories -------------------------------------------
-
-
 def test_select_engines_general_auto():
     with patch("pawgrab.engine.search_provider.settings") as s:
         s.google_search_api_key = ""
@@ -222,11 +204,8 @@ def test_select_engines_general_auto():
 def test_select_engines_news_only_bing():
     with patch("pawgrab.engine.search_provider.settings") as s:
         s.google_search_api_key = ""
-        # DDG doesn't serve news -> restricted to Bing.
+
         assert _select_engines("duckduckgo", "news") == ["bing"]
-
-
-# --- public API + dispatch ----------------------------------------------------
 
 
 async def test_search_web_returns_urls():

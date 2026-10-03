@@ -167,7 +167,7 @@ def test_regex_redos_pattern_bounded():
     t0 = time.time()
     result = ex.extract(html)
     elapsed = time.time() - t0
-    # Bounded well under the 5s per-pattern timeout; returns cleanly (no hang).
+
     assert elapsed < 6
     assert isinstance(result, list)
 

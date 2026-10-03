@@ -88,7 +88,7 @@ async def test_list_crawl_jobs():
     with patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock, return_value=fake):
         jobs, total = await list_crawl_jobs()
     assert total == 2
-    assert jobs[0]["job_id"] == "2222bbbbbbbb"  # newest first
+    assert jobs[0]["job_id"] == "2222bbbbbbbb"
 
 
 async def test_dead_letter_roundtrip():

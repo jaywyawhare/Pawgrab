@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+import time
 from urllib.parse import urljoin, urlparse
 
 import structlog
@@ -14,11 +15,11 @@ from curl_cffi.requests.exceptions import DNSError, SSLError
 
 from pawgrab.config import settings
 from pawgrab.engine.antibot import (
-    SAFARI_TARGETS,
     ChallengeDetection,
     detect_challenge,
     fallback_impersonate,
     random_referer,
+    targets_for_platform,
 )
 from pawgrab.engine.detector import needs_js_rendering
 from pawgrab.engine.pdf_extractor import is_pdf_content
@@ -26,9 +27,7 @@ from pawgrab.utils.url_safety import assert_public_url
 
 logger = structlog.get_logger()
 
-# Challenge types a headless browser can clear on its own (via solve_cloudflare).
-# CAPTCHA-gated types (recaptcha/hcaptcha/datadome/sucuri) need a solver service,
-# so escalating them to the browser only wastes a slot and hardens the block.
+
 _BROWSER_SOLVABLE_CHALLENGES = frozenset(
     {
         "cloudflare_js",
@@ -38,13 +37,9 @@ _BROWSER_SOLVABLE_CHALLENGES = frozenset(
     }
 )
 
-
-# Token-injection CAPTCHAs the external solver (solve_captcha_on_page) can clear.
 _SOLVER_REQUIRED_CHALLENGES = frozenset({"recaptcha", "hcaptcha"})
 
-# Cookie-based anti-bot vendors solved via the external provider's cookie tasks
-# (solve_cookie_challenge_on_page). Only worth a browser slot when a solver is
-# configured; vendors the provider has no task for degrade gracefully.
+
 _COOKIE_SOLVABLE_CHALLENGES = frozenset({"datadome", "imperva", "aws_waf", "perimeterx", "akamai"})
 
 
@@ -53,8 +48,7 @@ def _is_browser_solvable(challenge) -> bool:
         return False
     if challenge.challenge_type in _BROWSER_SOLVABLE_CHALLENGES:
         return True
-    # CAPTCHA / cookie-vendor challenges are only worth a browser slot if a solver
-    # is configured to actually crack them — otherwise it just hardens the block.
+
     if challenge.challenge_type in _SOLVER_REQUIRED_CHALLENGES or challenge.challenge_type in _COOKIE_SOLVABLE_CHALLENGES:
         from pawgrab.engine.captcha_solver import get_solver
 
@@ -96,8 +90,8 @@ def _sanitize_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
 
 _MAX_SESSIONS = 12
 _MAX_HOST_TARGETS = 2000
-# Cap captured network/console entries so a heavy page can't balloon memory or
-# the JSON response with thousands of records.
+
+
 _MAX_CAPTURE_ENTRIES = 5000
 _sessions: dict[str, AsyncSession] = {}
 _session_lock = asyncio.Lock()
@@ -107,18 +101,32 @@ _host_targets_lock = asyncio.Lock()
 
 async def _impersonate_for_host(host: str) -> str:
     """Pin a TLS fingerprint per-host for connection reuse.
-
-    Starts with Safari so the fingerprint matches the Playwright fallback
-    path — prevents anti-bot systems from seeing two browser families
-    from the same IP when curl escalates to headless.
+    Starts from the platform identity (Safari by default) so the fingerprint
+    matches both the Playwright fallback path and ``fingerprint_platform`` —
+    prevents anti-bot systems from seeing two browser families from the same IP
+    when curl escalates to headless.
     """
     async with _host_targets_lock:
         if host not in _host_targets:
             if len(_host_targets) >= _MAX_HOST_TARGETS:
                 oldest = next(iter(_host_targets))
                 del _host_targets[oldest]
-            _host_targets[host] = random.choice(SAFARI_TARGETS)
+            candidates = targets_for_platform(settings.fingerprint_platform)
+            _host_targets[host] = random.choice(candidates)
         return _host_targets[host]
+
+
+async def reset_host_identity(url: str) -> None:
+    """Forget the pinned TLS target, warm-up state and cooldown for this URL's
+    host so the next attempt draws a fresh impersonate identity instead of
+    repeating the one that was just blocked."""
+    netloc = urlparse(url).netloc
+    async with _host_targets_lock:
+        _host_targets.pop(netloc, None)
+    _WARMED_HOSTS.pop(netloc, None)
+    async with _cooldown_lock:
+        _HOST_COOLDOWNS.pop(netloc, None)
+        _HOST_BLOCK_STREAKS.pop(netloc, None)
 
 
 async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSession:
@@ -133,25 +141,18 @@ async def _get_session(impersonate: str, proxy: str | None = None) -> AsyncSessi
     }
     if settings.http3:
         session_kwargs["http_version"] = CurlHttpVersion.V3ONLY
-
     if proxy:
         session_kwargs["proxy"] = proxy
         return AsyncSession(**session_kwargs)
 
-    # Fast path: existing session (dict reads are atomic under the GIL).
     existing = _sessions.get(impersonate)
     if existing is not None:
         return existing
-
     async with _session_lock:
-        # Re-check under the lock; another coroutine may have created it.
         existing = _sessions.get(impersonate)
         if existing is not None:
             return existing
         if len(_sessions) >= _MAX_SESSIONS:
-            # Evict the oldest DIFFERENT target. Removing it from the dict stops
-            # new requests reusing it; it is closed on GC once in-flight requests
-            # release their reference (avoids closing a session mid-request).
             oldest_key = next(iter(_sessions))
             _sessions.pop(oldest_key, None)
         session = AsyncSession(**session_kwargs)
@@ -170,6 +171,80 @@ async def close_sessions():
         _sessions.clear()
     async with _host_targets_lock:
         _host_targets.clear()
+
+
+_WARMED_HOSTS: dict[str, float] = {}
+_WARM_TTL_SECONDS = 900
+
+# Per-host adaptive cooldown: immediately re-hitting a host that just flagged
+# us is the fastest route to a permanent ban, so blocks put the host (not the
+# request) into a shared cooling-off period.
+
+_RATE_LIMIT_STATUSES = frozenset({429, 503})
+_RATE_LIMIT_MAX_RETRIES = 2
+_COOLDOWN_BASE_S = 5.0
+_COOLDOWN_CAP_S = 120.0
+_COOLDOWN_APPLY_CAP_S = 15.0
+
+_HOST_COOLDOWNS: dict[str, float] = {}  # netloc -> monotonic time cooldown ends
+_HOST_BLOCK_STREAKS: dict[str, int] = {}  # netloc -> consecutive blocked responses
+_cooldown_lock = asyncio.Lock()
+
+
+async def _penalize_host(host: str, retry_after: float | None = None) -> None:
+    """Put a host into cooldown after a blocked response."""
+    async with _cooldown_lock:
+        streak = _HOST_BLOCK_STREAKS.get(host, 0) + 1
+        _HOST_BLOCK_STREAKS[host] = streak
+        seconds = min(_COOLDOWN_BASE_S * (2 ** (streak - 1)), _COOLDOWN_CAP_S)
+        if retry_after:
+            seconds = max(seconds, min(retry_after, _COOLDOWN_CAP_S))
+        until = time.monotonic() + seconds
+        if until > _HOST_COOLDOWNS.get(host, 0.0):
+            _HOST_COOLDOWNS[host] = until
+
+
+async def _reward_host(host: str) -> None:
+    """Clear cooldown state after a clean response."""
+    async with _cooldown_lock:
+        _HOST_BLOCK_STREAKS.pop(host, None)
+        _HOST_COOLDOWNS.pop(host, None)
+
+
+async def _host_cooldown_remaining(host: str) -> float:
+    async with _cooldown_lock:
+        return max(0.0, _HOST_COOLDOWNS.get(host, 0.0) - time.monotonic())
+
+
+async def _warm_session(url: str, impersonate: str, proxy: str | None) -> dict[str, str]:
+    """Fetch the origin root before a deep URL so CDN/anti-bot cookies
+    (``__cf_bm``, ``__ddg2``, …) already exist — a cold first hit on an article
+    URL is a classic bot pattern.  Cached per-host with a TTL; best-effort.
+    """
+    parsed = urlparse(url)
+    if parsed.path in ("", "/"):
+        return {}
+    now = time.monotonic()
+    if now - _WARMED_HOSTS.get(parsed.netloc, 0.0) < _WARM_TTL_SECONDS:
+        return {}
+    _WARMED_HOSTS[parsed.netloc] = now
+    if len(_WARMED_HOSTS) > _MAX_HOST_TARGETS:
+        oldest = min(_WARMED_HOSTS, key=_WARMED_HOSTS.get)
+        del _WARMED_HOSTS[oldest]
+    try:
+        session = await _get_session(impersonate, proxy=proxy)
+        resp = await session.get(
+            f"{parsed.scheme}://{parsed.netloc}/",
+            timeout=min(settings.max_timeout / 1000, 10),
+            allow_redirects=True,
+        )
+        cookies = {k: v for k, v in resp.cookies.items()} if hasattr(resp, "cookies") else {}
+        if cookies:
+            logger.debug("session_warmed", host=parsed.netloc, cookies=len(cookies))
+        return cookies
+    except Exception as exc:
+        logger.debug("session_warm_failed", host=parsed.netloc, error=str(exc))
+        return {}
 
 
 class FetchResult:
@@ -263,6 +338,7 @@ async def fetch_page(
     capture_websocket: bool = False,
     session_id: str | None = None,
     enable_trace: bool = False,
+    prefer_premium: bool = False,
 ) -> FetchResult:
     """Fetch a page via curl_cffi (with TLS impersonation) or Playwright.
 
@@ -271,17 +347,18 @@ async def fetch_page(
       2. If challenged → retry with a *different browser family* (switches
          the entire TLS stack — JA3 hash, cipher ordering, HTTP/2 framing)
       3. If still challenged → escalate to headless Playwright
+
+    ``prefer_premium`` selects the residential/mobile proxy tier first instead
+    of the standard tier.
     """
     timeout = min(timeout, settings.max_timeout)
     headers = _sanitize_headers(headers)
-
     proxy_entry = None
     proxy_url: str | None = None
     if proxy_pool is not None:
-        proxy_entry = await proxy_pool.get_proxy()
+        proxy_entry = await proxy_pool.get_proxy(premium=True) if prefer_premium else await proxy_pool.get_proxy()
         if proxy_entry is not None:
             proxy_url = proxy_entry.url
-
     _browser_kwargs = dict(
         timeout=timeout,
         pool=browser_pool,
@@ -302,28 +379,32 @@ async def fetch_page(
         session_id=session_id,
         enable_trace=enable_trace,
     )
-
     if actions and browser_pool is not None:
         return await _fetch_with_browser(url, actions=actions, **_browser_kwargs)
-
     needs_browser = capture_screenshot or capture_pdf or text_mode or scroll_to_bottom or capture_network or capture_console or capture_mhtml or geolocation
     if needs_browser and browser_pool is not None:
         return await _fetch_with_browser(url, **_browser_kwargs)
-
     if wait_for_js is True and browser_pool is not None:
         return await _fetch_with_browser(url, **_browser_kwargs)
-
     if headers is None:
         headers = {}
     if "Referer" not in headers and "referer" not in headers:
         ref = random_referer()
         if ref:
             headers["Referer"] = ref
-
     retries = 0
-
     host = urlparse(url).netloc
     first_target = settings.impersonate or await _impersonate_for_host(host)
+    cooldown = await _host_cooldown_remaining(host)
+    if cooldown > 0:
+        wait = min(cooldown, _COOLDOWN_APPLY_CAP_S)
+        logger.info("host_cooldown_wait", url=url, seconds=round(wait, 1))
+        await asyncio.sleep(wait)
+    if settings.session_warming:
+        warm_cookies = await _warm_session(url, first_target, proxy_url)
+        if warm_cookies:
+            headers = dict(headers or {}) if headers else {}
+            cookies = {**warm_cookies, **(cookies or {})}
     dns_retries = 2
     for _dns_attempt in range(1, dns_retries + 2):
         try:
@@ -355,9 +436,9 @@ async def fetch_page(
                     backoff_seconds=settings.proxy_backoff_seconds,
                 )
             raise
-
     challenge = _check_challenge(result)
     if challenge.detected:
+        await _penalize_host(host, _parse_retry_after(result))
         logger.warning(
             "challenge_detected",
             url=url,
@@ -365,14 +446,13 @@ async def fetch_page(
             impersonate=first_target,
             attempt=1,
         )
-
         prev_target = first_target
-        # Carry forward cookies from first attempt (anti-bot cookie challenges)
+
         merged_cookies = dict(cookies or {})
         merged_cookies.update(result.cookies)
         for attempt in range(2, settings.max_challenge_retries + 2):
             retries += 1
-            # Honor Retry-After header on 429s
+
             retry_delay = _parse_retry_after(result)
             if retry_delay and retry_delay <= 30:
                 await asyncio.sleep(retry_delay)
@@ -382,7 +462,6 @@ async def fetch_page(
             retry_entry = None
             retry_proxy: str | None = None
             if proxy_pool is not None:
-                # Escalate to residential/mobile on a block, else stay standard.
                 retry_entry = await proxy_pool.get_proxy(premium=True) or await proxy_pool.get_proxy()
                 if retry_entry is not None:
                     retry_proxy = retry_entry.url
@@ -425,11 +504,6 @@ async def fetch_page(
             )
             prev_target = retry_target
 
-        # Escalate to the browser only for Cloudflare-family challenges, which the
-        # headless solver can actually clear. reCAPTCHA / hCaptcha / DataDome /
-        # Sucuri need a CAPTCHA service — a headless browser just burns a slot and
-        # trades the soft block for a hard 403 (measured on scrape-evals), so
-        # return the challenged result instead of making it worse.
         if challenge.detected and browser_pool is not None and _is_browser_solvable(challenge):
             logger.info("escalating_to_browser", url=url, type=challenge.challenge_type)
             browser_proxy_url: str | None = None
@@ -438,19 +512,50 @@ async def fetch_page(
                 if browser_entry is not None:
                     browser_proxy_url = browser_entry.url
             _browser_kwargs["proxy_url"] = browser_proxy_url
-            # Carry cookies accumulated across curl retries into the browser.
+
             _browser_kwargs["cookies"] = merged_cookies or _browser_kwargs.get("cookies")
             return await _fetch_with_browser(url, **_browser_kwargs)
-
         if challenge.detected:
             result.challenge = challenge
             return result
+    else:
+        await _reward_host(host)
 
+    # Plain rate-limit response (no challenge page): retry on the same
+    # identity, honoring Retry-After.
+    while not challenge.detected and result.status_code in _RATE_LIMIT_STATUSES and retries < _RATE_LIMIT_MAX_RETRIES:
+        retries += 1
+        delay = _parse_retry_after(result)
+        if delay is None:
+            delay = min(2**retries + random.uniform(0, 1), 20.0)
+        logger.warning("rate_limited_retry", url=url, status=result.status_code, delay=round(delay, 1), attempt=retries)
+        await asyncio.sleep(min(delay, _COOLDOWN_CAP_S))
+        try:
+            result = await _fetch_with_curl(
+                url,
+                timeout=timeout,
+                impersonate=first_target,
+                headers=headers,
+                cookies=cookies,
+                proxy=proxy_url,
+            )
+        except Exception as exc:
+            if proxy_entry is not None:
+                proxy_entry.mark_failure(
+                    is_timeout=is_proxy_error(exc),
+                    backoff_seconds=settings.proxy_backoff_seconds,
+                )
+            raise
+        challenge = _check_challenge(result)
+        if challenge.detected:
+            await _penalize_host(host, _parse_retry_after(result))
+            break
+    if not challenge.detected:
+        await _reward_host(host)
     if wait_for_js is None and browser_pool is not None and result.content_bytes is None:
         if needs_js_rendering(result.html, url=url):
             logger.info("js_rendering_detected", url=url)
             return await _fetch_with_browser(url, **_browser_kwargs)
-
     result.retry_count = retries
     return result
 
@@ -476,7 +581,7 @@ async def _fetch_with_curl(
     session = await _get_session(impersonate, proxy=proxy)
 
     async def _single(target: str, verify: bool):
-        # allow_redirects=False so we follow hops manually and SSRF-check each one.
+
         return await session.get(
             target,
             timeout=timeout_s,
@@ -490,8 +595,6 @@ async def _fetch_with_curl(
         try:
             return await _single(target, True)
         except SSLError as exc:
-            # Misconfigured / expired certs are common on long-tail sites, but
-            # silently disabling verification is a MITM risk — opt-in only.
             if not settings.allow_insecure_ssl:
                 logger.warning("curl_ssl_error", url=target, impersonate=impersonate, error=str(exc))
                 raise
@@ -506,8 +609,7 @@ async def _fetch_with_curl(
             location = resp.headers.get("location") or resp.headers.get("Location")
             if resp.status_code in _REDIRECT_STATUS and location:
                 nxt = urljoin(current, location)
-                # Re-validate every hop: an attacker-controlled 3xx can point at
-                # 169.254.169.254 even when the initial URL was public.
+
                 await assert_public_url(nxt)
                 current = nxt
                 continue
@@ -516,7 +618,6 @@ async def _fetch_with_curl(
         logger.warning("curl_fetch_failed", url=url, impersonate=impersonate, error=str(exc))
         raise
     finally:
-        # Close non-cached proxy sessions to prevent leaks
         if proxy:
             try:
                 await session.close()
@@ -527,7 +628,6 @@ async def _fetch_with_curl(
     if hasattr(resp, "cookies"):
         for k, v in resp.cookies.items():
             resp_cookies[k] = v
-
     content_type = resp_headers.get("content-type", resp_headers.get("Content-Type", ""))
     content_bytes: bytes | None = None
     if is_pdf_content(content_type, str(resp.url)):
@@ -535,7 +635,6 @@ async def _fetch_with_curl(
         html_text = ""
     else:
         html_text = _decode_body(resp, content_type)
-
     return FetchResult(
         html=html_text,
         status_code=resp.status_code,
@@ -558,13 +657,13 @@ def _decode_body(resp, content_type: str) -> str:
     then charset-normalizer) so downstream extraction sees correct text.
     """
     declared = (resp.encoding or "").lower()
-    # Trust an explicit, non-fallback server/meta charset.
+
     if declared and declared not in ("iso-8859-1", "ascii", "us-ascii"):
         return resp.text
     body = resp.content
     if not body:
         return resp.text
-    # <meta charset=...> in the first few KB wins over the HTTP fallback.
+
     m = _CHARSET_RE.search(body[:4096])
     if m:
         enc = m.group(1).decode("ascii", "ignore")
@@ -604,7 +703,6 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
     warnings: list[str] = []
     per_action_timeout = max(timeout // (len(actions) + 1), 5_000)
     humanize = settings.humanize_interactions
-
     for i, action in enumerate(actions):
         try:
             match action.type:
@@ -635,10 +733,7 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
                 case ActionType.WAIT_FOR:
                     await page.wait_for_selector(action.selector, timeout=per_action_timeout)
                 case ActionType.SCREENSHOT:
-                    # A standalone screenshot action has nowhere to return its bytes
-                    # (only the top-level `screenshot=true` option is surfaced), so
-                    # rendering-and-discarding just wastes time. Flag it instead.
-                    warnings.append(f"Action {i} (screenshot): use the top-level screenshot=true option; " "standalone screenshot actions are not returned")
+                    warnings.append(f"Action {i} (screenshot): use the top-level screenshot=true option; standalone screenshot actions are not returned")
                 case ActionType.EXECUTE_JS:
                     await asyncio.wait_for(
                         page.evaluate(action.text),
@@ -663,7 +758,6 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
                     if await submit_btn.count() > 0:
                         await submit_btn.first.click(timeout=per_action_timeout)
                     else:
-                        # Pass selector as an argument to avoid JS injection via user-supplied strings
                         await page.evaluate("(sel) => document.querySelector(sel).submit()", action.selector)
                 case ActionType.PRESS_KEY:
                     if action.selector:
@@ -674,18 +768,15 @@ async def _execute_actions(page: object, actions: list, timeout: int) -> list[st
             msg = f"Action {i} ({action.type.value}) failed: {exc}"
             logger.warning("action_failed", action=action.type.value, index=i, error=str(exc))
             warnings.append(msg)
-
     return warnings
 
 
 _CF_WAIT_MS = 10_000
 _CF_SETTLE_MS = 6_000
 _CF_MIN_TIMEOUT = 60_000
-# Hard wall-clock cap on the built-in Turnstile clicker. Its internal retry loops
-# can otherwise spin ~90 s/page on Cloudflare "managed" challenges it can't clear,
-# which is unusable at scale — bound it and move on to the external solver / wait.
-_CF_SOLVE_BUDGET_S = 20.0
 
+
+_CF_SOLVE_BUDGET_S = 20.0
 _PROXY_ERROR_INDICATORS = frozenset(
     {
         "net::err_proxy",
@@ -772,12 +863,9 @@ async def _fetch_with_browser(
     """Fetch via Playwright with optional session profile and tracing."""
     if settings.solve_cloudflare and timeout < _CF_MIN_TIMEOUT:
         timeout = _CF_MIN_TIMEOUT
-
     use_session = session_id and settings.browser_session_profiles and hasattr(pool, "acquire_session_page")
-    # Requests carrying caller cookies get a fresh, isolated context so those
-    # credentials never bleed into the shared persistent cookie jar (H5).
-    use_isolated = bool(cookies) and not use_session and hasattr(pool, "new_isolated_page")
 
+    use_isolated = bool(cookies) and not use_session and hasattr(pool, "new_isolated_page")
     if use_session:
         page = await pool.acquire_session_page(session_id)
     elif use_isolated:
@@ -799,29 +887,21 @@ async def _fetch_with_browser(
     except Exception:
         await _release(page)
         raise
-
     tracing = enable_trace or settings.browser_trace_enabled
     if tracing and hasattr(pool, "start_trace"):
         trace_name = session_id or "anon"
         await pool.start_trace(page.context, name=trace_name)
-
     network_requests: list[dict] = [] if capture_network else None
     console_logs: list[dict] = [] if capture_console else None
 
-    # Track listeners/routes so they can be removed before the page is recycled —
-    # otherwise they accumulate across reuses of a pooled page (H6). Defined before
-    # the try so the finally can always reference them.
     _listeners: list[tuple[str, object]] = []
     _routes: list[object] = []
-
     try:
         if headers:
             await page.set_extra_http_headers(headers)
-
         if cookies:
             cookie_list = [{"name": k, "value": v, "url": url} for k, v in cookies.items()]
             await page.context.add_cookies(cookie_list)
-
         if text_mode:
             from pawgrab.engine.browser import _BLOCKED_MEDIA_TYPES
 
@@ -832,7 +912,6 @@ async def _fetch_with_browser(
 
             await page.route("**/*", _media_block_handler)
             _routes.append(_media_block_handler)
-
         if capture_network:
 
             def _on_request(req):
@@ -856,7 +935,6 @@ async def _fetch_with_browser(
             page.on("response", _on_response)
             _listeners.append(("request", _on_request))
             _listeners.append(("response", _on_response))
-
         if capture_console:
 
             def _on_console(msg):
@@ -872,7 +950,6 @@ async def _fetch_with_browser(
 
             page.on("console", _on_console)
             _listeners.append(("console", _on_console))
-
         websocket_messages: list[dict] = [] if capture_websocket else None
         if capture_websocket:
 
@@ -881,20 +958,20 @@ async def _fetch_with_browser(
 
             page.on("websocket", _on_ws)
             _listeners.append(("websocket", _on_ws))
-
         try:
             response = await page.goto(url, timeout=timeout, wait_until="load")
             try:
                 await page.wait_for_load_state("networkidle", timeout=min(timeout // 3, 10_000))
             except Exception:
-                pass  # networkidle is best-effort; proceed with loaded content
+                pass
         except Exception:
             response = await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
-
+        if settings.humanize_interactions and not actions:
+            # Deterministic goto→capture timing is a bot signal.
+            await asyncio.sleep(random.uniform(0.05, 0.3))
         action_warnings: list[str] = []
         if actions:
             action_warnings = await _execute_actions(page, actions, timeout)
-
         if scroll_to_bottom:
             try:
                 if settings.humanize_interactions:
@@ -907,40 +984,31 @@ async def _fetch_with_browser(
                     await page.evaluate(_SCROLL_TO_BOTTOM_JS)
             except Exception as exc:
                 logger.warning("scroll_to_bottom_failed", url=url, error=str(exc))
-
         try:
             from pawgrab.engine.browser import _OVERLAY_REMOVAL_JS
 
             await page.evaluate(_OVERLAY_REMOVAL_JS)
         except Exception:
             pass
-
         try:
             from pawgrab.engine.browser import _SHADOW_DOM_FLATTEN_JS
 
             await page.evaluate(_SHADOW_DOM_FLATTEN_JS)
         except Exception:
             pass
-
         try:
             from pawgrab.engine.browser import _IFRAME_INLINE_JS
 
             await page.evaluate(_IFRAME_INLINE_JS)
         except Exception:
             pass
-
         html = await page.content()
         status = response.status if response else 200
-
         resp_headers = {}
         if response:
             resp_headers = {k: v for k, v in response.headers.items()}
-
         challenge = detect_challenge(status, resp_headers, html)
 
-        # CAPTCHA-gated challenges (reCAPTCHA / hCaptcha) can't be clicked away —
-        # route them to the external solver service when one is configured, which
-        # extracts the sitekey and injects the token. No-op without an API key.
         if challenge.detected and challenge.challenge_type in (
             "recaptcha",
             "hcaptcha",
@@ -964,8 +1032,6 @@ async def _fetch_with_browser(
                         console_logs=console_logs,
                     )
 
-        # Cookie-based vendors (DataDome / Imperva / AWS-WAF / …): solve via the
-        # external provider's cookie task, inject the cookie, and reload.
         if challenge.detected and challenge.challenge_type in _COOKIE_SOLVABLE_CHALLENGES:
             from pawgrab.engine.captcha_solver import get_solver, solve_cookie_challenge_on_page
 
@@ -985,7 +1051,6 @@ async def _fetch_with_browser(
                         network_requests=network_requests,
                         console_logs=console_logs,
                     )
-
         if challenge.detected and challenge.challenge_type in (
             "cloudflare_js",
             "cloudflare_interstitial",
@@ -996,11 +1061,9 @@ async def _fetch_with_browser(
                 from pawgrab.engine.browser import solve_cloudflare as _solve_cf
 
                 logger.info("attempting_cf_solve", url=url)
-                # Budget-bounded internally so it degrades gracefully instead of
-                # being cancelled mid-Playwright-call (which leaks a pending future).
+
                 solved = await _solve_cf(page, max_seconds=_CF_SOLVE_BUDGET_S)
-                # If the built-in clicker couldn't clear it (common on "managed"
-                # challenges), fall back to the external Turnstile solver service.
+
                 if not solved:
                     from pawgrab.engine.captcha_solver import (
                         get_solver,
@@ -1022,11 +1085,9 @@ async def _fetch_with_browser(
                         console_logs=console_logs,
                     )
 
-            # Fallback: passive wait for auto-resolve
             remaining = max(timeout - 5_000, 2_000)
             cf_wait = min(_CF_WAIT_MS, remaining)
             cf_settle = min(_CF_SETTLE_MS, remaining // 2)
-
             logger.info("waiting_for_cloudflare", url=url, cf_wait_ms=cf_wait)
             try:
                 await page.wait_for_url(
@@ -1049,12 +1110,10 @@ async def _fetch_with_browser(
                     network_requests=network_requests,
                     console_logs=console_logs,
                 )
-
         screenshot_bytes = None
         pdf_bytes = None
         mhtml_data = None
         ssl_info = None
-
         if capture_screenshot:
             try:
                 screenshot_bytes = await page.screenshot(full_page=screenshot_fullpage)
@@ -1065,7 +1124,6 @@ async def _fetch_with_browser(
                 pdf_bytes = await page.pdf()
             except Exception as exc:
                 logger.warning("pdf_capture_failed", url=url, error=str(exc))
-
         if capture_mhtml:
             cdp = None
             try:
@@ -1080,18 +1138,14 @@ async def _fetch_with_browser(
                         await cdp.detach()
                     except Exception:
                         pass
-
         if capture_ssl and response:
             ssl_info = await _capture_ssl_info(page, url)
-
         trace_path = None
         if tracing and hasattr(pool, "stop_trace"):
             trace_name = session_id or "anon"
             trace_path = await pool.stop_trace(page.context, name=trace_name)
 
-        # Run Mozilla Readability.js to get clean article extraction
         readability_html = await _run_readability_js(page)
-
         result = FetchResult(
             html=html,
             status_code=status,
@@ -1113,8 +1167,6 @@ async def _fetch_with_browser(
             result.trace_path = trace_path
         return result
     finally:
-        # Remove per-fetch listeners/routes so they don't accumulate on a pooled
-        # page that gets reused (H6). Best-effort — never mask the real result.
         for event, handler in _listeners:
             try:
                 page.remove_listener(event, handler)
@@ -1135,7 +1187,6 @@ async def _capture_ssl_info(page, url: str) -> dict | None:
         cdp = await page.context.new_cdp_session(page)
         await cdp.send("Security.enable")
         state = await cdp.send("Security.getSecurityState", {})
-
         if state and "securityState" in state:
             return {
                 "security_state": state.get("securityState"),
@@ -1153,31 +1204,25 @@ async def _capture_ssl_info(page, url: str) -> dict | None:
     return None
 
 
-_SILENT_BLOCK_MAX_BODY = 500  # 403/429 with body < 500 chars = likely silent block
-
+_SILENT_BLOCK_MAX_BODY = 500
 _ERROR_PAGE_PATTERNS = [
-    # HTTP error titles
     re.compile(r"<title[^>]*>\s*(?:502|503|504|500|400|403|404)\b", re.IGNORECASE),
     re.compile(r"\b(?:502|503|504)\s+(?:bad\s+gateway|service\s+unavailable|gateway\s+timeout)\b", re.IGNORECASE),
     re.compile(r"cloudfront.*(?:error|bad\s+gateway)", re.IGNORECASE | re.DOTALL),
     re.compile(r"<title[^>]*>access\s+denied", re.IGNORECASE),
     re.compile(r"request\s+could\s+not\s+be\s+satisfied", re.IGNORECASE),
-    # Bot/CAPTCHA challenge pages
     re.compile(r"making sure you.re not a bot", re.IGNORECASE),
-    re.compile(r"difficulty:\s*\d+.*speed:\s*\d+kH/s", re.IGNORECASE | re.DOTALL),  # Anubis PoW
+    re.compile(r"difficulty:\s*\d+.*speed:\s*\d+kH/s", re.IGNORECASE | re.DOTALL),
     re.compile(r"anubis.*calculating\b", re.IGNORECASE | re.DOTALL),
-    re.compile(r"<title[^>]*>just a moment", re.IGNORECASE),  # Cloudflare interstitial
+    re.compile(r"<title[^>]*>just a moment", re.IGNORECASE),
     re.compile(r"checking your browser before accessing", re.IGNORECASE),
     re.compile(r"enable javascript and cookies to continue", re.IGNORECASE),
     re.compile(r"please turn javascript on", re.IGNORECASE),
-    # JS loading/redirect shells
-    re.compile(r"^(?:\s*(?:Loading\.\.\.|Try Again|Cancel)\s*)+$", re.MULTILINE),  # FB/React loading
+    re.compile(r"^(?:\s*(?:Loading\.\.\.|Try Again|Cancel)\s*)+$", re.MULTILINE),
     re.compile(r"<title[^>]*>loading\.\.\.</title>", re.IGNORECASE),
-    # Privacy/access gates
     re.compile(r"powered and protected by\s*\n?\s*privacy", re.IGNORECASE),
     re.compile(r"<title[^>]*>(?:403 forbidden|forbidden)</title>", re.IGNORECASE),
     re.compile(r"this site is protected by.*bot detection", re.IGNORECASE),
-    # Parked/empty domains
     re.compile(r"<title[^>]*>(?:domain for sale|this domain|buy this domain)", re.IGNORECASE),
     re.compile(r"this domain is for sale", re.IGNORECASE),
 ]
@@ -1192,14 +1237,12 @@ def _check_challenge(result: FetchResult) -> ChallengeDetection:
     challenge = detect_challenge(result.status_code, result.resp_headers, result.html)
     if challenge.detected:
         return challenge
-
     if result.status_code in (403, 429) and len(result.html.strip()) < _SILENT_BLOCK_MAX_BODY:
         return ChallengeDetection(
             detected=True,
             challenge_type="silent_block",
             detail=f"Silent block detected (HTTP {result.status_code}, body {len(result.html)} chars)",
         )
-
     h = result.resp_headers
     if h.get("cf-mitigated") == "challenge":
         return ChallengeDetection(
@@ -1208,7 +1251,6 @@ def _check_challenge(result: FetchResult) -> ChallengeDetection:
             detail="cf-mitigated header indicates challenge",
         )
 
-    # Detect error pages served with 200 status (e.g. CloudFront 502 pages)
     if result.status_code == 200 and result.html:
         for pattern in _ERROR_PAGE_PATTERNS:
             if pattern.search(result.html[:4000]):
@@ -1217,16 +1259,15 @@ def _check_challenge(result: FetchResult) -> ChallengeDetection:
                     challenge_type="error_page",
                     detail=f"Error page detected in 200 response (pattern: {pattern.pattern[:40]})",
                 )
-
     return challenge
 
 
 def _parse_retry_after(result: FetchResult) -> float | None:
-    """Parse Retry-After header from 429 responses.
+    """Parse Retry-After header from 429/503 responses.
 
     Handles both integer-seconds and HTTP-date formats (RFC 7231).
     """
-    if result.status_code != 429:
+    if result.status_code not in _RATE_LIMIT_STATUSES:
         return None
     retry_after = result.resp_headers.get("Retry-After") or result.resp_headers.get("retry-after")
     if not retry_after:
@@ -1235,7 +1276,7 @@ def _parse_retry_after(result: FetchResult) -> float | None:
         return float(retry_after)
     except ValueError:
         pass
-    try:  # HTTP-date format: e.g. "Wed, 21 Oct 2015 07:28:00 GMT"
+    try:
         import time as _time
         from email.utils import parsedate_to_datetime
 

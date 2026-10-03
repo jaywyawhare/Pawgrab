@@ -128,7 +128,6 @@ def detect_challenge(
     """Check an HTTP response for CAPTCHA / anti-bot challenges."""
     server = headers.get("server", headers.get("Server", "")).lower()
     snippet = body[:_CHALLENGE_SCAN_BYTES]
-
     for name, rule in _RULES.items():
         if rule.status_codes and status_code not in rule.status_codes:
             continue
@@ -140,32 +139,38 @@ def detect_challenge(
                 challenge_type=name,
                 detail=f"Detected {name} challenge (HTTP {status_code})",
             )
-
     return ChallengeDetection(detected=False)
 
 
 SAFARI_TARGETS = [
-    "safari184",  # Safari 18.4 macOS (current stable)
-    "safari180",  # Safari 18.0 macOS
-    "safari170",  # Safari 17.0 macOS
-    "safari184_ios",  # Safari 18.4 iOS
-    "safari180_ios",  # Safari 18.0 iOS
-    "safari172_ios",  # Safari 17.2 iOS
+    "safari184",
+    "safari180",
+    "safari170",
+    "safari184_ios",
+    "safari180_ios",
+    "safari172_ios",
 ]
-
 CHROME_TARGETS = [
     "chrome136",
     "chrome131",
     "chrome124",
     "chrome123",
 ]
-
 EDGE_TARGETS = [
     "edge101",
     "edge99",
 ]
-
 IMPERSONATE_TARGETS = SAFARI_TARGETS + CHROME_TARGETS + EDGE_TARGETS
+
+
+def targets_for_platform(platform: str) -> list[str]:
+    """TLS impersonation targets matching a fingerprint platform identity.
+    A Safari UA must never ride a Chrome JA3 (and vice versa) — anti-bot
+    systems cross-check the TLS fingerprint against the advertised browser.
+    """
+    if platform == "windows":
+        return CHROME_TARGETS
+    return SAFARI_TARGETS
 
 
 def random_impersonate() -> str:
@@ -202,11 +207,9 @@ def fallback_impersonate(failed_target: str) -> str:
     """
     failed_family = _impersonate_family(failed_target)
 
-    # Prefer Safari when falling back from Chrome/Edge
     if failed_family != "safari":
         return random.choice(SAFARI_TARGETS)
 
-    # Safari got blocked (rare, e.g. Amazon WAF) — fall back to Chrome
     return random.choice(CHROME_TARGETS)
 
 
@@ -217,7 +220,6 @@ _SAFARI_VERSIONS = [
     ("18.3", "605.1.15", "18.3"),
     ("18.4", "605.1.15", "18.4"),
 ]
-
 _SAFARI_UA_TEMPLATE = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/{webkit} (KHTML, like Gecko) Version/{version} Safari/{webkit}"
 
 
@@ -240,7 +242,7 @@ _TZ_ACCEPT_LANG = {
 
 def _accept_language_for_tz(timezone: str | None = None) -> str:
     """Generate a realistic Accept-Language header matching the timezone."""
-    q = random.randint(85, 95)  # randomize quality factor
+    q = random.randint(85, 95)
     q2 = random.randint(70, 84)
     template = _TZ_ACCEPT_LANG.get(timezone or "", "en-US,en;q=0.{q}")
     return template.format(q=q, q2=q2)
@@ -257,7 +259,6 @@ def stealth_headers(
     """
     ua = user_agent or random_user_agent()
     accept_lang = _accept_language_for_tz(timezone)
-
     return {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -276,8 +277,8 @@ _REFERER_SOURCES = [
     "https://www.google.com/search?q=",
     "https://www.bing.com/search?q=",
     "https://duckduckgo.com/?q=",
-    None,  # direct navigation (no referer)
-    None,  # weight direct more
+    None,
+    None,
 ]
 
 

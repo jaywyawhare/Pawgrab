@@ -70,11 +70,9 @@ async def test_cache_miss_processes_request():
     mock_redis.get = AsyncMock(return_value=None)
     mock_redis.set = AsyncMock()
     mock_redis.delete = AsyncMock()
-
     with patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock, return_value=mock_redis):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/v1/crawl", headers={"Idempotency-Key": "my-idem-key"})
-
     assert resp.status_code == 200
     assert resp.json()["job_id"] == "newjob12345"
 
@@ -93,11 +91,9 @@ async def test_cache_hit_replays_cached_response():
     auth = "Bearer tok"
     done = orjson.dumps({"state": "done", "status_code": 200, "body": {"job_id": "cached123", "status": "queued"}}).decode()
     fake = _FakeRedis({_key("replay-key", auth): done})
-
     with patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock, return_value=fake):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/v1/crawl", headers={"Idempotency-Key": "replay-key", "Authorization": auth})
-
     assert resp.status_code == 200
     assert resp.json()["job_id"] == "cached123"
     assert resp.headers.get("x-idempotency-replay") == "true"
@@ -106,13 +102,11 @@ async def test_cache_hit_replays_cached_response():
 async def test_idempotency_key_scoped_to_client():
     app = _make_app()
     fake = _FakeRedis()
-
     with patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock, return_value=fake):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             r1 = await client.post("/v1/crawl", headers={"Idempotency-Key": "same-key", "Authorization": "Bearer token_a"})
             r2 = await client.post("/v1/crawl", headers={"Idempotency-Key": "same-key", "Authorization": "Bearer token_b"})
 
-    # Different clients, same key -> independent cache entries, both proceed.
     assert r1.status_code == 200
     assert r2.status_code == 200
 
@@ -121,7 +115,7 @@ async def test_same_key_different_body_conflicts():
     """A reused key with a different payload must be rejected, not mis-replayed."""
     app = _make_app()
 
-    @app.post("/v1/crawl")  # override to echo body so bodies actually differ
+    @app.post("/v1/crawl")
     async def crawl():
         return {"job_id": "x"}
 
@@ -130,7 +124,6 @@ async def test_same_key_different_body_conflicts():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             r1 = await client.post("/v1/crawl", headers={"Idempotency-Key": "k"}, json={"url": "a"})
             r2 = await client.post("/v1/crawl", headers={"Idempotency-Key": "k"}, json={"url": "b"})
-
     assert r1.status_code == 200
     assert r2.status_code == 422
 
@@ -143,13 +136,10 @@ async def test_in_flight_request_conflicts():
 
     app = _make_app()
     auth = "Bearer tok"
-    # Seed an in-progress sentinel whose body_hash matches the empty request body
-    # so the mismatch check is skipped and we exercise the 409 in-progress path.
+
     empty_hash = hashlib.sha256(b"").hexdigest()[:16]
     fake = _FakeRedis({_key("busy", auth): orjson.dumps({"state": "in_progress", "body_hash": empty_hash}).decode()})
-
     with patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock, return_value=fake):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/v1/crawl", headers={"Idempotency-Key": "busy", "Authorization": auth})
-
     assert resp.status_code == 409

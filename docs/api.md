@@ -113,6 +113,10 @@ curl -X POST http://localhost:8000/v1/scrape \
 
 **Change tracking:** `monitor` + `monitor_ttl`.
 
+**LLM enrichment (requires LLM provider, one shared LLM call):** `summary: true` adds a TL;DR to `summary`; `question` adds a grounded answer to `answer`; `highlights: true` extracts verbatim key excerpts into `highlights`.
+
+**Selector healing:** if `css_selector` matches nothing (the site changed its markup), progressively relaxed variants of the selector are tried — pseudo-classes stripped first, then the individual class/id tokens, then the bare tag.
+
 ### Page Actions
 
 Array of sequential browser actions before extraction. Each has a `type`:
@@ -264,11 +268,29 @@ curl -X POST http://localhost:8000/v1/search \
 
 **Required:** `query` (1-500 chars).
 
-**Options:** `num_results` (default 5, max 10), `formats`, `include_metadata`.
+**Options:** `num_results` (default 5, max 10), `formats`, `include_metadata`, `include_domains` / `exclude_domains` (domain scoping, subdomains included, e.g. `exclude_domains: ["pinterest.com"]`), `scrape` (false = SERP metadata only), plus search controls: `page`, `time_range`, `safesearch`, `region`, `category`.
 
 Returns `results` (array of scrape responses), `total`, `failed_urls`.
 
 **Errors:** 502 `search_failed`.
+
+---
+
+## POST /v1/parse
+
+Run raw HTML through the extraction pipeline without fetching — content cleaning, selector scoping, and format conversion, identical to `/v1/scrape` post-processing.
+
+```bash
+curl -X POST http://localhost:8000/v1/parse \
+  -H 'Content-Type: application/json' \
+  -d '{"html": "<html><body><article><h1>Title</h1></article></body></html>", "formats": ["markdown"]}'
+```
+
+**Required:** `html` (up to 5 MB).
+
+**Options:** `url` (source URL for metadata), `formats`, `css_selector`, `excluded_tags`, `excluded_selector`, `word_count_threshold`, `content_filter`, `content_filter_query`.
+
+Returns `success`, `markdown`/`html`/`text`/`json_data`/`csv_data`/`xml_data` (per requested format), `title`.
 
 ---
 

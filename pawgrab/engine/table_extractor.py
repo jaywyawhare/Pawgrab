@@ -65,19 +65,16 @@ def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[st
         soup = BeautifulSoup(html, "html.parser")
     except Exception:
         return []
-
     tables = soup.find_all("table")
     if table_index is not None:
         if 0 <= table_index < len(tables):
             tables = [tables[table_index]]
         else:
             return []
-
     results = []
     for idx, table in enumerate(tables):
         caption_tag = table.find("caption")
         caption = caption_tag.get_text(strip=True) if caption_tag else None
-
         grid = _build_grid(table)
         if not grid:
             results.append(
@@ -92,10 +89,8 @@ def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[st
                 }
             )
             continue
-
         column_count = max(len(r) for r in grid)
 
-        # Header row: from <thead>/first row if it has <th>, else the first row.
         first_tr = _own_rows(table)[0] if _own_rows(table) else None
         has_header = bool(table.find("thead")) or (first_tr is not None and any(c.name == "th" for c in _own_cells(first_tr)))
         if has_header:
@@ -104,7 +99,6 @@ def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[st
         else:
             headers = []
             body = grid
-
         raw_rows = body
         row_dicts = []
         if headers:
@@ -114,7 +108,6 @@ def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[st
                     key = headers[i] if i < len(headers) and headers[i] else f"column_{i}"
                     row_dict[key] = value
                 row_dicts.append(row_dict)
-
         results.append(
             {
                 "index": table_index if table_index is not None else idx,
@@ -126,7 +119,6 @@ def extract_tables(html: str, *, table_index: int | None = None) -> list[dict[st
                 "column_count": column_count,
             }
         )
-
     return results
 
 
@@ -137,15 +129,13 @@ def tables_to_csv(tables: list[dict]) -> str:
 
     output = io.StringIO()
     writer = csv.writer(output)
-
     for i, table in enumerate(tables):
         if i > 0:
-            writer.writerow([])  # blank line between tables
+            writer.writerow([])
         if table.get("caption"):
             writer.writerow([f"# {table['caption']}"])
         if table["headers"]:
             writer.writerow(table["headers"])
         for row in table["raw_rows"]:
             writer.writerow(row)
-
     return output.getvalue()

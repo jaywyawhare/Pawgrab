@@ -41,7 +41,6 @@ from pawgrab.queue.manager import (
 from pawgrab.utils.url import is_same_domain, normalize_url, resolve_url
 
 logger = structlog.get_logger()
-
 _MAX_QUEUE_SIZE = 5000
 
 
@@ -67,16 +66,13 @@ def _is_hidden_link(tag) -> bool:
         )
     ):
         return True
-
     parent = tag.parent
     if parent:
         parent_style = (parent.get("style") or "").lower()
         if "display:none" in parent_style or "display: none" in parent_style:
             return True
-
     if tag.get("aria-hidden") == "true":
         return True
-
     return False
 
 
@@ -109,29 +105,23 @@ def _extract_links(
         soup = BeautifulSoup(html, "html.parser")
     except Exception:
         return []
-
     links = []
     for a_tag in soup.find_all("a", href=True):
         if _is_hidden_link(a_tag):
             continue
-
         href = resolve_url(base_url, a_tag["href"])
         parsed = urlparse(href)
         if not parsed.scheme or not parsed.netloc:
             continue
         if parsed.scheme not in ("http", "https"):
             continue
-
         normalized = normalize_url(href)
         if normalized in visited:
             continue
-
         if not is_same_domain(href, seed_url):
             continue
-
         if url_filter and not url_filter.accept(href):
             continue
-
         links.append(href)
     return links
 
@@ -144,7 +134,6 @@ def _build_filter_chain(
 ) -> FilterChain:
     """Build a composable URL filter chain from crawl request params."""
     chain = FilterChain()
-
     if allowed_domains or blocked_domains:
         chain.add(
             DomainFilter(
@@ -152,7 +141,6 @@ def _build_filter_chain(
                 blocked_domains=blocked_domains,
             )
         )
-
     if include_path_patterns or exclude_path_patterns:
         chain.add(
             PathFilter(
@@ -160,10 +148,8 @@ def _build_filter_chain(
                 exclude_patterns=exclude_path_patterns,
             )
         )
-
     chain.add(ContentTypeFilter())
     chain.add(DuplicateFilter())
-
     return chain
 
 
@@ -190,30 +176,22 @@ async def crawl_job(
     formats = [OutputFormat(f) for f in orjson.loads(formats_json)]
     browser_pool = ctx.get("browser_pool")
     proxy_pool = ctx.get("proxy_pool")
-
     filter_chain = _build_filter_chain(
         allowed_domains=orjson.loads(allowed_domains) if allowed_domains else None,
         blocked_domains=orjson.loads(blocked_domains) if blocked_domains else None,
         include_path_patterns=orjson.loads(include_path_patterns) if include_path_patterns else None,
         exclude_path_patterns=orjson.loads(exclude_path_patterns) if exclude_path_patterns else None,
     )
-
     kw_list = orjson.loads(keywords) if keywords else None
     strategy = get_strategy(strategy_name, keywords=kw_list)
 
-    # An ARQ auto-retry (job_try > 1) must resume from the last checkpoint rather
-    # than re-crawl from scratch — otherwise results are appended twice and
-    # pages_scraped double-counts.
     if ctx.get("job_try", 1) > 1:
         resume = True
-
     await update_job(job_id, status=CrawlStatus.IN_PROGRESS)
-
     visited: set[str] = set()
     pages_scraped = 0
     cookie_jar: dict[str, str] = {}
     job_error: str | None = None
-
     if resume:
         checkpoint = await load_checkpoint(job_id)
         if checkpoint:
@@ -230,31 +208,24 @@ async def crawl_job(
             )
     else:
         strategy.add(url, 0)
-
     checkpoint_interval = settings.checkpoint_interval
-
     cancelled = False
     try:
         while not strategy.is_empty and pages_scraped < max_pages:
-            # Honor a cancellation request between pages (graceful stop).
             if await crawl_cancel_requested(job_id):
                 cancelled = True
                 logger.info("crawl_cancelled", job_id=job_id, pages_scraped=pages_scraped)
                 break
-
             item = strategy.next()
             if item is None:
                 break
             current_url, depth = item
             normalized = normalize_url(current_url)
-
             if normalized in visited:
                 continue
             visited.add(normalized)
-
             if pages_scraped > 0:
                 await asyncio.sleep(random.uniform(0.5, 2.5))
-
             try:
                 raw_result = await fetch_page(
                     current_url,
@@ -267,7 +238,6 @@ async def crawl_job(
                 logger.warning("crawl_fetch_failed", url=current_url, error=str(exc))
                 await publish_event(job_id, "error", {"url": current_url, "error": str(exc)})
                 continue
-
             try:
                 from pawgrab.engine.scrape_service import build_response
 
@@ -275,10 +245,8 @@ async def crawl_job(
             except Exception as exc:
                 logger.warning("crawl_build_failed", url=current_url, error=str(exc))
                 continue
-
             if not response.success:
                 continue
-
             pages_scraped += 1
             await append_result(job_id, response.model_dump())
             await update_job(job_id, pages_scraped=pages_scraped)
@@ -291,7 +259,6 @@ async def crawl_job(
                     "max_pages": max_pages,
                 },
             )
-
             if pages_scraped % checkpoint_interval == 0:
                 await save_checkpoint(
                     job_id,
@@ -301,7 +268,6 @@ async def crawl_job(
                     cookie_jar=cookie_jar,
                 )
                 logger.debug("crawl_checkpoint_saved", job_id=job_id, pages=pages_scraped)
-
             if _is_noindex_page(raw_result.html):
                 logger.debug("skipping_links_noindex_page", url=current_url)
                 continue
@@ -317,7 +283,6 @@ async def crawl_job(
                     if len(strategy) >= _MAX_QUEUE_SIZE:
                         break
                     strategy.add(href, depth + 1)
-
         if cancelled:
             await update_job(job_id, status=CrawlStatus.CANCELLED)
             await delete_checkpoint(job_id)
@@ -326,7 +291,6 @@ async def crawl_job(
             await update_job(job_id, status=CrawlStatus.COMPLETED)
             await delete_checkpoint(job_id)
             await publish_event(job_id, "completed", {"pages_scraped": pages_scraped})
-
     except Exception as exc:
         job_error = str(exc)
         logger.error("crawl_job_failed", job_id=job_id, error=job_error)
@@ -339,10 +303,9 @@ async def crawl_job(
             pages_scraped=pages_scraped,
             cookie_jar=cookie_jar,
         )
-        # Only dead-letter once ARQ retries are exhausted (final attempt).
+
         if ctx.get("job_try", 1) >= ctx.get("max_tries", 1):
             await record_dead_letter("crawl", job_id, job_error, meta={"url": url, "pages_scraped": pages_scraped})
-
     webhook_url = await get_webhook_url(job_id)
     if webhook_url:
         from pawgrab.queue.manager import get_job as _get_job
@@ -364,9 +327,7 @@ async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json:
     formats = [OutputFormat(f) for f in orjson.loads(formats_json)]
     browser_pool = ctx.get("browser_pool")
     proxy_pool = ctx.get("proxy_pool")
-
     await update_batch_job(job_id, status=CrawlStatus.IN_PROGRESS)
-
     urls_scraped = 0
     job_error: str | None = None
     _counter_lock = asyncio.Lock()
@@ -387,7 +348,6 @@ async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json:
             except Exception as exc:
                 logger.warning("batch_url_failed", url=url, error=str(exc))
                 result = {"success": False, "url": url, "error": str(exc)}
-
             async with _counter_lock:
                 await append_batch_result(job_id, result)
                 urls_scraped += 1
@@ -396,12 +356,10 @@ async def batch_scrape_job(ctx: dict, job_id: str, urls_json: str, formats_json:
     try:
         await asyncio.gather(*[_scrape_one(url) for url in urls])
         await update_batch_job(job_id, status=CrawlStatus.COMPLETED)
-
     except Exception as exc:
         job_error = str(exc)
         logger.error("batch_job_failed", job_id=job_id, error=job_error)
         await update_batch_job(job_id, status=CrawlStatus.FAILED, error=job_error)
-
     webhook_url = await get_batch_webhook_url(job_id)
     if webhook_url:
         await send_webhook(
@@ -439,17 +397,13 @@ async def batch_extract_job(
 
     urls = orjson.loads(urls_json)
     browser_pool = ctx.get("browser_pool")
-
     schema_hint = orjson.loads(schema_hint_json) if schema_hint_json else None
     json_schema = orjson.loads(json_schema_json) if json_schema_json else None
     selectors = orjson.loads(selectors_json) if selectors_json else None
     xpath_queries = orjson.loads(xpath_json) if xpath_json else None
-
     await update_batch_extract_job(job_id, status=CrawlStatus.IN_PROGRESS)
-
     urls_extracted = 0
     job_error: str | None = None
-
     try:
         for url in urls:
             try:
@@ -469,18 +423,14 @@ async def batch_extract_job(
             except Exception as exc:
                 logger.warning("batch_extract_url_failed", url=url, error=str(exc))
                 result_dict = {"success": False, "url": url, "error": str(exc), "data": None}
-
             await append_batch_extract_result(job_id, result_dict)
             urls_extracted += 1
             await update_batch_extract_job(job_id, urls_extracted=urls_extracted)
-
         await update_batch_extract_job(job_id, status=CrawlStatus.COMPLETED)
-
     except Exception as exc:
         job_error = str(exc)
         logger.error("batch_extract_job_failed", job_id=job_id, error=job_error)
         await update_batch_extract_job(job_id, status=CrawlStatus.FAILED, error=job_error)
-
     webhook_url = await get_batch_extract_webhook_url(job_id)
     if webhook_url:
         await send_webhook(
@@ -506,7 +456,6 @@ async def startup(ctx: dict):
         logger.info("worker_browser_pool_started")
     except Exception as exc:
         logger.warning("worker_browser_pool_failed", error=str(exc))
-
     try:
         from pawgrab.engine.proxy_pool import ProxyPool
 
@@ -536,7 +485,7 @@ class WorkerSettings:
     functions = [crawl_job, batch_scrape_job, batch_extract_job]
     on_startup = startup
     on_shutdown = shutdown
-    redis_settings = None  # Set dynamically below
+    redis_settings = None
     max_jobs = settings.worker_max_jobs
     job_timeout = settings.worker_job_timeout
 

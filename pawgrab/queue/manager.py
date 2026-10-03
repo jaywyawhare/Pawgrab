@@ -17,10 +17,8 @@ from pawgrab.models.crawl import CrawlJobStatus, CrawlStatus
 from pawgrab.queue.pool import JOB_ID_RE
 
 logger = structlog.get_logger()
-
 _redis: Redis | None = None
 _redis_lock = asyncio.Lock()
-
 _HEARTBEAT_INTERVAL = 15
 
 
@@ -77,7 +75,7 @@ async def _create_job(prefix: str, fields: dict[str, Any], *, webhook_url: str |
     )
     await redis.hset(_key(prefix, job_id), mapping=fields)
     await redis.expire(_key(prefix, job_id), _job_ttl())
-    # Register in a sorted index (by creation time) so jobs can be listed.
+
     await redis.zadd(_jobs_index(prefix), {job_id: now})
     return job_id
 
@@ -93,7 +91,6 @@ async def _list_jobs(prefix: str, *, page: int = 1, limit: int = 50) -> tuple[li
     for jid in job_ids:
         data = await redis.hgetall(_key(prefix, jid))
         if not data:
-            # Job hash expired — drop the stale index entry.
             await redis.zrem(index, jid)
             continue
         jobs.append(
@@ -146,7 +143,7 @@ async def record_dead_letter(job_type: str, job_id: str, error: str, *, meta: di
             }
         ).decode()
         await redis.lpush(_DLQ_KEY, entry)
-        await redis.ltrim(_DLQ_KEY, 0, _DLQ_MAX - 1)  # keep newest _DLQ_MAX
+        await redis.ltrim(_DLQ_KEY, 0, _DLQ_MAX - 1)
     except Exception as exc:
         logger.warning("dead_letter_record_failed", job_id=job_id, error=str(exc))
 
@@ -189,7 +186,7 @@ async def _update_job(prefix: str, job_id: str, **fields: Any) -> None:
         redis = await get_redis()
         key = _key(prefix, job_id)
         await redis.hset(key, mapping=updates)
-        # Refresh TTL so a long-running job's status never expires mid-run.
+
         await redis.expire(key, _job_ttl())
 
 

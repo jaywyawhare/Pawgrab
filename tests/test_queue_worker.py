@@ -49,7 +49,7 @@ def test_extract_links_handles_empty_html():
 def test_extract_links_handles_malformed_href():
     html = '<html><body><a href="">Empty</a><a>No href</a></body></html>'
     links = _extract_links(html, "https://example.com", "https://example.com", set())
-    # Empty href resolves to base URL which is same domain, but no-href tags are skipped
+
     assert all(urlparse(link).scheme in ("http", "https") for link in links)
 
 

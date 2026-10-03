@@ -96,7 +96,6 @@ class TestExecuteActions:
         from pawgrab.engine import fetcher
         from pawgrab.engine.fetcher import _execute_actions
 
-        # Humanize off: CLICK dispatches straight to page.click.
         monkeypatch.setattr(fetcher.settings, "humanize_interactions", False)
         actions = [PageAction(type=ActionType.CLICK, selector="button#go")]
         warnings = await _execute_actions(mock_page, actions, 30000)
@@ -120,7 +119,7 @@ class TestExecuteActions:
 
         monkeypatch.setattr(fetcher.settings, "humanize_interactions", True)
         page = AsyncMock()
-        # page.locator is sync in Playwright; return a locator whose bounding_box awaits.
+
         locator = MagicMock()
         locator.first.bounding_box = AsyncMock(return_value={"x": 10, "y": 20, "width": 40, "height": 10})
         page.locator = MagicMock(return_value=locator)
@@ -129,11 +128,10 @@ class TestExecuteActions:
         page.mouse.down = AsyncMock()
         page.mouse.up = AsyncMock()
         page.mouse.click = AsyncMock()
-
         actions = [PageAction(type=ActionType.CLICK, selector="button#go")]
         warnings = await _execute_actions(page, actions, 30000)
         assert warnings == []
-        # Humanized click drives the mouse rather than page.click.
+
         assert page.mouse.down.await_count == 1
         assert page.mouse.up.await_count == 1
 
@@ -149,7 +147,6 @@ class TestExecuteActions:
         page.keyboard = MagicMock()
         page.keyboard.type = AsyncMock()
         page.keyboard.press = AsyncMock()
-
         actions = [PageAction(type=ActionType.TYPE, selector="input", text="hi")]
         await _execute_actions(page, actions, 30000)
         typed = "".join(c.args[0] for c in page.keyboard.type.await_args_list if c.args)
@@ -205,7 +202,6 @@ class TestExecuteActions:
         mock_page.goto.return_value = MagicMock(status=200, headers={})
         mock_page.content.return_value = "<html><body>ok</body></html>"
         mock_page.url = "https://example.com"
-
         actions = [PageAction(type=ActionType.WAIT, amount=100)]
         with patch("pawgrab.engine.fetcher.asyncio.sleep", new_callable=AsyncMock):
             with patch("pawgrab.engine.fetcher.detect_challenge") as mock_detect:
@@ -237,7 +233,6 @@ class TestExecuteActions:
                 _result = await fetch_page(
                     "https://example.com",
                     actions=actions,
-                    # no browser_pool
                 )
-        # Without browser pool, falls through to curl
+
         assert mock_curl.called

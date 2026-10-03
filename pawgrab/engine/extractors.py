@@ -11,21 +11,15 @@ from lxml import etree
 
 from pawgrab.utils.text import make_soup
 
-# The `regex` module supports a real ``timeout=`` that is checked *during*
-# matching, so it can actually abort catastrophic backtracking — unlike stdlib
-# ``re`` run in a thread (a thread cannot be interrupted, so the timeout only
-# stops waiting, while the runaway match keeps burning a pool worker forever).
 try:
     import regex as _regex
 
     _HAS_REGEX = True
-except ImportError:  # pragma: no cover - regex is a declared dependency
+except ImportError:
     _regex = None
     _HAS_REGEX = False
-
 _REGEX_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
-# Reject absurdly long user patterns outright (a cheap first line against ReDoS).
 _MAX_PATTERN_LEN = 2000
 
 
@@ -92,7 +86,6 @@ class CSSExtractor(BaseExtractor):
 
     def extract(self, html: str) -> list[dict[str, Any]]:
         soup = make_soup(html)
-
         if "container" in self.selectors and "fields" in self.selectors:
             return self._extract_repeated(soup)
         return [self._extract_fields(soup, self.selectors)]
@@ -151,10 +144,8 @@ class XPathExtractor(BaseExtractor):
             tree = etree.HTML(html)
         except Exception:
             return [{}]
-
         if tree is None:
             return [{}]
-
         result: dict[str, Any] = {}
         for name, xpath in self.xpath_queries.items():
             try:
@@ -167,7 +158,6 @@ class XPathExtractor(BaseExtractor):
                     result[name] = [self._node_to_text(m) for m in matches]
             except etree.XPathError:
                 result[name] = None
-
         return [result]
 
     @staticmethod
@@ -184,7 +174,6 @@ class XPathExtractor(BaseExtractor):
 
 class RegexExtractor(BaseExtractor):
     """Extract data using regex patterns with named groups.
-
     Config format:
         patterns = {
             "field_name": r"regex_pattern",
@@ -217,10 +206,8 @@ class RegexExtractor(BaseExtractor):
     def extract(self, html: str) -> list[dict[str, Any]]:
         soup = make_soup(html)
         text = soup.get_text(separator="\n", strip=True)
-
         if isinstance(self.patterns, str):
             return self._extract_single_pattern(text, self.patterns)
-
         result: dict[str, Any] = {}
         for name, pattern in self.patterns.items():
             matches = _safe_findall(pattern, text, self._REGEX_TIMEOUT)

@@ -23,7 +23,6 @@ def auth_app():
         mock_settings.proxy_url = ""
         mock_settings.max_timeout = 120000
 
-        # Reimport to pick up patched settings
         import importlib
 
         import pawgrab.main
@@ -45,9 +44,9 @@ async def test_status_exempt_from_auth(client):
 
 async def test_scrape_without_auth_key_passes(client):
     """When no API key is configured, requests should pass through."""
-    # This uses the default app which has no API key
+
     resp = await client.post("/v1/scrape", json={"url": "not-valid"})
-    # Should get 422 (validation error), NOT 401
+
     assert resp.status_code == 422
 
 
@@ -65,7 +64,6 @@ async def test_metrics_requires_auth_when_key_set():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r_noauth = await c.get("/metrics")
             r_auth = await c.get("/metrics", headers={"Authorization": "Bearer test-secret-key"})
-
     assert r_noauth.status_code == 401
     assert r_auth.status_code != 401
 

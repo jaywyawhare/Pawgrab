@@ -32,7 +32,7 @@ class TestProxyEntry:
         e = ProxyEntry(url="http://p1:8080")
         e.mark_success(speed=1.0)
         e.mark_success(speed=0.0)
-        # EMA: 1.0 * 0.7 + 0.0 * 0.3 = 0.7
+
         assert round(e.speed, 2) == 0.7
 
     def test_mark_failure(self):
@@ -57,7 +57,7 @@ class TestProxyEntry:
     def test_should_skip_when_not_ok(self):
         e = ProxyEntry(url="http://p1:8080")
         e.ok = False
-        e.reanimate_after = time.monotonic() + 9999  # far future
+        e.reanimate_after = time.monotonic() + 9999
         assert e.should_skip(offer_limit=25) is True
 
     def test_should_skip_offer_limit(self):
@@ -68,7 +68,7 @@ class TestProxyEntry:
     def test_should_skip_reanimates_after_backoff(self):
         e = ProxyEntry(url="http://p1:8080")
         e.ok = False
-        e.reanimate_after = time.monotonic() - 1  # backoff expired
+        e.reanimate_after = time.monotonic() - 1
         assert e.should_skip(offer_limit=25) is False
         assert e.ok is True
         assert e.reanimated == 1
@@ -106,9 +106,9 @@ class TestProxyPool:
     async def test_add_remove(self):
         pool = ProxyPool()
         assert pool.add_proxy("http://p1:8080") is True
-        assert pool.add_proxy("http://p1:8080") is False  # duplicate
+        assert pool.add_proxy("http://p1:8080") is False
         assert pool.remove_proxy("http://p1:8080") is True
-        assert pool.remove_proxy("http://p1:8080") is False  # already removed
+        assert pool.remove_proxy("http://p1:8080") is False
         await pool.stop()
 
     @pytest.mark.asyncio
@@ -120,13 +120,13 @@ class TestProxyPool:
     @pytest.mark.asyncio
     async def test_tiered_proxy_escalation(self):
         pool = ProxyPool()
-        pool.add_proxy("http://dc:8080")  # standard
+        pool.add_proxy("http://dc:8080")
         pool.add_proxy("http://res:8080", tier="premium")
         assert pool.has_premium() is True
-        # default -> standard tier only
+
         std = await pool.get_proxy()
         assert std.url == "http://dc:8080" and std.tier == "standard"
-        # premium=True -> residential tier
+
         prem = await pool.get_proxy(premium=True)
         assert prem.url == "http://res:8080" and prem.tier == "premium"
 
@@ -143,14 +143,12 @@ class TestProxyPool:
         pool._policy = RotationPolicy.ROUND_ROBIN
         pool.add_proxy("http://p1:8080")
         pool.add_proxy("http://p2:8080")
-
         e1 = await pool.get_proxy()
         e2 = await pool.get_proxy()
         assert e1.url == "http://p1:8080"
         assert e2.url == "http://p2:8080"
-
         e3 = await pool.get_proxy()
-        assert e3.url == "http://p1:8080"  # wraps
+        assert e3.url == "http://p1:8080"
         await pool.stop()
 
     @pytest.mark.asyncio
@@ -159,12 +157,11 @@ class TestProxyPool:
         pool._policy = RotationPolicy.RANDOM
         pool.add_proxy("http://p1:8080")
         pool.add_proxy("http://p2:8080")
-
         results = set()
         for _ in range(20):
             e = await pool.get_proxy()
             results.add(e.url)
-        assert len(results) >= 1  # at least one proxy selected
+        assert len(results) >= 1
         await pool.stop()
 
     @pytest.mark.asyncio
@@ -174,9 +171,8 @@ class TestProxyPool:
         pool.add_proxy("http://p1:8080")
         pool.add_proxy("http://p2:8080")
 
-        # p1 gets offered first (both start at 0, min picks first)
         e1 = await pool.get_proxy()
-        # Now p1 has offered=1, p2 has offered=0 → p2 next
+
         e2 = await pool.get_proxy()
         assert {e1.url, e2.url} == {"http://p1:8080", "http://p2:8080"}
         await pool.stop()
@@ -188,10 +184,8 @@ class TestProxyPool:
         pool.add_proxy("http://p1:8080")
         pool.add_proxy("http://p2:8080")
 
-        # Mark p1 as unhealthy
         pool._entries[0].ok = False
         pool._entries[0].reanimate_after = time.monotonic() + 9999
-
         e = await pool.get_proxy()
         assert e.url == "http://p2:8080"
         await pool.stop()
@@ -202,7 +196,6 @@ class TestProxyPool:
         pool.add_proxy("http://p1:8080")
         pool._entries[0].ok = False
         pool._entries[0].reanimate_after = time.monotonic() + 9999
-
         result = await pool.get_proxy()
         assert result is None
         await pool.stop()
@@ -213,7 +206,6 @@ class TestProxyPool:
         pool.add_proxy("http://p1:8080")
         pool.add_proxy("http://p2:8080")
         pool._entries[1].ok = False
-
         stats = pool.pool_stats()
         assert stats["total"] == 2
         assert stats["active"] == 1
@@ -240,7 +232,6 @@ class TestProxyPool:
             mock_settings.proxy_offer_limit = 25
             mock_settings.proxy_evict_after_failures = 3
             mock_settings.proxy_backoff_seconds = 60
-
             pool = ProxyPool()
             await pool.start()
             assert len(pool._entries) == 2
@@ -251,11 +242,10 @@ class TestProxyPool:
 @pytest.mark.asyncio
 async def test_proxy_api_add_list_remove_stats():
     """Test the proxy pool REST endpoints via ASGI client."""
-    # Reset the singleton so we get a fresh pool
+
     import pawgrab.dependencies as deps
 
     deps._proxy_pool = None
-
     import httpx
 
     from pawgrab.main import app
@@ -268,41 +258,33 @@ async def test_proxy_api_add_list_remove_stats():
         mock_settings.proxy_offer_limit = 25
         mock_settings.proxy_evict_after_failures = 3
         mock_settings.proxy_backoff_seconds = 60
-
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            # Add
             r = await client.post("/v1/proxy/pool", json={"url": "http://proxy1:8080"})
             assert r.status_code == 200
             assert r.json()["success"] is True
 
-            # Add duplicate
             r = await client.post("/v1/proxy/pool", json={"url": "http://proxy1:8080"})
             assert r.json()["success"] is False
 
-            # List
             r = await client.get("/v1/proxy/pool")
             assert r.status_code == 200
             proxies = r.json()["proxies"]
             assert len(proxies) == 1
             assert proxies[0]["url"] == "http://proxy1:8080"
 
-            # Stats
             r = await client.get("/v1/proxy/pool/stats")
             assert r.status_code == 200
             stats = r.json()
             assert stats["total"] == 1
             assert stats["active"] == 1
 
-            # Remove
             r = await client.delete("/v1/proxy/pool/http://proxy1:8080")
             assert r.status_code == 200
 
-            # Remove non-existent
             r = await client.delete("/v1/proxy/pool/http://nope:1234")
             assert r.status_code == 404
 
-    # Cleanup
     await deps.shutdown_proxy_pool()
 
 
@@ -314,15 +296,13 @@ async def test_fetch_page_uses_proxy_pool():
     mock_entry = ProxyEntry(url="http://pool-proxy:8080")
     mock_pool = AsyncMock()
     mock_pool.get_proxy = AsyncMock(return_value=mock_entry)
-
     mock_result = FetchResult(html="<html>OK</html>", status_code=200, url="https://example.com")
-
     with patch("pawgrab.engine.fetcher._fetch_with_curl", new_callable=AsyncMock, return_value=mock_result) as mock_curl:
         _result = await fetch_page("https://example.com", proxy_pool=mock_pool)
-        # Verify proxy was passed to curl
+
         call_kwargs = mock_curl.call_args
         assert call_kwargs.kwargs.get("proxy") == "http://pool-proxy:8080"
-        # Verify success was marked
+
         assert mock_entry.succeed == 1
         assert mock_entry.ok is True
 
@@ -335,11 +315,10 @@ async def test_fetch_page_marks_failure_on_exception():
     mock_entry = ProxyEntry(url="http://pool-proxy:8080")
     mock_pool = AsyncMock()
     mock_pool.get_proxy = AsyncMock(return_value=mock_entry)
-
     with patch("pawgrab.engine.fetcher._fetch_with_curl", new_callable=AsyncMock, side_effect=Exception("timeout")):
         with pytest.raises(Exception, match="timeout"):
             await fetch_page("https://example.com", proxy_pool=mock_pool)
-        # Verify failure was marked
+
         assert mock_entry.ok is False
         assert mock_entry.failures == 1
 

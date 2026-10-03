@@ -19,7 +19,7 @@ def _require(module: str, extra: str):
     try:
         return importlib.import_module(module)
     except ImportError as exc:
-        raise RuntimeError(f"The '{extra}' LLM provider requires an optional dependency. " f"Install it with: pip install 'pawgrab[{extra}]'") from exc
+        raise RuntimeError(f"The '{extra}' LLM provider requires an optional dependency. Install it with: pip install 'pawgrab[{extra}]'") from exc
 
 
 class LLMProvider:
@@ -49,7 +49,6 @@ class AnthropicProvider(LLMProvider):
         user_message = build_extraction_prompt(content, prompt, schema_hint)
         if len(user_message) > 100_000:
             user_message = user_message[:100_000] + "\n\n[Content truncated]"
-
         try:
             response = await self._get_client().messages.create(
                 model=self._model,
@@ -65,7 +64,7 @@ class AnthropicProvider(LLMProvider):
                 logger.warning("anthropic_json_parse_failed", raw_preview=raw[:200])
                 return {"raw_response": raw}
         except orjson.JSONDecodeError:
-            raise  # already handled above
+            raise
         except Exception as exc:
             logger.error("anthropic_api_error", error=str(exc))
             raise RuntimeError(f"Anthropic API error: {exc}") from exc
@@ -94,9 +93,7 @@ class GeminiProvider(LLMProvider):
         user_message = build_extraction_prompt(content, prompt, schema_hint)
         if len(user_message) > 100_000:
             user_message = user_message[:100_000] + "\n\n[Content truncated]"
-
         full_prompt = f"{SYSTEM_PROMPT}\n\nRespond ONLY with valid JSON.\n\n{user_message}"
-
         try:
             model = self._get_client()
             response = await asyncio.to_thread(
@@ -124,7 +121,6 @@ class OllamaProvider(LLMProvider):
         user_message = build_extraction_prompt(content, prompt, schema_hint)
         if len(user_message) > 50_000:
             user_message = user_message[:50_000] + "\n\n[Content truncated]"
-
         try:
             from curl_cffi.requests import AsyncSession
 
@@ -198,12 +194,10 @@ def get_llm_provider(provider: str | None = None) -> LLMProvider:
     """Get the configured LLM provider, wrapped with retry + fallback."""
     provider = provider or settings.llm_provider
     primary = _build_provider(provider)
-
     fallback = None
     fb = settings.llm_fallback_provider
     if fb and fb != provider:
         fallback = _build_provider(fb)
-
     if settings.llm_max_retries == 0 and fallback is None:
         return primary
     return ResilientProvider(primary, fallback, settings.llm_max_retries)

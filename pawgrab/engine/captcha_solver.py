@@ -10,8 +10,7 @@ from pawgrab.config import settings
 
 logger = structlog.get_logger()
 
-# Per-request timeout for solver-provider HTTP calls. Without it a hung provider
-# holds the browser page slot well past the intended 120 s poll budget.
+
 _HTTP_TIMEOUT = 30
 
 
@@ -92,10 +91,6 @@ class CaptchaSolver:
             )
         return None
 
-    # Cookie-based anti-bot vendors (DataDome / Imperva / AWS-WAF). These return a
-    # cookie (or token) via the same 2Captcha/CapSolver backends used above; the
-    # caller injects it and reloads. Vendors with no generic provider task type
-    # (PerimeterX, Akamai — proxy-service based) return None rather than pretend.
     _CAPSOLVER_TASKS = {
         "datadome": "DatadomeSliderTask",
         "imperva": "AntiImpervaTask",
@@ -158,10 +153,8 @@ class CaptchaSolver:
                 if result.get("status") != 1:
                     logger.warning("2captcha_submit_failed", error=result.get("request"))
                     return None
-
                 task_id = result["request"]
-
-                for _ in range(24):  # 24 × 5 s = 120 s max
+                for _ in range(24):
                     await asyncio.sleep(5)
                     resp = await session.get(
                         f"https://2captcha.com/res.php?key={self._api_key}&action=get&id={task_id}&json=1",
@@ -174,7 +167,6 @@ class CaptchaSolver:
                     if result.get("request") != "CAPCHA_NOT_READY":
                         logger.warning("2captcha_error", error=result.get("request"))
                         return None
-
                 logger.warning("2captcha_timeout", method=method)
                 return None
         except Exception as exc:
@@ -200,10 +192,8 @@ class CaptchaSolver:
                 if result.get("errorId", 0) != 0:
                     logger.warning("capsolver_submit_failed", error=result.get("errorDescription"))
                     return None
-
                 task_id = result["taskId"]
-
-                for _ in range(24):  # 24 × 5 s = 120 s max
+                for _ in range(24):
                     await asyncio.sleep(5)
                     resp = await session.post(
                         "https://api.capsolver.com/getTaskResult",
@@ -214,15 +204,13 @@ class CaptchaSolver:
                     status = result.get("status")
                     if status == "ready":
                         solution = result.get("solution", {})
-                        # Token-based (reCAPTCHA/hCaptcha/Turnstile/AWS-WAF) or
-                        # cookie-based (DataDome/Imperva) solutions.
+
                         token = solution.get("gRecaptchaResponse") or solution.get("token") or solution.get("cookie")
                         logger.info("capsolver_solved", task_type=task_type)
                         return token
                     if status == "failed":
                         logger.warning("capsolver_failed", error=result.get("errorDescription"))
                         return None
-
                 logger.warning("capsolver_timeout", task_type=task_type)
                 return None
         except Exception as exc:
@@ -249,7 +237,6 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
     solver = get_solver()
     if not solver.available:
         return False
-
     try:
         site_key = await page.evaluate("""() => {
             const keyOf = el => el && (el.getAttribute('data-sitekey') || el.dataset.sitekey);
@@ -276,14 +263,11 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
             }
             return null;
         }""")
-
         if not site_key:
             logger.debug("no_captcha_sitekey_found", url=url)
             return False
-
         captcha_type = site_key["type"]
         key = site_key["key"]
-
         token = None
         if captcha_type == "recaptcha":
             token = await solver.solve_recaptcha_v2(key, url)
@@ -291,10 +275,8 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
             token = await solver.solve_hcaptcha(key, url)
         elif captcha_type == "turnstile":
             token = await solver.solve_turnstile(key, url)
-
         if not token:
             return False
-
         await page.evaluate(
             """(token) => {
             // reCAPTCHA
@@ -317,17 +299,14 @@ async def solve_captcha_on_page(page, url: str, challenge_type: str) -> bool:
         }""",
             token,
         )
-
         await asyncio.sleep(1)
         logger.info("captcha_solved_and_injected", url=url, type=captcha_type)
         return True
-
     except Exception as exc:
         logger.warning("captcha_solve_failed", url=url, error=str(exc))
         return False
 
 
-# The challenge-script URL DataDome/Imperva embed (needed by the solver task).
 _COOKIE_CHALLENGE_URL_JS = """() => {
     const sel = [
         'script[src*="captcha-delivery.com"]',
@@ -357,7 +336,6 @@ async def solve_cookie_challenge_on_page(page, url: str, challenge_type: str, *,
     try:
         user_agent = await page.evaluate("() => navigator.userAgent")
         captcha_url = await page.evaluate(_COOKIE_CHALLENGE_URL_JS)
-
         cookie_or_token = await solver.solve_cookie_challenge(
             challenge_type,
             page_url=url,
@@ -368,8 +346,6 @@ async def solve_cookie_challenge_on_page(page, url: str, challenge_type: str, *,
         if not cookie_or_token:
             return False
 
-        # AWS WAF returns a token injected into the page; DataDome/Imperva return
-        # a cookie string ("name=value; ...") that must be set on the context.
         if challenge_type == "aws_waf":
             await page.evaluate(
                 """(tok) => {
@@ -387,12 +363,10 @@ async def solve_cookie_challenge_on_page(page, url: str, challenge_type: str, *,
             if name and value:
                 await page.context.add_cookies([{"name": name.strip(), "value": value.strip(), "url": url}])
             else:
-                # Solver returned an opaque token — set it under the vendor's cookie name.
                 cookie_name = {"datadome": "datadome", "imperva": "visid_incap"}.get(challenge_type)
                 if cookie_name:
                     domain = urlparse(url).hostname or ""
                     await page.context.add_cookies([{"name": cookie_name, "value": cookie_or_token, "domain": domain, "path": "/"}])
-
         try:
             await page.reload(wait_until="domcontentloaded", timeout=20_000)
         except Exception:

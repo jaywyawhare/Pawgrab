@@ -78,10 +78,8 @@ class TestDiscoverUrls:
   <url><loc>https://example.com/page2</loc></url>
 </urlset>"""
         mock_session.get = AsyncMock(return_value=mock_resp)
-
         with patch("pawgrab.engine.sitemap.AsyncSession", return_value=mock_session):
             urls, source = await discover_urls("https://example.com")
-
         assert source == "sitemap"
         assert "https://example.com/page1" in urls
         assert "https://example.com/page2" in urls
@@ -92,7 +90,6 @@ class TestDiscoverUrls:
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
-
         sitemap_resp = MagicMock(status_code=404)
         homepage_resp = MagicMock(
             status_code=200,
@@ -103,10 +100,8 @@ class TestDiscoverUrls:
 </body></html>""",
         )
         mock_session.get = AsyncMock(side_effect=[sitemap_resp, sitemap_resp, sitemap_resp, homepage_resp])
-
         with patch("pawgrab.engine.sitemap.AsyncSession", return_value=mock_session):
             urls, source = await discover_urls("https://example.com")
-
         assert source == "crawl"
         assert any("example.com" in u for u in urls)
         assert not any("other.com" in u for u in urls)
@@ -125,10 +120,8 @@ class TestDiscoverUrls:
 </urlset>""",
         )
         mock_session.get = AsyncMock(return_value=mock_resp)
-
         with patch("pawgrab.engine.sitemap.AsyncSession", return_value=mock_session):
             urls, _ = await discover_urls("https://example.com", include_subdomains=False)
-
         assert "https://example.com/page" in urls
         assert "https://sub.example.com/other" not in urls
 
@@ -144,7 +137,6 @@ class TestSitemapIndexRecursion:
         kind, locs = _parse_sitemap(index)
         assert kind == "index"
         assert locs == ["https://example.com/sm1.xml", "https://example.com/sm2.xml"]
-
         urlset = """<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
           <url><loc>https://example.com/a</loc></url>
         </urlset>"""
@@ -155,7 +147,6 @@ class TestSitemapIndexRecursion:
     def test_doctype_rejected(self):
         from pawgrab.engine.sitemap import _parse_sitemap
 
-        # Billion-laughs style payload must not be parsed.
         evil = '<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol">]><urlset><url><loc>x</loc></url></urlset>'
         kind, locs = _parse_sitemap(evil)
         assert locs == []
@@ -172,12 +163,10 @@ class TestSitemapIndexRecursion:
           <url><loc>https://example.com/real-page-1</loc></url>
           <url><loc>https://example.com/real-page-2</loc></url>
         </urlset>"""
-
         responses = {
             "https://example.com/sitemap.xml": index_xml,
             "https://example.com/child.xml": child_xml,
         }
-
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
@@ -187,12 +176,10 @@ class TestSitemapIndexRecursion:
             return MagicMock(status_code=200 if body else 404, text=body or "")
 
         mock_session.get = fake_get
-
         with patch("pawgrab.engine.sitemap.AsyncSession", return_value=mock_session):
             urls, source = await discover_urls("https://example.com")
-
         assert source == "sitemap"
-        # Real page URLs, not the child sitemap URL.
+
         assert "https://example.com/real-page-1" in urls
         assert "https://example.com/real-page-2" in urls
         assert "https://example.com/child.xml" not in urls

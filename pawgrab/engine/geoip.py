@@ -24,12 +24,10 @@ from pawgrab.config import settings
 
 logger = structlog.get_logger()
 
-# ip-api.com is free, keyless, and returns tz + lat/lon + countryCode in one call.
 _GEO_ENDPOINT = "http://ip-api.com/json/?fields=status,countryCode,lat,lon,timezone,query"
 _CACHE_TTL_S = 3600.0
 
-# Country -> (locale, accept-language) for English-preferring coherence. Falls
-# back to the country's own English variant so language still reads as plausible.
+
 _COUNTRY_LOCALE = {
     "US": ("en-US", "en-US,en;q=0.9"),
     "CA": ("en-CA", "en-CA,en;q=0.9,fr-CA;q=0.7"),
@@ -83,12 +81,10 @@ async def resolve_proxy_geo(proxy_url: str | None) -> ProxyGeo | None:
     """
     if not proxy_url or not settings.geoip_coherence:
         return None
-
     now = time.monotonic()
     cached = _cache.get(proxy_url)
     if cached is not None and (now - cached[0]) < _CACHE_TTL_S:
         return cached[1]
-
     async with _lock_for(proxy_url):
         cached = _cache.get(proxy_url)
         if cached is not None and (time.monotonic() - cached[0]) < _CACHE_TTL_S:
@@ -113,13 +109,11 @@ async def _lookup(proxy_url: str) -> ProxyGeo | None:
 
         logger.debug("geoip_lookup_failed", proxy=redact_url_creds(proxy_url), error=str(exc))
         return None
-
     if not isinstance(data, dict) or data.get("status") != "success":
         return None
     timezone = data.get("timezone")
     if not timezone:
         return None
-
     country = (data.get("countryCode") or "").upper()
     locale, accept_language = _COUNTRY_LOCALE.get(country, _DEFAULT_LOCALE)
     geo = ProxyGeo(

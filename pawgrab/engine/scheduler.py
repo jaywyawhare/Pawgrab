@@ -9,7 +9,6 @@ import orjson
 import structlog
 
 logger = structlog.get_logger()
-
 _SCHEDULE_PREFIX = "pawgrab:schedule:"
 _SCHEDULES_SET = "pawgrab:schedules"
 
@@ -54,10 +53,7 @@ async def create_schedule(
     """Create a scheduled crawl. Returns schedule ID. Raises ValueError on bad cron."""
     from pawgrab.queue.manager import get_redis
 
-    # Reject invalid cron at creation instead of silently falling back to "+1h"
-    # forever (which masks a broken schedule).
     validate_cron(cron)
-
     schedule_id = uuid.uuid4().hex[:12]
     redis = await get_redis()
     data = {
@@ -97,12 +93,10 @@ async def list_schedules() -> list[dict]:
     ids = await redis.smembers(_SCHEDULES_SET)
     if not ids:
         return []
-
     pipe = redis.pipeline()
     for sid in ids:
         pipe.hgetall(f"{_SCHEDULE_PREFIX}{sid}")
     all_data = await pipe.execute()
-
     result = []
     for data in all_data:
         if not data:

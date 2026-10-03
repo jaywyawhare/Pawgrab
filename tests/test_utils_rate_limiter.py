@@ -8,7 +8,6 @@ def test_get_limiter_creates_per_domain():
     l1 = get_limiter("https://example.com/page1")
     l2 = get_limiter("https://example.com/page2")
     assert l1 is l2
-
     l3 = get_limiter("https://other.com/page")
     assert l3 is not l1
     _limiters.clear()
@@ -24,7 +23,7 @@ def test_lru_eviction():
         get_limiter("https://a.com")
         get_limiter("https://b.com")
         get_limiter("https://c.com")
-        get_limiter("https://d.com")  # should evict a.com
+        get_limiter("https://d.com")
         assert len(_limiters) == 3
         assert "a.com" not in _limiters
         assert "d.com" in _limiters

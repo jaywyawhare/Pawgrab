@@ -18,7 +18,6 @@ class TestMergeResults:
     def test_scalar_first_non_null_wins(self):
         results = [{"title": None}, {"title": "Actual Title"}]
         assert _merge_results(results)["title"] == "Actual Title"
-
         results = [{"title": "First"}, {"title": "Second"}]
         assert _merge_results(results)["title"] == "First"
 
@@ -56,7 +55,6 @@ class TestExtractFromUrl:
         mock_cleaned.content_html = "<p>Content</p>"
         mock_provider = AsyncMock()
         mock_provider.extract = AsyncMock(return_value={"title": "Test"})
-
         with (
             patch("pawgrab.ai.extractor.guard_url", new_callable=AsyncMock),
             patch("pawgrab.ai.extractor.fetch_page", new_callable=AsyncMock, return_value=mock_fetch_result),
@@ -64,7 +62,6 @@ class TestExtractFromUrl:
             patch("pawgrab.ai.extractor.get_provider", return_value=mock_provider),
         ):
             result = await extract_from_url("https://example.com", prompt="Extract title")
-
         assert result == {"title": "Test"}
         mock_provider.extract.assert_called_once()
 
@@ -89,7 +86,6 @@ class TestExtractFromUrl:
         mock_cleaned.content_html = "<p>" + "x " * 5000 + "</p>"
         mock_provider = AsyncMock()
         mock_provider.extract = AsyncMock(return_value={"data": "value"})
-
         with (
             patch("pawgrab.ai.extractor.guard_url", new_callable=AsyncMock),
             patch("pawgrab.ai.extractor.fetch_page", new_callable=AsyncMock, return_value=mock_fetch_result),
@@ -102,7 +98,6 @@ class TestExtractFromUrl:
                 chunk_strategy="fixed",
                 chunk_size=100,
             )
-
         assert isinstance(result, dict)
 
 
@@ -120,10 +115,8 @@ async def test_chunk_cap_limits_llm_calls(monkeypatch):
             return [f"chunk{i}" for i in range(50)]
 
     monkeypatch.setattr("pawgrab.ai.chunking.get_chunker", lambda *a, **k: _Chunker())
-
     provider = AsyncMock()
     provider.extract = AsyncMock(return_value={"x": 1})
-
     await ext._chunked_extract("x" * 10000, "prompt", provider, chunk_strategy="fixed")
-    # Only the capped number of chunks are sent to the LLM.
+
     assert provider.extract.await_count == 3

@@ -89,7 +89,7 @@ async def test_result_is_cached(monkeypatch):
     with patch("curl_cffi.requests.AsyncSession", return_value=ctx) as mk:
         await resolve_proxy_geo("http://cache-proxy:8080")
         await resolve_proxy_geo("http://cache-proxy:8080")
-    # Second call served from cache: only one session constructed.
+
     assert mk.call_count == 1
 
 

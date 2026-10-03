@@ -74,20 +74,14 @@ def _print_table(results: list[tuple[str, Score, float]]) -> None:
     print(header)
     print("-" * len(header))
     for name, score, latency_ms in results:
-        print(
-            f"{name:<28}{score.precision:>7.3f}{score.recall:>7.3f}"
-            f"{score.f1:>7.3f}{latency_ms:>9.1f}ms"
-        )
+        print(f"{name:<28}{score.precision:>7.3f}{score.recall:>7.3f}{score.f1:>7.3f}{latency_ms:>9.1f}ms")
     scores = [s for _, s, _ in results]
     n = len(results) or 1
     avg_p = sum(s.precision for s in scores) / n
     avg_r = sum(s.recall for s in scores) / n
     avg_latency = sum(lat for _, _, lat in results) / n
     print("-" * len(header))
-    print(
-        f"{'MEAN':<28}{avg_p:>7.3f}{avg_r:>7.3f}"
-        f"{mean_f1(scores):>7.3f}{avg_latency:>9.1f}ms"
-    )
+    print(f"{'MEAN':<28}{avg_p:>7.3f}{avg_r:>7.3f}{mean_f1(scores):>7.3f}{avg_latency:>9.1f}ms")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -106,8 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         results = run(args.dataset)
     except ImportError as exc:
         print(
-            f"pawgrab is not importable ({exc}). Install deps first:\n"
-            '    pip install -e ".[dev]"',
+            f'pawgrab is not importable ({exc}). Install deps first:\n    pip install -e ".[dev]"',
             file=sys.stderr,
         )
         return 2
@@ -123,10 +116,7 @@ def main(argv: list[str] | None = None) -> int:
             "mean_f1": round(avg_f1, 4),
             "mean_precision": round(sum(s.precision for s in scores) / n, 4),
             "mean_recall": round(sum(s.recall for s in scores) / n, 4),
-            "cases": [
-                {"name": name, **score.as_dict(), "latency_ms": round(lat, 1)}
-                for name, score, lat in results
-            ],
+            "cases": [{"name": name, **score.as_dict(), "latency_ms": round(lat, 1)} for name, score, lat in results],
         }
         args.json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"\nwrote {args.json}")

@@ -33,7 +33,6 @@ def find_next_url(html: str, base_url: str) -> str | None:
     except Exception:
         return None
 
-    # 1 & 2: explicit rel="next" (link or anchor).
     for tag_name in ("link", "a"):
         for tag in soup.find_all(tag_name):
             rel = tag.get("rel")
@@ -43,7 +42,6 @@ def find_next_url(html: str, base_url: str) -> str | None:
                 if href:
                     return urljoin(base_url, href)
 
-    # 3: anchor text / aria-label affordance.
     for a in soup.find_all("a", href=True):
         label = (a.get("aria-label") or a.get_text() or "").strip()
         if _NEXT_TEXT_RE.match(label):

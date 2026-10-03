@@ -32,7 +32,6 @@ async def create_scheduled_crawl(req: CreateScheduleRequest):
         data = await get_schedule(schedule_id)
         return ScheduleInfo(**data)
     except ValueError as exc:
-        # Invalid cron (or similar bad input) is a client error, not a 503.
         raise PawgrabError(status_code=422, code=ErrorCode.VALIDATION_ERROR, message=str(exc)) from exc
     except Exception as exc:
         logger.error("schedule_create_failed", error=str(exc))

@@ -38,20 +38,16 @@ def compare_content(url: str, current_text: str) -> ContentDiff:
     """
     current_hash = _content_hash(current_text)
     current_wc = word_count(current_text)
-
     prev = _content_cache.get(url)
-
     if prev is None:
         return ContentDiff(
             change_type=ChangeType.ADDED,
             current_hash=current_hash,
             current_word_count=current_wc,
         )
-
     prev_hash = prev["hash"]
     prev_wc = prev["word_count"]
     prev_text = prev["text"]
-
     if prev_hash == current_hash:
         return ContentDiff(
             change_type=ChangeType.UNCHANGED,
@@ -60,7 +56,6 @@ def compare_content(url: str, current_text: str) -> ContentDiff:
             previous_word_count=prev_wc,
             current_word_count=current_wc,
         )
-
     summary = _diff_summary(prev_text, current_text)
     return ContentDiff(
         change_type=ChangeType.MODIFIED,
@@ -81,7 +76,6 @@ async def store_content(url: str, text: str, *, ttl: int | None = None) -> None:
     """Store content snapshot for future comparison."""
     content_hash = _content_hash(text)
     wc = word_count(text)
-
     stored_text = text[:_MAX_TEXT_BYTES] if len(text) > _MAX_TEXT_BYTES else text
     _content_cache[url] = {
         "hash": content_hash,
@@ -91,7 +85,6 @@ async def store_content(url: str, text: str, *, ttl: int | None = None) -> None:
     _content_cache.move_to_end(url)
     while len(_content_cache) > _MAX_CONTENT_CACHE:
         _content_cache.popitem(last=False)
-
     try:
         from pawgrab.queue.manager import get_redis
 
@@ -113,7 +106,6 @@ async def load_content(url: str) -> dict | None:
     if url in _content_cache:
         _content_cache.move_to_end(url)
         return _content_cache[url]
-
     try:
         from pawgrab.queue.manager import get_redis
 
@@ -128,7 +120,6 @@ async def load_content(url: str) -> dict | None:
             return data
     except Exception as exc:
         logger.debug("monitor_redis_load_failed", url=url, error=str(exc))
-
     return None
 
 
@@ -142,22 +133,18 @@ async def compare_screenshots(url: str, current_screenshot: bytes, *, ttl: int |
 
     ttl = ttl or settings.monitor_ttl
     key = f"pawgrab:screenshot:{hashlib.sha256(url.encode()).hexdigest()[:16]}"
-
     try:
         from pawgrab.queue.manager import get_redis
 
         redis = await get_redis()
     except Exception:
         return None
-
     import base64
 
     previous_b64 = await redis.get(key)
 
-    # Store current screenshot
     current_b64 = base64.b64encode(current_screenshot).decode()
     await redis.set(key, current_b64, ex=ttl)
-
     if previous_b64 is None:
         return {
             "has_previous": False,
@@ -165,15 +152,12 @@ async def compare_screenshots(url: str, current_screenshot: bytes, *, ttl: int |
             "diff_percentage": 0.0,
             "message": "First screenshot stored — no previous to compare",
         }
-
     previous_bytes = base64.b64decode(previous_b64)
 
-    # Compare screenshots using pixel-level diff
     diff_pct = _pixel_diff_percentage(previous_bytes, current_screenshot)
-
     return {
         "has_previous": True,
-        "changed": diff_pct > 1.0,  # >1% pixel change = changed
+        "changed": diff_pct > 1.0,
         "diff_percentage": round(diff_pct, 2),
         "previous_screenshot_base64": previous_b64,
         "message": f"{'Changes detected' if diff_pct > 1.0 else 'No significant changes'} ({diff_pct:.1f}% pixels differ)",
@@ -190,13 +174,12 @@ def _pixel_diff_percentage(img1_bytes: bytes, img2_bytes: bytes) -> float:
     """
     if img1_bytes == img2_bytes:
         return 0.0
-
     decoded = _decode_pixels(img1_bytes)
     decoded2 = _decode_pixels(img2_bytes)
     if decoded is not None and decoded2 is not None:
         (w1, h1, n1, s1), (w2, h2, _n2, s2) = decoded, decoded2
         if (w1, h1) != (w2, h2):
-            return 100.0  # different dimensions => fully changed
+            return 100.0
         stride = max(1, n1)
         total = min(len(s1), len(s2)) // stride
         if total == 0:
@@ -204,7 +187,6 @@ def _pixel_diff_percentage(img1_bytes: bytes, img2_bytes: bytes) -> float:
         diff = sum(1 for i in range(0, total * stride, stride) if s1[i : i + stride] != s2[i : i + stride])
         return (diff / total) * 100
 
-    # Fallback: rough byte comparison of the compressed streams.
     len_ratio = min(len(img1_bytes), len(img2_bytes)) / max(len(img1_bytes), len(img2_bytes))
     if len_ratio < 0.8:
         return 100.0
@@ -219,7 +201,7 @@ def _pixel_diff_percentage(img1_bytes: bytes, img2_bytes: bytes) -> float:
 def _decode_pixels(img_bytes: bytes):
     """Decode a PNG to ``(width, height, channels, samples)`` or None on failure."""
     try:
-        import fitz  # pymupdf
+        import fitz
 
         pix = fitz.Pixmap(img_bytes)
         return pix.width, pix.height, pix.n, pix.samples

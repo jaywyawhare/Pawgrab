@@ -60,9 +60,6 @@ _LEAF_TAGS = frozenset(
 )
 
 
-# Format-appropriate empty output. extract_content legitimately returns an empty
-# content_html (empty/whitespace input), and lxml.fromstring("") raises
-# ParserError — so every conversion must short-circuit on empty input.
 _EMPTY_OUTPUT = {
     OutputFormat.MARKDOWN: "",
     OutputFormat.TEXT: "",
@@ -112,7 +109,6 @@ def html_to_markdown(html_str: str) -> str:
     for el in tree.xpath("//script|//style|//noscript|//svg|//template"):
         if el.getparent() is not None:
             el.getparent().remove(el)
-
     parts: list[str] = []
 
     def _nl():
@@ -125,7 +121,6 @@ def html_to_markdown(html_str: str) -> str:
         if tag in _SKIP_TAGS:
             _emit_tail(el)
             return
-
         if tag in _HEADING_TAGS:
             t = el.text_content().strip()
             if t:
@@ -133,7 +128,6 @@ def html_to_markdown(html_str: str) -> str:
                 parts.append(f"{'#' * int(tag[1])} {t}\n")
             _emit_tail(el)
             return
-
         if tag == "a":
             href = el.get("href", "")
             t = el.text_content().strip()
@@ -143,7 +137,6 @@ def html_to_markdown(html_str: str) -> str:
                 parts.append(t)
             _emit_tail(el)
             return
-
         if tag == "img":
             alt = el.get("alt", "")
             src = el.get("src", "")
@@ -151,7 +144,6 @@ def html_to_markdown(html_str: str) -> str:
                 parts.append(f"![{alt}]({src})")
             _emit_tail(el)
             return
-
         if tag == "li":
             _nl()
             t = el.text_content().strip()
@@ -159,28 +151,24 @@ def html_to_markdown(html_str: str) -> str:
                 parts.append(f"- {t}\n")
             _emit_tail(el)
             return
-
         if tag in ("strong", "b"):
             t = el.text_content().strip()
             if t:
                 parts.append(f"**{t}**")
             _emit_tail(el)
             return
-
         if tag in ("em", "i"):
             t = el.text_content().strip()
             if t:
                 parts.append(f"*{t}*")
             _emit_tail(el)
             return
-
         if tag == "code":
             t = el.text_content().strip()
             if t:
                 parts.append(f"`{t}`")
             _emit_tail(el)
             return
-
         if tag == "pre":
             t = el.text_content()
             if t.strip():
@@ -188,25 +176,21 @@ def html_to_markdown(html_str: str) -> str:
                 parts.append(f"```\n{t.strip()}\n```\n")
             _emit_tail(el)
             return
-
         if tag == "br":
             parts.append("\n")
             _emit_tail(el)
             return
-
         if tag == "hr":
             _nl()
             parts.append("---\n")
             _emit_tail(el)
             return
-
         if tag == "table":
             _nl()
             parts.append(_render_gfm_table(el))
             _nl()
             _emit_tail(el)
             return
-
         if tag in ("td", "th"):
             t = el.text_content().strip()
             if t:
@@ -214,7 +198,6 @@ def html_to_markdown(html_str: str) -> str:
             parts.append(" | ")
             _emit_tail(el)
             return
-
         if tag == "tr":
             parts.append("| ")
             for child in el:
@@ -222,7 +205,6 @@ def html_to_markdown(html_str: str) -> str:
             parts.append("\n")
             _emit_tail(el)
             return
-
         text = (el.text or "").strip()
         if tag == "blockquote":
             _nl()
@@ -230,13 +212,10 @@ def html_to_markdown(html_str: str) -> str:
                 parts.append(f"> {text} ")
         elif text:
             parts.append(text + " ")
-
         for child in el:
             _walk(child)
-
         if tag in _BLOCK_TAGS:
             _nl()
-
         _emit_tail(el)
 
     def _emit_tail(el):
@@ -258,7 +237,7 @@ def _render_gfm_table(table_el) -> str:
     nested ones).
     """
     rows: list[list[str]] = []
-    # Direct-descendant rows only (skip rows belonging to a nested table).
+
     for tr in table_el.xpath("./tr | ./thead/tr | ./tbody/tr | ./tfoot/tr"):
         cells: list[str] = []
         for cell in tr.xpath("./td | ./th"):
@@ -272,13 +251,10 @@ def _render_gfm_table(table_el) -> str:
             cells.extend([""] * (repeat - 1))
         if cells:
             rows.append(cells)
-
     if not rows:
         return ""
-
     width = max(len(r) for r in rows)
     rows = [r + [""] * (width - len(r)) for r in rows]
-
     lines = ["| " + " | ".join(rows[0]) + " |", "| " + " | ".join(["---"] * width) + " |"]
     for r in rows[1:]:
         lines.append("| " + " | ".join(r) + " |")
@@ -300,7 +276,6 @@ def html_to_json(html: str) -> str:
     if tree is None:
         return "[]"
     sections: list[dict] = []
-
     for el in tree.iter("h1", "h2", "h3", "h4", "h5", "h6", "p", "li"):
         tag = el.tag
         text = (el.text_content() or "").strip()
@@ -312,7 +287,6 @@ def html_to_json(html: str) -> str:
             sections[-1]["content"].append(text)
         else:
             sections.append({"heading": "", "level": 0, "content": [text]})
-
     return orjson.dumps(sections).decode()
 
 
@@ -324,17 +298,15 @@ def html_to_csv(html: str) -> str:
     tree = _parse(html)
     if tree is None:
         return ""
-
     buf = io.StringIO()
     writer = csv.writer(buf)
     tables = tree.xpath("//table")
-
     if tables:
         for table in tables:
             for row in table.xpath(".//tr"):
                 cells = row.xpath(".//th|.//td")
                 writer.writerow([(c.text_content() or "").strip() for c in cells])
-            writer.writerow([])  # blank line between tables
+            writer.writerow([])
     else:
         writer.writerow(["section", "content"])
         for el in tree.iter("h1", "h2", "h3", "h4", "h5", "h6", "p", "li"):
@@ -342,7 +314,6 @@ def html_to_csv(html: str) -> str:
             text = (el.text_content() or "").strip()
             if text:
                 writer.writerow([tag, text])
-
     return buf.getvalue().strip()
 
 
@@ -351,9 +322,7 @@ def html_to_xml(html: str) -> str:
     tree = _parse(html)
     if tree is None:
         return "<document/>"
-
     root = ElementTree.Element("document")
-
     for el in tree.iter("h1", "h2", "h3", "h4", "h5", "h6", "p", "li"):
         tag = el.tag
         text = (el.text_content() or "").strip()
@@ -361,7 +330,6 @@ def html_to_xml(html: str) -> str:
             continue
         child = ElementTree.SubElement(root, tag)
         child.text = text
-
     return ElementTree.tostring(root, encoding="unicode", xml_declaration=True)
 
 
@@ -371,7 +339,6 @@ _LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
 
 def markdown_with_citations(markdown: str) -> str:
     """Convert inline markdown links to numbered citation-style references.
-
     Example:
         Input:  "See [Google](https://google.com) for details."
         Output: "See [Google][1] for details.\n\n[1]: https://google.com"
@@ -390,7 +357,6 @@ def markdown_with_citations(markdown: str) -> str:
     body = _LINK_RE.sub(_replace, markdown)
     if not refs:
         return body
-
     ref_section = "\n\n---\n\n**References**\n\n"
     ref_section += "\n".join(f"[{i + 1}]: {url}" for i, url in enumerate(refs))
     return body + ref_section
@@ -400,24 +366,18 @@ def fit_markdown(markdown: str, query: str, *, top_k: int = 5, min_score: float 
     """Filter markdown sections by BM25 relevance to a query."""
     if not query or not markdown.strip():
         return markdown
-
     sections = _split_by_headings(markdown)
     if len(sections) <= 1:
         return markdown
-
     query_terms = tokenize(query)
     if not query_terms:
         return markdown
-
     scored = _bm25_score(sections, query_terms)
     scored.sort(key=lambda x: x[1], reverse=True)
-
     kept = [(idx, score, text) for idx, (text, score) in enumerate(scored) if score > min_score]
     kept = kept[:top_k]
-
     if not kept:
         return markdown
-
     kept.sort(key=lambda x: x[0])
     return "\n\n".join(text for _, _, text in kept)
 
@@ -427,17 +387,14 @@ def _split_by_headings(markdown: str) -> list[str]:
     lines = markdown.split("\n")
     sections: list[str] = []
     current: list[str] = []
-
     for line in lines:
         if _HEADING_RE.match(line) and current:
             sections.append("\n".join(current).strip())
             current = [line]
         else:
             current.append(line)
-
     if current:
         sections.append("\n".join(current).strip())
-
     return [s for s in sections if s]
 
 
@@ -451,18 +408,15 @@ def _bm25_score(
     n = len(sections)
     tokenized = [tokenize(s) for s in sections]
     avg_dl = sum(len(t) for t in tokenized) / max(n, 1)
-
     df: Counter[str] = Counter()
     for tokens in tokenized:
         for term in set(tokens):
             df[term] += 1
-
     results: list[tuple[str, float]] = []
     for section, tokens in zip(sections, tokenized, strict=True):
         tf_map: Counter[str] = Counter(tokens)
         dl = len(tokens)
         score = 0.0
-
         for term in query_terms:
             if df[term] == 0:
                 continue
@@ -471,7 +425,5 @@ def _bm25_score(
             numerator = tf * (k1 + 1)
             denominator = tf + k1 * (1 - b + b * dl / max(avg_dl, 1))
             score += idf * numerator / denominator
-
         results.append((section, score))
-
     return results

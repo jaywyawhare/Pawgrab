@@ -74,7 +74,7 @@ class TestGetLlmProvider:
         with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await rp.extract("c", "p")
         assert result == {"ok": True}
-        assert _Failing.calls == 3  # 1 try + 2 retries before fallback
+        assert _Failing.calls == 3
 
 
 class TestAnthropicProvider:
@@ -90,7 +90,6 @@ class TestAnthropicProvider:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=MagicMock(content=[MagicMock(text='{"title": "Test Page"}')]))
         provider._client = mock_client
-
         result = await provider.extract("content text", "extract title")
         assert result == {"title": "Test Page"}
 
@@ -100,7 +99,6 @@ class TestAnthropicProvider:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=MagicMock(content=[MagicMock(text="not valid json")]))
         provider._client = mock_client
-
         result = await provider.extract("content", "prompt")
         assert "raw_response" in result
 
@@ -110,7 +108,6 @@ class TestAnthropicProvider:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(side_effect=RuntimeError("API error"))
         provider._client = mock_client
-
         with pytest.raises(RuntimeError, match="Anthropic API error"):
             await provider.extract("content", "prompt")
 
@@ -129,10 +126,8 @@ class TestOllamaProvider:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
         mock_session.post = AsyncMock(return_value=MagicMock(json=lambda: {"message": {"content": '{"extracted": "data"}'}}))
-
         with patch("curl_cffi.requests.AsyncSession", return_value=mock_session):
             result = await provider.extract("content", "extract data")
-
         assert result == {"extracted": "data"}
 
     @pytest.mark.asyncio

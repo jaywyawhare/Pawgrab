@@ -14,7 +14,6 @@ _SPA_INDICATORS = [
     re.compile(r"please enable javascript", re.IGNORECASE),
     re.compile(r"this page requires javascript", re.IGNORECASE),
 ]
-
 _FRAMEWORK_INDICATORS = [
     re.compile(r"__NEXT_DATA__", re.IGNORECASE),
     re.compile(r"window\.__NUXT__", re.IGNORECASE),
@@ -25,18 +24,15 @@ _FRAMEWORK_INDICATORS = [
     re.compile(r'<div\s+id=["\']ember', re.IGNORECASE),
 ]
 
-# Text patterns that indicate a JS loading shell was captured
 _LOADING_SHELL_PATTERNS = [
     re.compile(r"^loading\.{0,3}$", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^please wait\.{0,3}$", re.IGNORECASE | re.MULTILINE),
     re.compile(r"this html file is a template", re.IGNORECASE),
     re.compile(r"you need to enable javascript to run this app", re.IGNORECASE),
 ]
-
-_MINIMAL_CONTENT_THRESHOLD = 200  # chars of visible text
-
+_MINIMAL_CONTENT_THRESHOLD = 200
 _CACHE_MAX_SIZE = 1000
-_CACHE_TTL = 3600  # 1 hour
+_CACHE_TTL = 3600
 
 
 class _RenderingCache:
@@ -85,25 +81,18 @@ def _run_heuristics(html: str) -> bool:
     for pattern in _SPA_INDICATORS:
         if pattern.search(html):
             return True
-
     for pattern in _FRAMEWORK_INDICATORS:
         if pattern.search(html):
             return True
-
     text = re.sub(r"<[^>]+>", " ", html)
     text = re.sub(r"\s+", " ", text).strip()
-    # Sparse text implies "needs JS" only if the page is empty or has script that
-    # could be doing the rendering. A short page with real content and no scripts
-    # is just a small static page (a terse landing/stub), not a JS shell — flagging
-    # it fails valid pages at the scrape layer.
+
     if len(text) < _MINIMAL_CONTENT_THRESHOLD and (not html.strip() or "<script" in html.lower()):
         return True
 
-    # Check if visible text is just a loading shell
     for pattern in _LOADING_SHELL_PATTERNS:
         if pattern.search(text):
             return True
-
     return False
 
 
@@ -129,15 +118,11 @@ def needs_js_rendering(html: str, url: str = "") -> bool:
     misclassifying sibling pages.
     """
     key = _cache_key(url) if url else ""
-
     if key:
         cached = _cache.get(key)
         if cached is not None:
             return cached
-
     result = _run_heuristics(html)
-
     if key:
         _cache.put(key, result)
-
     return result

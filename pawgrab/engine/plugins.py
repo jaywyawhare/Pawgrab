@@ -109,7 +109,6 @@ class PluginManager:
         return list(self._hooks.keys())
 
 
-# Global singleton
 plugin_manager = PluginManager()
 
 

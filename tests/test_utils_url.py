@@ -14,11 +14,11 @@ def test_get_base_url():
 
 
 def test_normalize_url():
-    # Trailing slash normalization
+
     url1 = normalize_url("https://example.com/path/")
     url2 = normalize_url("https://example.com/path")
     assert url1 == url2
-    # Fragment removal
+
     assert "#section" not in normalize_url("https://example.com/path#section")
 
 

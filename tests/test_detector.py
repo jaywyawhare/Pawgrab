@@ -87,8 +87,7 @@ class TestRunHeuristics:
         assert _run_heuristics(html) is True
 
     def test_short_static_page_without_scripts_is_not_js(self):
-        # A small, complete static page (no scripts) must not be flagged as needing
-        # JS — doing so fails valid terse pages at the scrape layer.
+
         assert _run_heuristics("<html><body><h1>Hello</h1><p>World</p></body></html>") is False
 
     def test_rich_static_content_returns_false(self):

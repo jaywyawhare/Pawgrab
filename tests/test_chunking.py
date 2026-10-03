@@ -19,14 +19,14 @@ class TestFixedLengthChunker:
 
     def test_splits_at_chunk_size(self):
         chunker = FixedLengthChunker(chunk_size=10)
-        # Create text with clear sentence boundaries
+
         text = "First sentence here. Second sentence here. Third sentence here. Fourth sentence here."
         chunks = chunker.chunk(text)
         assert len(chunks) >= 2
 
     def test_overlap(self):
         chunker = FixedLengthChunker(chunk_size=10, overlap=5)
-        # Multiple sentences so the splitter can find boundaries
+
         text = "First sentence here today. Second sentence is here. Third one too. Fourth goes. Fifth sentence now. Sixth is last."
         chunks = chunker.chunk(text)
         assert len(chunks) >= 2

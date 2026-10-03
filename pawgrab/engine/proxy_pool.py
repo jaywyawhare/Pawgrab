@@ -15,16 +15,13 @@ from pawgrab.config import settings
 from pawgrab.utils.url_safety import redact_url_creds
 
 logger = structlog.get_logger()
-
 _VALID_PROXY_SCHEMES = frozenset({"http", "https", "socks4", "socks5", "socks5h"})
-
 _HEALTH_CHECK_URLS = [
     "https://ifconfig.me/ip",
     "https://api.ipify.org",
     "https://icanhazip.com",
 ]
-
-_RECENT_WINDOW = 300.0  # 5 minutes
+_RECENT_WINDOW = 300.0
 
 
 class RotationPolicy(enum.Enum):
@@ -37,21 +34,18 @@ class RotationPolicy(enum.Enum):
 class ProxyEntry:
     url: str
     ok: bool = True
-    tier: str = "standard"  # "standard" (datacenter) or "premium" (residential/mobile)
-    speed: float = 0.0  # EMA latency in seconds
-
+    tier: str = "standard"
+    speed: float = 0.0
     offered: int = 0
     succeed: int = 0
     timeouts: int = 0
     failures: int = 0
     reanimated: int = 0
-
     recent_offered: int = 0
     recent_succeed: int = 0
     recent_timeouts: int = 0
     recent_failures: int = 0
     recent_window_start: float = field(default_factory=time.monotonic)
-
     reanimate_after: float | None = None
 
     def _reset_window_if_needed(self) -> None:
@@ -70,7 +64,6 @@ class ProxyEntry:
         self.succeed += 1
         self.recent_succeed += 1
         if speed is not None:
-            # Exponential moving average (alpha=0.3)
             self.speed = self.speed * 0.7 + speed * 0.3 if self.speed else speed
 
     def mark_failure(self, is_timeout: bool = False, backoff_seconds: float = 60.0) -> None:
@@ -85,7 +78,7 @@ class ProxyEntry:
 
     def should_skip(self, offer_limit: int) -> bool:
         self._reset_window_if_needed()
-        # Auto-reanimate when backoff expires
+
         if self.reanimate_after is not None and time.monotonic() >= self.reanimate_after:
             self.ok = True
             self.reanimate_after = None
@@ -138,20 +131,16 @@ class ProxyPool:
             self._policy = RotationPolicy(settings.proxy_rotation_policy)
         except ValueError:
             self._policy = RotationPolicy.ROUND_ROBIN
-
         urls: list[str] = []
         if settings.proxy_urls:
             urls = [p.strip() for p in settings.proxy_urls.split(",") if p.strip()]
         if not urls and settings.proxy_url:
             urls = [settings.proxy_url]
-
         for url in urls:
             self.add_proxy(url)
-
         if settings.proxy_urls_premium:
             for url in (p.strip() for p in settings.proxy_urls_premium.split(",") if p.strip()):
                 self.add_proxy(url, tier="premium")
-
         if self._entries:
             self._eviction_task = asyncio.create_task(self._eviction_loop())
             if settings.proxy_health_check:
@@ -218,13 +207,11 @@ class ProxyPool:
         async with self._lock:
             if not self._entries:
                 return None
-
             want_tier = "premium" if premium else "standard"
             offer_limit = settings.proxy_offer_limit
             candidates = [e for e in self._entries if e.tier == want_tier and not e.should_skip(offer_limit)]
             if not candidates:
                 return None
-
             if self._policy == RotationPolicy.RANDOM:
                 entry = random.choice(candidates)
             elif self._policy == RotationPolicy.LEAST_USED:
@@ -233,7 +220,6 @@ class ProxyPool:
                 entry = self._pick_round_robin(candidates, offer_limit)
                 if entry is None:
                     return None
-
             entry.offered += 1
             entry.recent_offered += 1
             return entry

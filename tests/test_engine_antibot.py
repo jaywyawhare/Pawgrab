@@ -12,7 +12,15 @@ from pawgrab.engine.antibot import (
     random_referer,
     random_user_agent,
     stealth_headers,
+    targets_for_platform,
 )
+
+
+def test_targets_for_platform_matches_identity():
+    assert targets_for_platform("macos") == SAFARI_TARGETS
+    assert targets_for_platform("windows") == CHROME_TARGETS
+
+    assert targets_for_platform("nonsense") == SAFARI_TARGETS
 
 
 def test_no_challenge_on_normal_page():
@@ -116,7 +124,7 @@ def test_random_impersonate_heavily_favours_safari():
     """Over many samples, Safari should dominate."""
     targets = [random_impersonate() for _ in range(200)]
     safari_count = sum(1 for t in targets if t.startswith("safari"))
-    # 70% weight → expect ~140 out of 200; allow generous margin
+
     assert safari_count > 80
 
 
@@ -179,13 +187,13 @@ def test_stealth_headers_safari_format():
     assert "User-Agent" in headers
     assert "Sec-Fetch-Dest" in headers
     assert headers["Sec-Fetch-Dest"] == "document"
-    # Safari headers should NOT contain Chrome-specific Sec-Ch-Ua
+
     assert "Sec-Ch-Ua" not in headers
 
 
 def test_stealth_headers_accept_matches_safari():
     headers = stealth_headers()
-    # Safari uses a simpler Accept header than Chrome
+
     assert "text/html" in headers["Accept"]
     assert "avif" not in headers["Accept"]
 

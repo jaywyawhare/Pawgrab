@@ -9,8 +9,7 @@ import orjson
 import structlog
 
 logger = structlog.get_logger()
-
-_SESSION_TTL = 3600  # 1 hour default
+_SESSION_TTL = 3600
 _SESSION_PREFIX = "pawgrab:session:"
 
 

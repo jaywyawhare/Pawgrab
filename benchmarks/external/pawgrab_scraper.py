@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from .base import ScrapeResult, Scraper
+from .base import Scraper, ScrapeResult
 
 
 class PawgrabScraper(Scraper):

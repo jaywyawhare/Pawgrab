@@ -182,7 +182,7 @@ async def test_get_due_schedules():
         {"enabled": False, "next_run": now - 10, "schedule_id": "disabled"},
     ]
     mock_redis = AsyncMock()
-    mock_redis.set = AsyncMock(return_value=True)  # lease claim succeeds
+    mock_redis.set = AsyncMock(return_value=True)
     with (
         patch("pawgrab.engine.scheduler.list_schedules", new_callable=AsyncMock, return_value=schedules),
         patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock, return_value=mock_redis),
@@ -190,7 +190,7 @@ async def test_get_due_schedules():
         due = await get_due_schedules()
     assert len(due) == 1
     assert due[0]["schedule_id"] == "due1"
-    # The due schedule was atomically claimed (SET NX).
+
     mock_redis.set.assert_awaited_once()
 
 
@@ -198,7 +198,7 @@ async def test_get_due_schedules_skips_already_claimed():
     now = int(time.time())
     schedules = [{"enabled": True, "next_run": now - 10, "schedule_id": "due1"}]
     mock_redis = AsyncMock()
-    mock_redis.set = AsyncMock(return_value=None)  # lease already held elsewhere
+    mock_redis.set = AsyncMock(return_value=None)
     with (
         patch("pawgrab.engine.scheduler.list_schedules", new_callable=AsyncMock, return_value=schedules),
         patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock, return_value=mock_redis),

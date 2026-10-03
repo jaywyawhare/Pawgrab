@@ -20,7 +20,6 @@ class TestRenderingCache:
         result1 = needs_js_rendering(html, url="https://example.com/page1")
         assert result1 is False
 
-        # Same URL again with empty HTML — served from cache (not re-evaluated).
         result2 = needs_js_rendering("", url="https://example.com/page1")
         assert result2 is False
 
@@ -29,8 +28,6 @@ class TestRenderingCache:
         static = "<html><body><p>" + ("Hello world. " * 50) + "</p></body></html>"
         assert needs_js_rendering(static, url="https://example.com/page1") is False
 
-        # Different path with empty (JS-shell) HTML re-evaluates rather than reusing
-        # page1's cached False.
         assert needs_js_rendering("", url="https://example.com/page2") is True
 
     def test_cache_miss_different_domain(self):
@@ -38,9 +35,8 @@ class TestRenderingCache:
         html = "<html><body><p>" + ("Content. " * 50) + "</p></body></html>"
         needs_js_rendering(html, url="https://example.com/page")
 
-        # Different domain — cache miss, runs heuristics on empty HTML
         result = needs_js_rendering("", url="https://other.com/page")
-        assert result is True  # empty HTML → needs JS
+        assert result is True
 
     def test_ttl_expiry(self):
         """Cache entries expire after TTL."""
@@ -48,7 +44,6 @@ class TestRenderingCache:
         cache.put("example.com", False)
         assert cache.get("example.com") is False
 
-        # Simulate TTL expiry
         cache._data["example.com"] = (False, time.monotonic() - 2)
         assert cache.get("example.com") is None
 
@@ -58,8 +53,7 @@ class TestRenderingCache:
         cache.put("a.com", True)
         cache.put("b.com", False)
         cache.put("c.com", True)
-        cache.put("d.com", False)  # should evict a.com
-
+        cache.put("d.com", False)
         assert cache.get("a.com") is None
         assert cache.get("b.com") is False
         assert cache.get("d.com") is False
@@ -69,7 +63,7 @@ class TestRenderingCache:
         html = "<html><body><p>" + ("Content. " * 50) + "</p></body></html>"
         result = needs_js_rendering(html)
         assert result is False
-        # Cache should remain empty
+
         assert len(_cache._data) == 0
 
 

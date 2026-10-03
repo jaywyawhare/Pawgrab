@@ -44,8 +44,7 @@ class APIRateLimitMiddleware(BaseHTTPMiddleware):
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and len(auth) > 7:
             return f"key:{auth[7:].strip()}"
-        # Only trust X-Forwarded-For when the connecting IP is a configured trusted proxy.
-        # Without this check, any client can spoof their IP to bypass rate limiting.
+
         from pawgrab.config import settings
 
         trusted = {ip.strip() for ip in settings.trusted_proxy_ips.split(",") if ip.strip()}
@@ -64,36 +63,30 @@ class APIRateLimitMiddleware(BaseHTTPMiddleware):
             limiter, _ = entry
             self._limiters[key] = (limiter, now)
             return limiter
-
         async with self._lock:
             entry = self._limiters.get(key)
             if entry is not None:
                 limiter, _ = entry
                 self._limiters[key] = (limiter, now)
                 return limiter
-
             rpm = self._rpm
             if key.startswith("key:"):
                 actual_key = key[4:]
                 rpm = self._key_limits.get(actual_key, self._rpm)
             limiter = AsyncLimiter(rpm, 60)
             self._limiters[key] = (limiter, now)
-
             if now - self._last_cleanup > _CLEANUP_INTERVAL:
                 self._last_cleanup = now
                 stale = [k for k, (_, last_used) in self._limiters.items() if now - last_used > _LIMITER_IDLE_TTL]
                 for k in stale:
                     del self._limiters[k]
-
             return limiter
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path in _SKIP_PATHS:
             return await call_next(request)
-
         key = self._get_client_key(request)
         limiter = await self._get_limiter(key)
-
         if not limiter.has_capacity():
             return JSONResponse(
                 status_code=429,
@@ -109,10 +102,8 @@ class APIRateLimitMiddleware(BaseHTTPMiddleware):
                     "X-RateLimit-Remaining": "0",
                 },
             )
-
         await limiter.acquire()
         remaining = max(0, int(limiter.max_rate - getattr(limiter, "_level", 0)))
-
         response = await call_next(request)
         response.headers["X-RateLimit-Limit"] = str(self._rpm)
         response.headers["X-RateLimit-Remaining"] = str(remaining)

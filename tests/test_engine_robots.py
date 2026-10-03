@@ -50,10 +50,8 @@ async def test_cache_backoff_for_failures():
         mock_settings.respect_robots = True
         mock_settings.robots_cache_ttl = 3600
         with patch("pawgrab.engine.robots._fetch_robots", new_callable=AsyncMock, return_value=None) as mock_fetch:
-            # First call fetches
             await is_allowed("https://example.com/page")
             assert mock_fetch.call_count == 1
 
-            # Second call uses cache (failure TTL = 300s)
             await is_allowed("https://example.com/other")
-            assert mock_fetch.call_count == 1  # still cached
+            assert mock_fetch.call_count == 1

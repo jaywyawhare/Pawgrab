@@ -16,7 +16,7 @@ from pawgrab.utils.url_safety import (
 @pytest.mark.parametrize(
     "url",
     [
-        "http://169.254.169.254/latest/meta-data/",  # cloud metadata
+        "http://169.254.169.254/latest/meta-data/",
         "http://127.0.0.1:6379",
         "http://localhost/admin",
         "http://10.0.0.5/",
@@ -55,7 +55,7 @@ async def test_assert_public_url_blocks_literal_metadata():
 
 
 async def test_assert_public_url_blocks_dns_rebind():
-    # Public-looking hostname that resolves to a private IP.
+
     with patch(
         "pawgrab.utils.url_safety._resolve",
         return_value=["10.1.2.3"],
@@ -66,17 +66,17 @@ async def test_assert_public_url_blocks_dns_rebind():
 
 async def test_assert_public_url_allows_public_resolution():
     with patch("pawgrab.utils.url_safety._resolve", return_value=["93.184.216.34"]):
-        await assert_public_url("http://example.com/")  # no raise
+        await assert_public_url("http://example.com/")
 
 
 async def test_assert_public_url_fails_open_on_resolution_error():
     with patch("pawgrab.utils.url_safety._resolve", side_effect=OSError("dns down")):
-        await assert_public_url("http://example.com/")  # literal check passed; no raise
+        await assert_public_url("http://example.com/")
 
 
 async def test_disabled_protection_is_noop(monkeypatch):
     monkeypatch.setattr(settings, "ssrf_protection", False)
-    await assert_public_url("http://169.254.169.254/")  # no raise when disabled
+    await assert_public_url("http://169.254.169.254/")
 
 
 def test_redact_url_creds():

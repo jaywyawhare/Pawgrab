@@ -20,7 +20,7 @@ class OpenAIProvider:
     def __init__(self, api_key: str | None = None, model: str | None = None):
         self._api_key = api_key or settings.openai_api_key
         self._model = model or settings.openai_model
-        self._client = None  # lazy
+        self._client = None
 
     def _get_client(self):
         if self._client is None:
@@ -35,14 +35,12 @@ class OpenAIProvider:
         json_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         user_message = build_extraction_prompt(content, prompt, schema_hint)
-
         if len(user_message) > 100_000:
             truncated = user_message[:100_000]
             last_break = truncated.rfind("\n\n")
             if last_break > 50_000:
                 truncated = truncated[:last_break]
             user_message = truncated + "\n\n[Content truncated]"
-
         if json_schema:
             response_format = {
                 "type": "json_schema",
@@ -54,7 +52,6 @@ class OpenAIProvider:
             }
         else:
             response_format = {"type": "json_object"}
-
         try:
             response = await self._get_client().chat.completions.create(
                 model=self._model,
@@ -71,7 +68,6 @@ class OpenAIProvider:
             logger.error("openai_api_error", error=str(exc), status=getattr(exc, "status_code", None))
             raise RuntimeError(f"LLM API error: {exc}") from exc
 
-        # Record token usage for cost visibility.
         usage = getattr(response, "usage", None)
         if usage is not None:
             logger.info(
@@ -80,7 +76,6 @@ class OpenAIProvider:
                 prompt_tokens=getattr(usage, "prompt_tokens", None),
                 completion_tokens=getattr(usage, "completion_tokens", None),
             )
-
         raw = response.choices[0].message.content or "{}"
         try:
             parsed = orjson.loads(raw)
@@ -88,8 +83,6 @@ class OpenAIProvider:
             logger.warning("llm_json_parse_failed", raw=raw[:200])
             raise RuntimeError("LLM returned invalid JSON") from exc
 
-        # When a strict schema was requested, surface validation failures as errors
-        # rather than returning malformed data as a success.
         if json_schema:
             _validate_against_schema(parsed, json_schema)
         return parsed

@@ -25,7 +25,7 @@ def test_score_perfect_match_is_one():
 
 
 def test_score_leaked_boilerplate_lowers_precision():
-    # Predicted keeps all gold tokens but adds nav/footer noise.
+
     s = score_tokens("article body home login privacy contact", "article body")
     assert s.recall == 1.0
     assert s.precision < 1.0
@@ -64,13 +64,10 @@ def test_end_to_end_extraction_does_not_collapse():
     pytest.importorskip("readability")
     pytest.importorskip("trafilatura")
     pytest.importorskip("bs4")
-
     results = run(DEFAULT_DATASET)
     scores = [s for _, s, _ in results]
-
     for name, score, _ in results:
         assert score.pred_tokens > 0, f"{name} extracted nothing"
-        # Recall guards against dropping real content; tolerant of minor
-        # reformatting/tokenization differences.
+
         assert score.recall >= 0.8, f"{name} dropped main content: {score.as_dict()}"
     assert mean_f1(scores) >= 0.5, {name: score.as_dict() for name, score, _ in results}

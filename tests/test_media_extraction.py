@@ -27,7 +27,7 @@ class TestMediaExtraction:
         result = extract_all_media(SAMPLE_HTML, "https://example.com")
         images = result["images"]
         assert len(images) >= 2
-        # Regular img
+
         srcs = [img["src"] for img in images]
         assert "https://example.com/img/photo.jpg" in srcs
 
@@ -47,7 +47,7 @@ class TestMediaExtraction:
         result = extract_all_media(SAMPLE_HTML, "https://example.com")
         videos = result["videos"]
         assert len(videos) >= 1
-        # HTML5 video
+
         assert any("/video.mp4" in str(v) for v in videos)
 
     def test_extracts_embedded_videos(self):

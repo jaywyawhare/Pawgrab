@@ -136,7 +136,6 @@ class Metrics:
         _counter("pawgrab_browser_sessions", "Browser sessions opened", self.browser_sessions.value)
         _histogram("pawgrab_request_duration_seconds", "HTTP request duration", self.request_duration)
         _histogram("pawgrab_scrape_duration_seconds", "Scrape pipeline duration", self.scrape_duration)
-
         return "\n".join(lines) + "\n"
 
     def to_dict(self) -> dict:
@@ -164,5 +163,4 @@ class Metrics:
         }
 
 
-# Global singleton
 metrics = Metrics()

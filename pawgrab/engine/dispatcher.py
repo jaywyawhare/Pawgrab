@@ -9,8 +9,6 @@ import structlog
 from pawgrab.config import settings
 
 logger = structlog.get_logger()
-
-
 _mem_fallback_warned = False
 
 
@@ -21,7 +19,6 @@ def _get_memory_percent() -> float:
     Returns 0.0 with a one-time warning if neither is available.
     """
     global _mem_fallback_warned
-
     try:
         with open("/proc/meminfo") as f:
             lines = f.readlines()
@@ -31,20 +28,17 @@ def _get_memory_percent() -> float:
             if len(parts) >= 2:
                 key = parts[0].rstrip(":")
                 mem_info[key] = int(parts[1])
-
         total = mem_info.get("MemTotal", 1)
         available = mem_info.get("MemAvailable", total)
         return ((total - available) / total) * 100
     except FileNotFoundError:
         pass
-
     try:
         import psutil
 
         return psutil.virtual_memory().percent
     except ImportError:
         pass
-
     if not _mem_fallback_warned:
         _mem_fallback_warned = True
         logger.warning(
@@ -121,10 +115,6 @@ class MemoryAdaptiveDispatcher:
                 self._semaphore.release()
             self._current_concurrency = new_level
         elif diff < 0:
-            # Non-blocking drain: asyncio.timeout(0) raises TimeoutError instead of
-            # blocking. Only reduce the tracked level by the permits we ACTUALLY
-            # acquired — otherwise a later scale-up releases phantom permits and the
-            # semaphore's real capacity drifts above the max.
             acquired = 0
             for _ in range(-diff):
                 try:
@@ -160,7 +150,6 @@ class MemoryAdaptiveDispatcher:
                         )
             except Exception as exc:
                 logger.debug("dispatcher_monitor_error", error=str(exc))
-
             await asyncio.sleep(self._check_interval)
 
     def get_stats(self) -> dict:

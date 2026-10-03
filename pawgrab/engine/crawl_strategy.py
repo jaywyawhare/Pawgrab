@@ -1,5 +1,4 @@
 """Crawl strategies: BFS, DFS, and BestFirst (priority queue) crawling.
-
 URLScorer scores discovered URLs by relevance heuristics.
 Each strategy manages its own frontier and returns the next URL to visit.
 """
@@ -15,7 +14,6 @@ from urllib.parse import urlparse
 
 class URLScorer:
     """Score URLs by relevance heuristics for priority-based crawling.
-
     Scoring factors:
       - Keyword presence in path/query (configurable)
       - Path depth (shorter = higher priority)
@@ -26,7 +24,6 @@ class URLScorer:
         r"/(article|blog|post|news|docs|guide|tutorial|product|page|category)",
         re.IGNORECASE,
     )
-
     _LOW_VALUE_PATTERNS = re.compile(
         r"/(tag|author|comment|feed|rss|print|share|login|register|cart|checkout)",
         re.IGNORECASE,
@@ -39,30 +36,24 @@ class URLScorer:
         """Score a URL from 0.0 (low priority) to 1.0 (high priority)."""
         parsed = urlparse(url)
         path = parsed.path.lower()
-        score = 0.5  # base score
-
+        score = 0.5
         depth = path.count("/")
         if depth <= 2:
             score += 0.15
         elif depth >= 5:
             score -= 0.15
-
         url_lower = url.lower()
         for keyword in self.keywords:
             if keyword in url_lower:
                 score += 0.2
-                break  # cap keyword bonus
-
+                break
         if self._HIGH_VALUE_PATTERNS.search(path):
             score += 0.1
-
         if self._LOW_VALUE_PATTERNS.search(path):
             score -= 0.2
-
         query_params = parsed.query.count("&") + (1 if parsed.query else 0)
         if query_params > 3:
             score -= 0.1
-
         return max(0.0, min(1.0, score))
 
 
@@ -81,7 +72,6 @@ class CrawlStrategy(ABC):
 
     @abstractmethod
     def __len__(self) -> int: ...
-
     @property
     def is_empty(self) -> bool:
         return len(self) == 0
@@ -131,13 +121,12 @@ class DFSStrategy(CrawlStrategy):
 
 class BestFirstStrategy(CrawlStrategy):
     """Best-first search: visit highest-scored URLs first.
-
     Uses a max-heap (negated scores for Python's min-heap).
     """
 
     def __init__(self, scorer: URLScorer | None = None):
         self.scorer = scorer or URLScorer()
-        self._heap: list[tuple[float, int, str, int]] = []  # (-score, counter, url, depth)
+        self._heap: list[tuple[float, int, str, int]] = []
         self._counter = 0
 
     def add(self, url: str, depth: int) -> None:

@@ -8,8 +8,7 @@ import orjson
 import structlog
 
 logger = structlog.get_logger()
-
-_DEFAULT_TTL = 300  # 5 minutes
+_DEFAULT_TTL = 300
 
 
 def _cache_key(url: str, params: dict) -> str:

@@ -22,7 +22,6 @@ from pawgrab.utils.rate_limiter import guard_url
 from pawgrab.utils.text import word_count
 
 logger = structlog.get_logger()
-
 _SPA_SHELL_PATTERNS = (
     "this html file is a template",
     "if you open it directly in the browser, you will see an empty page",
@@ -75,10 +74,8 @@ async def scrape_url(
     """Full scrape pipeline: robots → rate-limit → fetch → clean → convert."""
     if formats is None:
         formats = [OutputFormat.MARKDOWN]
-
     await guard_url(url)
 
-    # Cache lookup
     effective_cache_ttl = cache_ttl if cache_ttl is not None else settings.cache_ttl
     cache_params = {
         "formats": [f.value for f in formats],
@@ -98,7 +95,6 @@ async def scrape_url(
             resp.cache_hit = True
             return resp
 
-    # Session: merge persisted cookies
     if session_id:
         from pawgrab.engine.sessions import get_session, merge_cookies_for_session
 
@@ -110,17 +106,14 @@ async def scrape_url(
             session_headers = session_data.get("headers", {})
             if session_headers:
                 headers = {**session_headers, **(headers or {})}
-
     if hooks:
         await hooks.fire("before_fetch", url=url)
-
     effective_wait = wait_for_js
     needs_browser_features = (
         screenshot or pdf or actions or scroll_to_bottom or capture_network or capture_console or capture_mhtml or text_mode or geolocation or capture_websocket
     )
     if needs_browser_features and effective_wait is None:
         effective_wait = True
-
     fetch_kwargs = {
         "wait_for_js": effective_wait,
         "timeout": timeout,
@@ -145,12 +138,7 @@ async def scrape_url(
     }
     result = await fetch_page(url, **fetch_kwargs)
 
-    # Conservative browser fallback: if curl returned essentially nothing from a JS page,
-    # retry with browser rendering. Only triggers when curl gives <100 chars of visible text.
-    # This is safe because these pages currently score F1=0 regardless.
-    if (
-        not result.used_browser and browser_pool is not None and effective_wait is None  # caller didn't explicitly set wait_for_js
-    ):
+    if not result.used_browser and browser_pool is not None and effective_wait is None:
         from lxml import html as _lxml_html
 
         from pawgrab.engine.detector import needs_js_rendering
@@ -161,9 +149,6 @@ async def scrape_url(
         except Exception:
             _visible = (result.html or "").strip()
         if len(_visible) < 100 and needs_js_rendering(result.html or "", url=url):
-            # Hand off cookies earned by the curl attempt (e.g. cf_clearance) so the
-            # browser continues as the same "visitor" instead of tripping a fresh
-            # anti-bot challenge — a naive re-fetch trades a soft block for a 403.
             handoff_cookies = {**(cookies or {}), **(result.cookies or {})}
             browser_result = await fetch_page(
                 url,
@@ -184,9 +169,28 @@ async def scrape_url(
                 if len(_bvis) > len(_visible):
                     result = browser_result
 
+    blocked = (result.challenge and result.challenge.detected) or result.status_code in (403, 406, 429)
+    if settings.fetch_escalation_retry and blocked and not result.used_browser:
+        # The whole first attempt (TLS rotation + browser escalation inside
+        # fetch_page) failed while blocked. One fresh-identity attempt: new TLS
+        # target, premium proxy tier if available, JS rendering forced.
+
+        from pawgrab.engine.fetcher import reset_host_identity
+
+        logger.warning("fetch_blocked_escalating", url=url, status=result.status_code)
+        await reset_host_identity(url)
+        try:
+            esc_result = await fetch_page(
+                url,
+                **{**fetch_kwargs, "wait_for_js": True, "prefer_premium": True},
+            )
+        except Exception:
+            esc_result = None
+        esc_blocked = esc_result is None or ((esc_result.challenge and esc_result.challenge.detected) or esc_result.status_code in (403, 406, 429))
+        if not esc_blocked and len(esc_result.html or "") >= len(result.html or ""):
+            result = esc_result
     if hooks:
         await hooks.fire("after_fetch", url=url, result=result)
-
     pdf_warning: str | None = None
     if result.content_bytes is not None:
         text, pdf_warning = extract_pdf_text(result.content_bytes)
@@ -194,10 +198,8 @@ async def scrape_url(
             result.html = pdf_text_to_html(text)
         elif pdf_warning:
             logger.warning("pdf_extraction_warning", url=url, warning=pdf_warning)
-
     if hooks:
         await hooks.fire("before_extract", url=url, html=result.html)
-
     content_kwargs = {
         "excluded_tags": excluded_tags,
         "excluded_selector": excluded_selector,
@@ -216,8 +218,6 @@ async def scrape_url(
         **content_kwargs,
     )
 
-    # Pagination stitching: follow rel="next" and append subsequent pages'
-    # markdown so a multi-page article/listing returns as one document.
     if follow_next and response.markdown:
         await _stitch_next_pages(
             response,
@@ -228,15 +228,12 @@ async def scrape_url(
             proxy_pool=proxy_pool,
             fetch_kwargs=fetch_kwargs,
         )
-
     if llm_ready and response.markdown:
         response.markdown = _clean_for_llm(response.markdown)
-
     if extract_media:
         from pawgrab.engine.media import extract_all_media
 
         response.media = extract_all_media(result.html, result.url)
-
     if result.network_requests:
         response.network_requests = result.network_requests
     if result.console_logs:
@@ -247,38 +244,30 @@ async def scrape_url(
         response.ssl_certificate = result.ssl_info
     if result.websocket_messages:
         response.websocket_messages = result.websocket_messages
-
     if include_metadata and response.metadata:
         response.metadata.retry_count = result.retry_count
-
     if hooks:
         await hooks.fire("after_extract", url=url, response=response)
-
     if result.action_warnings:
         response.warnings.extend(result.action_warnings)
-
     if pdf_warning:
         response.warnings.append(pdf_warning)
-
     if result.screenshot_bytes:
         response.screenshot_base64 = base64.b64encode(result.screenshot_bytes).decode()
     if result.pdf_bytes:
         response.pdf_base64 = base64.b64encode(result.pdf_bytes).decode()
-
     if monitor:
         from pawgrab.engine.diff import compare_content, load_content, store_content
 
         text_content = response.markdown or response.text or ""
-        await load_content(url)  # populates in-memory cache used by compare_content
+        await load_content(url)
         response.diff = compare_content(url, text_content)
         await store_content(url, text_content, ttl=monitor_ttl)
-
     if monitor and result.screenshot_bytes:
         from pawgrab.engine.diff import compare_screenshots
 
         response.screenshot_diff = await compare_screenshots(url, result.screenshot_bytes, ttl=monitor_ttl)
 
-    # Session: persist cookies from response
     if session_id and result.cookies:
         try:
             from pawgrab.engine.sessions import merge_cookies_for_session
@@ -287,13 +276,11 @@ async def scrape_url(
         except Exception:
             pass
 
-    # Cache store — only cache successful, non-error responses
     status = response.metadata.status_code if response.metadata else 200
     if effective_cache_ttl > 0 and response.success and status < 400:
         from pawgrab.engine.cache import set_cached
 
         await set_cached(url, cache_params, response.model_dump(), ttl=effective_cache_ttl)
-
     return response
 
 
@@ -314,21 +301,19 @@ async def _stitch_next_pages(
     from pawgrab.engine.pagination import find_next_url
     from pawgrab.utils.url_safety import SSRFError, assert_public_url
 
-    limit = max(0, min(limit, 20))  # hard cap regardless of caller
+    limit = max(0, min(limit, 20))
     seen = {first_url}
     origin = urlparse(first_url).netloc
     html = first_html
     current = first_url
     pages_followed = 0
 
-    # fetch_kwargs carries browser/proxy pools already; strip per-call extras.
     next_fetch_kwargs = {k: v for k, v in fetch_kwargs.items() if k not in ("actions",)}
-
     for _ in range(limit):
         nxt = find_next_url(html, current)
         if not nxt or nxt in seen:
             break
-        # Only stitch within the same site, and never to a private address.
+
         if urlparse(nxt).netloc != origin:
             break
         try:
@@ -347,7 +332,6 @@ async def _stitch_next_pages(
         html = nresult.html
         current = nresult.url
         pages_followed += 1
-
     if pages_followed:
         response.warnings.append(f"Stitched {pages_followed} additional page(s) via rel=next")
 
@@ -378,13 +362,10 @@ def build_response(
         content_filter=content_filter,
         content_filter_query=content_filter_query,
     )
-
     warnings = []
     if result.challenge and result.challenge.detected:
         warnings.append(result.challenge.detail)
-
     response = ScrapeResponse(success=True, url=result.url, warnings=warnings)
-
     text_content = ""
     for fmt in formats:
         converted = convert(cleaned.content_html, fmt)
@@ -408,12 +389,9 @@ def build_response(
                 response.csv_data = converted
             case OutputFormat.XML:
                 response.xml_data = converted
-
     if not text_content:
         text_content = convert(cleaned.content_html, OutputFormat.TEXT)
 
-    # Mark JS-shell pages as failures: page fetched but rendered nothing meaningful.
-    # Avoids returning "Loading..." or nav-only content as successful extractions.
     stripped_text = text_content.strip()
     if not result.used_browser and len(stripped_text) < 200:
         from pawgrab.engine.detector import needs_js_rendering
@@ -423,14 +401,12 @@ def build_response(
             response.error = "Page requires JavaScript rendering; re-scrape with wait_for_js=true"
             return response
 
-    # Detect SPA template shells: React/Angular/Vue index.html served without JS execution
     if not result.used_browser:
         text_lower = stripped_text.lower()
         if any(p in text_lower for p in _SPA_SHELL_PATTERNS):
             response.success = False
             response.error = "Page requires JavaScript rendering; re-scrape with wait_for_js=true"
             return response
-
     if include_metadata:
         response.metadata = PageMetadata(
             title=cleaned.title,
@@ -442,12 +418,10 @@ def build_response(
             status_code=result.status_code,
             word_count=word_count(text_content),
         )
-
     if include_metadata and response.metadata:
         from pawgrab.utils.tokens import estimate_tokens
 
         response.metadata.token_count_estimate = estimate_tokens(text_content)
-
     return response
 
 

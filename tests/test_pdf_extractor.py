@@ -38,7 +38,6 @@ class TestExtractPdfText:
         page.insert_text((72, 72), "Hello PDF World")
         pdf_bytes = doc.tobytes()
         doc.close()
-
         text, warning = extract_pdf_text(pdf_bytes)
         assert "Hello PDF World" in text
         assert warning is None
@@ -48,10 +47,9 @@ class TestExtractPdfText:
         import fitz
 
         doc = fitz.open()
-        doc.new_page()  # blank page
+        doc.new_page()
         pdf_bytes = doc.tobytes()
         doc.close()
-
         text, warning = extract_pdf_text(pdf_bytes)
         assert text == ""
         assert "no extractable text" in warning

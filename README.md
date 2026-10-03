@@ -38,6 +38,18 @@ End-to-end scraping, median of 5 runs, [books.toscrape.com](https://books.toscra
   <img src="assets/bench.svg" alt="Benchmark" width="700">
 </p>
 
+### Extraction quality
+
+Main-content extraction (word-F1 against hand-written ground truth), reproducible via `python -m benchmarks.compare` and `benchmarks/external/wcxb_runner.py`.
+
+| benchmark | pawgrab | trafilatura | readability | goose3 |
+|---|---:|---:|---:|---:|
+| local dataset (6 cases) | **1.000** | 0.996 | 0.993 | 0.983 |
+| WCXB dev (1,476 pages, 7 page types) | **0.832** | 0.777 | — | — |
+| WCXB held-out test (505 pages) | **0.860** | — | — | — |
+
+WCXB per-type (dev split): article 0.932 · documentation 0.915 · service 0.796 · listing 0.703 · collection 0.622 · forum 0.656 · product 0.596.
+
 ## Install
 
 ```bash
@@ -107,6 +119,16 @@ curl -X POST http://localhost:8000/v1/extract \
   -d '{"url": "https://example.com", "prompt": "Extract the main heading"}'
 ```
 
+### POST /v1/parse
+
+Run raw HTML through the same extraction pipeline without fetching.
+
+```bash
+curl -X POST http://localhost:8000/v1/parse \
+  -H 'Content-Type: application/json' \
+  -d '{"html": "<html><body><article><h1>Title</h1></article></body></html>"}'
+```
+
 ### POST /v1/search
 
 Searches the web and scrapes each result in parallel.
@@ -114,7 +136,7 @@ Searches the web and scrapes each result in parallel.
 ```bash
 curl -X POST http://localhost:8000/v1/search \
   -H 'Content-Type: application/json' \
-  -d '{"query": "python web scraping"}'
+  -d '{"query": "python web scraping", "exclude_domains": ["pinterest.com"]}'
 ```
 
 ### GET /health

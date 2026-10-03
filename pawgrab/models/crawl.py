@@ -39,7 +39,7 @@ class CrawlRequest(CrawlParamsBase):
     @field_validator("include_path_patterns", "exclude_path_patterns")
     @classmethod
     def _bound_pattern_length(cls, v: list[str] | None) -> list[str] | None:
-        # Cap each pattern's length as a cheap first line against ReDoS.
+
         if v and any(len(p) > 500 for p in v):
             raise ValueError("path pattern exceeds 500 characters")
         return v

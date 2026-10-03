@@ -17,7 +17,6 @@ async def test_json_metrics(client):
     assert "extract" in data
     assert "crawl" in data
     assert "browser_sessions" in data
-
     scrape = data["scrape"]
     assert "total" in scrape
     assert "success" in scrape
@@ -28,7 +27,6 @@ async def test_json_metrics(client):
 async def test_browser_pool_metrics_unavailable(client):
     with patch("pawgrab.dependencies.try_browser_pool", new_callable=AsyncMock, return_value=None):
         resp = await client.get("/v1/metrics/browser-pool")
-
     assert resp.status_code == 200
     assert resp.json()["status"] == "unavailable"
 
@@ -44,8 +42,6 @@ async def test_usage_summary(client):
 async def test_client_usage(client):
     from pawgrab.engine.analytics import usage_tracker
 
-    # Unauthenticated caller resolves to the "anonymous" client key; a caller may
-    # only read their own usage.
     usage_tracker.record_request("anonymous", "/v1/scrape", response_size=512)
     resp = await client.get("/v1/usage/anonymous")
     assert resp.status_code == 200
@@ -61,6 +57,6 @@ async def test_client_usage_other_key_forbidden(client):
 
 
 async def test_unknown_client_usage(client):
-    # Reading a different (unknown) client's key is forbidden, not an empty 200.
+
     resp = await client.get("/v1/usage/nonexistent_client_xyz")
     assert resp.status_code == 403

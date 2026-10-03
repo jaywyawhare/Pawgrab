@@ -12,9 +12,8 @@ from curl_cffi.requests import AsyncSession
 from pawgrab.config import settings
 
 logger = structlog.get_logger()
-
 _SITEMAP_PATHS = ["/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml"]
-_MAX_SITEMAP_DEPTH = 3  # bound recursion into nested sitemap indexes
+_MAX_SITEMAP_DEPTH = 3
 _DOCTYPE_RE = re.compile(r"<!DOCTYPE", re.IGNORECASE)
 
 
@@ -47,7 +46,6 @@ async def discover_urls(
     """
     parsed = urlparse(url)
     base = f"{parsed.scheme}://{parsed.netloc}"
-
     for path in _SITEMAP_PATHS:
         sitemap_url = base + path
         urls = await _fetch_sitemap(sitemap_url, limit=limit)
@@ -56,7 +54,6 @@ async def discover_urls(
                 domain = parsed.netloc.split(":")[0]
                 urls = [u for u in urls if _matches_domain(u, domain)]
             return urls[:limit], "sitemap"
-
     urls = await _extract_homepage_links(url, base, include_subdomains=include_subdomains)
     return urls[:limit], "crawl"
 
@@ -78,7 +75,6 @@ async def _fetch_sitemap(
     if url in seen or depth > _MAX_SITEMAP_DEPTH:
         return []
     seen.add(url)
-
     try:
         async with AsyncSession() as session:
             resp = await session.get(url, timeout=settings.sitemap_fetch_timeout, allow_redirects=True)
@@ -88,10 +84,8 @@ async def _fetch_sitemap(
     except Exception as exc:
         logger.info("sitemap_fetch_failed", url=url, error=str(exc))
         return []
-
     if kind != "index":
         return locs[:limit]
-
     pages: list[str] = []
     for child in locs:
         if len(pages) >= limit:
@@ -106,11 +100,9 @@ def _parse_sitemap(xml_text: str) -> tuple[str, list[str]]:
         root = _safe_parse(xml_text)
     except Exception:
         return "urlset", []
-
     ns = ""
     if root.tag.startswith("{"):
         ns = root.tag.split("}")[0] + "}"
-
     index_locs: list[str] = []
     for sitemap in root.findall(f"{ns}sitemap"):
         loc = sitemap.find(f"{ns}loc")
@@ -118,7 +110,6 @@ def _parse_sitemap(xml_text: str) -> tuple[str, list[str]]:
             index_locs.append(loc.text.strip())
     if index_locs:
         return "index", index_locs
-
     page_locs: list[str] = []
     for url_elem in root.findall(f"{ns}url"):
         loc = url_elem.find(f"{ns}loc")
@@ -156,31 +147,25 @@ async def _extract_homepage_links(
             return []
     except Exception:
         return []
-
     from bs4 import BeautifulSoup
 
     try:
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception:
         return []
-
     parsed_base = urlparse(base)
     domain = parsed_base.netloc.split(":")[0]
     seen: set[str] = set()
     urls: list[str] = []
-
     for a_tag in soup.find_all("a", href=True):
         href = a_tag["href"]
-
         if href.startswith("/"):
             href = base + href
         elif not href.startswith("http"):
             continue
-
         parsed = urlparse(href)
         if parsed.scheme not in ("http", "https"):
             continue
-
         host = parsed.netloc.split(":")[0]
         if include_subdomains:
             if not host.endswith(domain):
@@ -188,11 +173,9 @@ async def _extract_homepage_links(
         else:
             if host != domain:
                 continue
-
         path = parsed.path.rstrip("/") or "/"
         normalized = f"{parsed.scheme}://{parsed.netloc}{path}"
         if normalized not in seen:
             seen.add(normalized)
             urls.append(normalized)
-
     return urls

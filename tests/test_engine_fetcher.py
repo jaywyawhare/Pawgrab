@@ -115,7 +115,6 @@ async def test_fetch_page_proxy_pool_passes_proxy():
     mock_entry = ProxyEntry(url="http://p1:8080")
     mock_pool = AsyncMock()
     mock_pool.get_proxy = AsyncMock(return_value=mock_entry)
-
     mock_result = _make_result()
     with patch("pawgrab.engine.fetcher._fetch_with_curl", new_callable=AsyncMock, return_value=mock_result) as mock_curl:
         await fetch_page("https://example.com", proxy_pool=mock_pool)
@@ -152,7 +151,7 @@ async def test_backoff_delays_on_retry():
     start = time.monotonic()
     await _backoff(2)
     elapsed = time.monotonic() - start
-    assert elapsed >= 1.0  # 2^(2-1) = 2s base, but with jitter at least 1s
+    assert elapsed >= 1.0
 
 
 @pytest.mark.asyncio
@@ -184,7 +183,7 @@ def test_check_challenge_no_silent_block_on_normal_403():
     """403 with substantial body should not trigger silent block."""
     r = FetchResult(html="<html>" + "x" * 1000 + "</html>", status_code=403, url="https://x.com")
     c = _check_challenge(r)
-    # Should not be detected as silent block (body > 500 chars)
+
     assert c.challenge_type != "silent_block"
 
 
@@ -266,18 +265,16 @@ def test_is_browser_solvable_none():
 def test_captcha_types_need_solver_to_be_browser_solvable():
     from pawgrab.engine.fetcher import _is_browser_solvable
 
-    # No solver configured -> not worth a browser slot (would just harden the block).
     with patch("pawgrab.engine.captcha_solver.get_solver") as gs:
         gs.return_value.available = False
         assert _is_browser_solvable(_FakeChallenge("recaptcha")) is False
         assert _is_browser_solvable(_FakeChallenge("datadome")) is False
 
-    # Solver configured -> escalate so the external service can crack it.
     with patch("pawgrab.engine.captcha_solver.get_solver") as gs:
         gs.return_value.available = True
         assert _is_browser_solvable(_FakeChallenge("recaptcha")) is True
         assert _is_browser_solvable(_FakeChallenge("hcaptcha")) is True
-        # Cookie-based vendors now escalate too (solved via provider cookie tasks).
+
         for t in ("datadome", "imperva", "aws_waf", "perimeterx", "akamai"):
             assert _is_browser_solvable(_FakeChallenge(t)) is True
 
@@ -294,14 +291,12 @@ async def test_cookies_use_isolated_page():
     page.goto = AsyncMock(return_value=MagicMock(status=200, headers={}))
     page.context = MagicMock()
     page.context.add_cookies = AsyncMock()
-
     pool = MagicMock()
     pool.new_isolated_page = AsyncMock(return_value=page)
     pool.release_isolated_page = AsyncMock()
-    # acquire / release must NOT be used when cookies force isolation.
+
     pool.acquire = AsyncMock()
     pool.release = AsyncMock()
-
     with patch("pawgrab.engine.fetcher.detect_challenge") as det:
         det.return_value = MagicMock(detected=False)
         await _fetch_with_browser(
@@ -310,7 +305,6 @@ async def test_cookies_use_isolated_page():
             cookies={"session": "abc"},
             timeout=30000,
         )
-
     pool.new_isolated_page.assert_awaited_once()
     pool.release_isolated_page.assert_awaited_once()
     pool.acquire.assert_not_called()
@@ -346,3 +340,99 @@ def test_decode_body_trusts_explicit_charset():
 
     resp = MagicMock(encoding="utf-8", content=b"caf\xc3\xa9", text="café")
     assert _decode_body(resp, "text/html; charset=utf-8") == "café"
+
+
+_BIG_OK = "<html>" + "x" * 600 + "</html>"
+
+
+def test_parse_retry_after_503():
+    r = FetchResult(html="", status_code=503, url="https://x.com")
+    r.resp_headers = {"Retry-After": "7"}
+    assert _parse_retry_after(r) == 7.0
+
+
+def test_parse_retry_after_http_date():
+    import time as _time
+    from email.utils import formatdate
+
+    r = FetchResult(html="", status_code=429, url="https://x.com")
+    r.resp_headers = {"Retry-After": formatdate(_time.time(), usegmt=True)}
+    delay = _parse_retry_after(r)
+    assert delay is not None and 0.0 <= delay <= 5.0
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_response_retried_until_success():
+    """A plain 429 with a normal-size body should be retried, not returned."""
+    import pawgrab.engine.fetcher as fetcher_mod
+
+    r429 = _make_result(html=_BIG_OK, status=429)
+    r200 = _make_result()
+    with (
+        patch("pawgrab.engine.fetcher._fetch_with_curl", new_callable=AsyncMock, side_effect=[r429, r200]),
+        patch.object(fetcher_mod.asyncio, "sleep", new_callable=AsyncMock),
+        patch("pawgrab.engine.fetcher._warm_session", new_callable=AsyncMock, return_value={}),
+    ):
+        result = await fetch_page("https://example.com/page")
+    assert result.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_response_gives_up_after_budget():
+    """Persistent 429s are returned to the caller after the retry budget."""
+    import pawgrab.engine.fetcher as fetcher_mod
+
+    r429 = _make_result(html=_BIG_OK, status=429)
+    with (
+        patch("pawgrab.engine.fetcher._fetch_with_curl", new_callable=AsyncMock, return_value=r429),
+        patch.object(fetcher_mod.asyncio, "sleep", new_callable=AsyncMock) as mock_sleep,
+        patch("pawgrab.engine.fetcher._warm_session", new_callable=AsyncMock, return_value={}),
+    ):
+        result = await fetch_page("https://example.com/page")
+    assert result.status_code == 429
+    assert mock_sleep.await_count == fetcher_mod._RATE_LIMIT_MAX_RETRIES
+
+
+@pytest.mark.asyncio
+async def test_host_cooldown_penalize_and_reward():
+    import pawgrab.engine.fetcher as fetcher_mod
+
+    fetcher_mod._HOST_COOLDOWNS.clear()
+    fetcher_mod._HOST_BLOCK_STREAKS.clear()
+    try:
+        await fetcher_mod._penalize_host("blocked.test")
+        first = await fetcher_mod._host_cooldown_remaining("blocked.test")
+        assert first > 0
+        await fetcher_mod._penalize_host("blocked.test")
+        second = await fetcher_mod._host_cooldown_remaining("blocked.test")
+        assert second >= first
+        await fetcher_mod._reward_host("blocked.test")
+        assert await fetcher_mod._host_cooldown_remaining("blocked.test") == 0.0
+    finally:
+        fetcher_mod._HOST_COOLDOWNS.clear()
+        fetcher_mod._HOST_BLOCK_STREAKS.clear()
+
+
+@pytest.mark.asyncio
+async def test_challenge_response_penalizes_host():
+    import pawgrab.engine.fetcher as fetcher_mod
+
+    fetcher_mod._HOST_COOLDOWNS.clear()
+    fetcher_mod._HOST_BLOCK_STREAKS.clear()
+    blocked = FetchResult(
+        html="<html>Just a moment...</html>",
+        status_code=403,
+        url="https://cf-blocked.example.com/x",
+    )
+    blocked.resp_headers = {"Server": "cloudflare"}
+    try:
+        with (
+            patch("pawgrab.engine.fetcher._fetch_with_curl", new_callable=AsyncMock, return_value=blocked),
+            patch("pawgrab.engine.fetcher._warm_session", new_callable=AsyncMock, return_value={}),
+            patch("pawgrab.engine.fetcher._backoff", new_callable=AsyncMock),
+        ):
+            await fetch_page("https://cf-blocked.example.com/x")
+        assert await fetcher_mod._host_cooldown_remaining("cf-blocked.example.com") > 0
+    finally:
+        fetcher_mod._HOST_COOLDOWNS.clear()
+        fetcher_mod._HOST_BLOCK_STREAKS.clear()

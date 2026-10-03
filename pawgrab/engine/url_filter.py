@@ -121,7 +121,7 @@ class ContentTypeFilter(URLFilter):
         path = urlparse(url).path.lower()
         dot_idx = path.rfind(".")
         if dot_idx == -1:
-            return True  # no extension = likely HTML
+            return True
         ext = path[dot_idx:]
         if ext in self.blocked_extensions:
             return False
@@ -146,8 +146,7 @@ class DuplicateFilter(URLFilter):
     @staticmethod
     def _normalize(url: str) -> str:
         parsed = urlparse(url)
-        # Lowercase host, drop default ports and any leading "www.", drop the
-        # fragment, and sort query params so trivially-equivalent URLs collapse.
+
         host = (parsed.hostname or "").lower()
         if host.startswith("www."):
             host = host[4:]

@@ -36,11 +36,9 @@ from pawgrab.config import settings
 from pawgrab.engine.antibot import random_impersonate, stealth_headers
 
 logger = structlog.get_logger()
-
 _SEARCH_TIMEOUT = 15
 _RESULTS_PER_PAGE = 10
 
-# SearXNG-style per-engine weights (google's API is highest-precision).
 _ENGINE_WEIGHTS = {
     "duckduckgo": 1.0,
     "bing": 1.0,
@@ -50,14 +48,14 @@ _ENGINE_WEIGHTS = {
     "startpage": 0.9,
     "google": 1.3,
 }
-# Engines merged in "auto" mode per category (reliably scrapeable, keyless).
+
 _META_ENGINES = {
     "general": ("duckduckgo", "bing", "mojeek"),
     "news": ("bing",),
     "images": ("bing",),
     "videos": ("bing",),
 }
-# Which categories each engine can serve.
+
 _ENGINE_CATEGORIES = {
     "duckduckgo": {"general"},
     "bing": {"general", "news", "images", "videos"},
@@ -76,10 +74,10 @@ class SearchParams:
     """Per-query controls (mirrors SearXNG's SearchQuery)."""
 
     page: int = 1
-    time_range: str | None = None  # day | week | month | year
-    safesearch: int = 0  # 0 off, 1 moderate, 2 strict
-    region: str = "us-en"  # DDG-style region; mapped per engine
-    category: str = "general"  # general | news | images | videos
+    time_range: str | None = None
+    safesearch: int = 0
+    region: str = "us-en"
+    category: str = "general"
 
     def normalized(self) -> SearchParams:
         return SearchParams(
@@ -93,7 +91,6 @@ class SearchParams:
 
 @dataclass
 class EngineResult:
-    # Each result: {"url","title","content","type", optional "thumbnail"}.
     results: list[dict] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
     corrections: list[str] = field(default_factory=list)
@@ -111,9 +108,6 @@ class SearchResult:
     score: float = 0.0
 
 
-# --------------------------------------------------------------------------- #
-# HTTP + parsing helpers
-# --------------------------------------------------------------------------- #
 async def _get_html(url: str, params: dict) -> str | None:
     """Fetch a SERP page with browser TLS impersonation. Returns HTML or None."""
     try:
@@ -148,9 +142,6 @@ def _r(url: str, title: str, content: str, type_: str = "general", thumbnail: st
     return {"url": url, "title": title, "content": content, "type": type_, "thumbnail": thumbnail}
 
 
-# --------------------------------------------------------------------------- #
-# DuckDuckGo
-# --------------------------------------------------------------------------- #
 def _ddg_real_url(href: str) -> str | None:
     if not href:
         return None
@@ -193,9 +184,6 @@ async def _engine_duckduckgo(query: str, num_results: int, params: SearchParams)
     return EngineResult(results=out)
 
 
-# --------------------------------------------------------------------------- #
-# Bing  (general / news / images / videos)
-# --------------------------------------------------------------------------- #
 def _bing_real_url(href: str) -> str | None:
     if not href:
         return None
@@ -240,14 +228,12 @@ async def _engine_bing(query: str, num_results: int, params: SearchParams) -> En
     soup = _soup(html) if html else None
     if soup is None:
         return EngineResult()
-
     if params.category == "images":
         return EngineResult(results=_parse_bing_images(soup, num_results))
     if params.category == "videos":
         return EngineResult(results=_parse_bing_videos(soup, num_results))
     if params.category == "news":
         return EngineResult(results=_parse_bing_news(soup))
-
     out: list[dict] = []
     for li in soup.select("li.b_algo"):
         a = li.select_one("h2 a") or li.select_one(".b_title a")
@@ -309,9 +295,6 @@ def _parse_bing_videos(soup, num_results: int) -> list[dict]:
     return out
 
 
-# --------------------------------------------------------------------------- #
-# Brave
-# --------------------------------------------------------------------------- #
 async def _engine_brave(query: str, num_results: int, params: SearchParams) -> EngineResult:
     q: dict = {"q": query, "source": "web"}
     if params.page > 1:
@@ -336,9 +319,6 @@ async def _engine_brave(query: str, num_results: int, params: SearchParams) -> E
     return EngineResult(results=out)
 
 
-# --------------------------------------------------------------------------- #
-# Mojeek  (independent crawler/index, scraper-friendly)
-# --------------------------------------------------------------------------- #
 async def _engine_mojeek(query: str, num_results: int, params: SearchParams) -> EngineResult:
     q: dict = {"q": query}
     if params.page > 1:
@@ -362,9 +342,6 @@ async def _engine_mojeek(query: str, num_results: int, params: SearchParams) -> 
     return EngineResult(results=out)
 
 
-# --------------------------------------------------------------------------- #
-# Yahoo  (redirect URLs wrapped as /RU=<enc>/RK=)
-# --------------------------------------------------------------------------- #
 _YAHOO_RU_RE = re.compile(r"RU=(.+?)/RK=")
 
 
@@ -398,9 +375,6 @@ async def _engine_yahoo(query: str, num_results: int, params: SearchParams) -> E
     return EngineResult(results=out)
 
 
-# --------------------------------------------------------------------------- #
-# Startpage  (best-effort; often gated behind an anti-bot token)
-# --------------------------------------------------------------------------- #
 async def _engine_startpage(query: str, num_results: int, params: SearchParams) -> EngineResult:
     q: dict = {"query": query}
     if params.page > 1:
@@ -422,9 +396,6 @@ async def _engine_startpage(query: str, num_results: int, params: SearchParams) 
     return EngineResult(results=out)
 
 
-# --------------------------------------------------------------------------- #
-# Google Custom Search (keyed API)
-# --------------------------------------------------------------------------- #
 _GOOGLE_DATE = {"day": "d1", "week": "w1", "month": "m1", "year": "y1"}
 
 
@@ -464,9 +435,6 @@ def _engine_callable(name: str):
     return globals()[f"_engine_{name}"]
 
 
-# --------------------------------------------------------------------------- #
-# Instant answers / infoboxes  (DuckDuckGo Instant Answer API, keyless)
-# --------------------------------------------------------------------------- #
 async def _fetch_instant_answers(query: str) -> tuple[list[str], list[dict]]:
     """Return (answers, infoboxes) from DuckDuckGo's Instant Answer API."""
     if not settings.search_instant_answers:
@@ -482,7 +450,6 @@ async def _fetch_instant_answers(query: str) -> tuple[list[str], list[dict]]:
     except Exception as exc:
         logger.debug("instant_answer_failed", error=str(exc))
         return [], []
-
     if not isinstance(data, dict):
         return [], []
     answers: list[str] = []
@@ -503,9 +470,6 @@ async def _fetch_instant_answers(query: str) -> tuple[list[str], list[dict]]:
     return answers, infoboxes
 
 
-# --------------------------------------------------------------------------- #
-# Result merger  (SearXNG's calculate_score / duplicate merge)
-# --------------------------------------------------------------------------- #
 def _normalize_url(url: str) -> str:
     p = urlparse(url)
     host = p.netloc.lower()
@@ -542,14 +506,12 @@ def _merge(engine_results: dict[str, list[dict]]) -> list[SearchResult]:
                     r.thumbnail = item["thumbnail"]
             r.engines.add(engine)
             r.positions.append(position)
-
     for r in by_key.values():
         weight = 1.0
         for e in r.engines:
             weight *= _ENGINE_WEIGHTS.get(e, 1.0)
         weight *= len(r.positions)
         r.score = sum(weight / p for p in r.positions)
-
     return sorted(by_key.values(), key=lambda r: r.score, reverse=True)
 
 
@@ -562,16 +524,13 @@ def _select_engines(provider: str, category: str) -> list[str]:
         candidates = (provider,)
     else:
         candidates = ("duckduckgo",)
-    # Keep only engines that serve the requested category; fall back to Bing.
+
     selected = [e for e in candidates if category in _ENGINE_CATEGORIES.get(e, set())]
     if not selected:
         selected = ["bing"] if category in _ENGINE_CATEGORIES["bing"] else ["duckduckgo"]
     return selected
 
 
-# --------------------------------------------------------------------------- #
-# Public API
-# --------------------------------------------------------------------------- #
 async def _run_engine(name: str, query: str, num_results: int, params: SearchParams):
     """Run one engine under a per-engine timeout, returning (result, duration_ms)."""
     t0 = time.perf_counter()
@@ -607,10 +566,8 @@ async def search(
     params = SearchParams(page=page, time_range=time_range, safesearch=safesearch, region=region, category=category).normalized()
     engines = _select_engines(settings.search_provider, params.category)
 
-    # Instant answers only make sense for a general web query.
     ia_task = asyncio.ensure_future(_fetch_instant_answers(query)) if params.category == "general" else None
     gathered = await asyncio.gather(*(_run_engine(name, query, num_results, params) for name in engines))
-
     engine_results: dict[str, list[dict]] = {}
     suggestions: set[str] = set()
     corrections: set[str] = set()
@@ -626,7 +583,6 @@ async def search(
             if not isinstance(res, EngineResult):
                 logger.warning("search_engine_failed", engine=name, error=str(res))
             unresponsive.append(name)
-
     answers: list[str] = []
     infoboxes: list[dict] = []
     if ia_task is not None:
@@ -634,7 +590,6 @@ async def search(
             answers, infoboxes = await ia_task
         except Exception:
             answers, infoboxes = [], []
-
     merged = _merge(engine_results)[:num_results]
     results = [
         {

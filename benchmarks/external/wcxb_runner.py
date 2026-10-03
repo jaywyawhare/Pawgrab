@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         preds = dict(ex.map(_extract_one, payload, chunksize=8))
     dt = time.perf_counter() - t0
-    print(f"Extracted {len(preds)} pages in {dt:.1f}s ({dt / max(len(preds),1) * 1000:.0f} ms/page)")
+    print(f"Extracted {len(preds)} pages in {dt:.1f}s ({dt / max(len(preds), 1) * 1000:.0f} ms/page)")
 
     out = args.out or Path(f"wcxb_predictions_{args.split}.json")
     out.write_text(json.dumps(preds))
@@ -114,9 +114,9 @@ def main(argv: list[str] | None = None) -> int:
     print("-" * 46)
     for pt in sorted(by_type, key=lambda k: -len(by_type[k])):
         rows = by_type[pt]
-        print(f"{pt:<16}{len(rows):>6}{avg(rows,0):>8.3f}{avg(rows,1):>8.3f}{avg(rows,2):>8.3f}")
+        print(f"{pt:<16}{len(rows):>6}{avg(rows, 0):>8.3f}{avg(rows, 1):>8.3f}{avg(rows, 2):>8.3f}")
     print("-" * 46)
-    print(f"{'OVERALL':<16}{len(allrows):>6}{avg(allrows,0):>8.3f}{avg(allrows,1):>8.3f}{avg(allrows,2):>8.3f}")
+    print(f"{'OVERALL':<16}{len(allrows):>6}{avg(allrows, 0):>8.3f}{avg(allrows, 1):>8.3f}{avg(allrows, 2):>8.3f}")
     return 0
 
 
