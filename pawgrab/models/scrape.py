@@ -99,6 +99,9 @@ class ScrapeRequest(BaseModel):
     capture_ssl: bool = Field(default=False, description="Capture SSL certificate information")
     capture_websocket: bool = Field(default=False, description="Capture WebSocket messages during page load")
     llm_ready: bool = Field(default=False, description="Optimize output for LLM consumption: aggressive cleanup, token count estimation")
+    summary: bool = Field(default=False, description="Add an LLM-generated TL;DR of the page (requires LLM provider)")
+    question: str | None = Field(default=None, max_length=2000, description="Answer a question grounded in the page content (requires LLM provider)")
+    highlights: bool = Field(default=False, description="Extract verbatim key excerpts from the page (requires LLM provider)")
     cache_ttl: int | None = Field(default=None, ge=0, le=86400, description="Cache TTL in seconds. 0 = skip cache, None = use server default")
     session_id: str | None = Field(default=None, description="Session ID for persistent cookies/state across requests")
 
@@ -130,7 +133,7 @@ class ScrapeResponse(BaseModel):
     xml_data: str | None = None
     screenshot_base64: str | None = None
     pdf_base64: str | None = None
-    diff: Any | None = None  # ContentDiff when monitor=True
+    diff: Any | None = None
     screenshot_diff: dict | None = Field(default=None, description="Screenshot comparison with previous capture when monitor=True")
     network_requests: list[dict[str, Any]] | None = None
     console_logs: list[dict[str, Any]] | None = None
@@ -138,4 +141,7 @@ class ScrapeResponse(BaseModel):
     media: dict[str, Any] | None = None
     ssl_certificate: dict[str, Any] | None = None
     websocket_messages: list[dict[str, Any]] | None = Field(default=None, description="Captured WebSocket messages")
+    summary: str | None = Field(default=None, description="LLM-generated TL;DR when summary=true")
+    answer: str | None = Field(default=None, description="Grounded answer to `question`")
+    highlights: list[str] | None = Field(default=None, description="Verbatim key excerpts when highlights=true")
     cache_hit: bool = Field(default=False, description="Whether this response was served from cache")

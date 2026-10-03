@@ -12,7 +12,6 @@ from pawgrab.engine.fetcher import fetch_page
 from pawgrab.utils.rate_limiter import guard_url
 
 logger = structlog.get_logger()
-
 _provider = None
 
 
@@ -42,9 +41,7 @@ async def extract_from_url(
     result = await fetch_page(url, timeout=timeout, browser_pool=browser_pool)
     cleaned = extract_content(result.html, url=result.url)
     markdown = html_to_markdown(cleaned.content_html)
-
     provider = get_provider()
-
     if chunk_strategy:
         return await _chunked_extract(
             markdown,
@@ -56,7 +53,6 @@ async def extract_from_url(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
         )
-
     return await provider.extract(markdown, prompt, schema_hint, json_schema=json_schema)
 
 
@@ -77,19 +73,14 @@ async def _chunked_extract(
 
     chunker = get_chunker(chunk_strategy, chunk_size=chunk_size, overlap=chunk_overlap)
     chunks = chunker.chunk(markdown)
-
     if len(chunks) <= 1:
         return await provider.extract(markdown, prompt, schema_hint, json_schema=json_schema)
 
-    # Cap total chunks to bound cost/latency; log what was dropped (no silent
-    # truncation) so callers know the tail of a huge page wasn't processed.
     max_chunks = settings.llm_max_chunks
     if len(chunks) > max_chunks:
         logger.warning("chunk_cap_applied", total_chunks=len(chunks), processed=max_chunks, dropped=len(chunks) - max_chunks)
         chunks = chunks[:max_chunks]
-
     logger.info("chunked_extraction", num_chunks=len(chunks), strategy=chunk_strategy)
-
     results: list[dict[str, Any]] = []
     for i, chunk in enumerate(chunks):
         try:
@@ -97,11 +88,48 @@ async def _chunked_extract(
             results.append(result)
         except Exception as exc:
             logger.warning("chunk_extraction_failed", chunk=i, error=str(exc))
-
     if not results:
         return {}
-
     return _merge_results(results)
+
+
+async def enrich_scrape(
+    markdown: str,
+    *,
+    summary: bool = False,
+    question: str | None = None,
+    highlights: bool = False,
+) -> dict[str, Any]:
+    """Generate summary/answer/highlights from already-scraped content.
+
+    All requested fields share a single LLM call (one fetch, one completion).
+    Returns only the requested keys; raises when no LLM provider is configured.
+    """
+    if not markdown or not markdown.strip():
+        return {}
+    tasks: list[str] = []
+    schema: dict[str, Any] = {"type": "object", "properties": {}}
+    if summary:
+        tasks.append("Summarize the page in 3-5 sentences.")
+        schema["properties"]["summary"] = {"type": "string"}
+    if question:
+        tasks.append(f'Answer this question using only the page content: "{question}" If the page does not contain the answer, use null.')
+        schema["properties"]["answer"] = {"type": ["string", "null"]}
+    if highlights:
+        tasks.append("Extract up to 8 key excerpts VERBATIM from the page (copy exact sentences, do not paraphrase).")
+        schema["properties"]["highlights"] = {"type": "array", "items": {"type": "string"}}
+    if not tasks:
+        return {}
+    provider = get_provider()
+    result = await provider.extract(markdown, " ".join(tasks), schema_hint=schema)
+    out: dict[str, Any] = {}
+    if summary and result.get("summary"):
+        out["summary"] = str(result["summary"])
+    if question and result.get("answer"):
+        out["answer"] = str(result["answer"])
+    if highlights and result.get("highlights"):
+        out["highlights"] = [str(h) for h in result["highlights"]][:8]
+    return out
 
 
 def _merge_results(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -114,7 +142,6 @@ def _merge_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     """
     if len(results) == 1:
         return results[0]
-
     merged: dict[str, Any] = {}
     for result in results:
         for key, value in result.items():
@@ -135,5 +162,4 @@ def _merge_results(results: list[dict[str, Any]]) -> dict[str, Any]:
                         merged[key][dk] = dv
             elif merged[key] is None and value is not None:
                 merged[key] = value
-
     return merged

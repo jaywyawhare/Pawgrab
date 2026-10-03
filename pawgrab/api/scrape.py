@@ -14,6 +14,29 @@ logger = structlog.get_logger()
 router = APIRouter(tags=["Scrape"])
 
 
+async def _enrich(response: ScrapeResponse, req: ScrapeRequest) -> None:
+    """Attach summary/answer/highlights; a missing provider degrades to a warning."""
+    from pawgrab.ai.extractor import enrich_scrape
+
+    try:
+        enriched = await enrich_scrape(
+            response.markdown or response.text or "",
+            summary=req.summary,
+            question=req.question,
+            highlights=req.highlights,
+        )
+    except Exception as exc:
+        response.warnings.append(f"LLM enrichment unavailable: {type(exc).__name__}")
+        logger.warning("llm_enrichment_failed", url=str(req.url), error=str(exc))
+        return
+    if not enriched:
+        response.warnings.append("LLM enrichment skipped: no provider configured")
+        return
+    response.summary = enriched.get("summary")
+    response.answer = enriched.get("answer")
+    response.highlights = enriched.get("highlights")
+
+
 @router.post(
     "/scrape",
     response_model=ScrapeResponse,
@@ -45,7 +68,7 @@ async def scrape(req: ScrapeRequest):
     try:
         response = await scrape_url(
             url,
-            **req.model_dump(exclude={"url", "formats", "actions"}),
+            **req.model_dump(exclude={"url", "formats", "actions", "summary", "question", "highlights"}),
             formats=req.formats,
             actions=req.actions,
             browser_pool=pool,
@@ -53,6 +76,8 @@ async def scrape(req: ScrapeRequest):
         )
         if warnings:
             response.warnings = warnings + response.warnings
+        if req.summary or req.question or req.highlights:
+            await _enrich(response, req)
         return response
     except SSRFError:
         raise PawgrabError(
