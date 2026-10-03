@@ -1,0 +1,31 @@
+# Pawgrab
+
+> Web scraping API. Returns clean Markdown, HTML, text, or structured JSON from any URL. Self-hostable, stealth-first: TLS fingerprint impersonation, coherent browser fingerprints, human-like input, proxy escalation, and challenge solving built in.
+
+## Docs
+
+- [Quickstart](quickstart.md): Install, configure, and first scrape
+- [API reference](api.md): All endpoints with request/response schemas
+- [Scraping](scraping.md): Formats, selectors, actions, JS rendering
+- [Crawling](crawling.md): Async BFS crawling, jobs, pagination
+- [Extraction](extraction.md): CSS/XPath/regex/LLM structured extraction
+- [Configuration](configuration.md): Every environment variable
+- [Deployment](deployment.md): Docker Compose (API + worker + Redis)
+- [CLI](cli.md): pawgrab scrape / extract / serve
+- [Architecture](architecture.md): Engine internals
+
+## Endpoints
+
+- POST /v1/scrape: Scrape one URL; formats markdown/html/text/json/csv/xml; options for actions, screenshots, sessions, LLM summary/question/highlights
+- POST /v1/parse: Convert raw HTML through the same extraction pipeline without fetching
+- POST /v1/crawl: Async site crawl (202 + job polling at GET /v1/crawl/{job_id})
+- POST /v1/search: Web search + parallel scraping of results; include_domains/exclude_domains scoping
+- POST /v1/extract: LLM extraction with prompt, JSON Schema validation, or auto-schema
+- POST /v1/map: Discover URLs of a site
+- POST /v1/batch: Batch scrape job
+- GET /health: Component health (ok/degraded/unhealthy)
+
+## Optional
+
+- [Python SDK](https://github.com/jaywyawhare/Pawgrab/tree/master/sdk/python): pip install pawgrab-sdk
+- [TypeScript SDK](https://github.com/jaywyawhare/Pawgrab/tree/master/sdk/typescript): npm install pawgrab-sdk
