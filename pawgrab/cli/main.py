@@ -74,6 +74,30 @@ def extract(
 
 
 @app.command()
+def doctor(
+    json_output: bool = typer.Option(False, "--json", help="Emit the raw diagnostics as JSON"),
+):
+    """Report which capabilities are usable with the current configuration."""
+    from pawgrab.engine.diagnostics import run_diagnostics
+
+    report = run_diagnostics()
+    if json_output:
+        console.print_json(orjson.dumps(report).decode())
+        return
+    from rich.table import Table
+
+    colors = {"ok": "green", "warn": "yellow", "off": "dim"}
+    table = Table(title=f"Pawgrab capabilities — {report['status']}")
+    table.add_column("Capability")
+    table.add_column("Status")
+    table.add_column("Detail")
+    for name, cap in report["capabilities"].items():
+        status = cap["status"]
+        table.add_row(name, f"[{colors.get(status, 'white')}]{status}[/]", cap["message"])
+    console.print(table)
+
+
+@app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", "--host", "-h"),
     port: int = typer.Option(8000, "--port", "-p"),
