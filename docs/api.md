@@ -98,7 +98,7 @@ Per-capability readiness given the current configuration (distinct from `/health
 ```json
 {
   "status": "ok",
-  "summary": { "ok": 4, "warn": 1, "off": 2 },
+  "summary": { "ok": 5, "warn": 0, "off": 2 },
   "capabilities": {
     "fetch": { "status": "ok", "message": "HTTP fetch via curl_cffi TLS impersonation" },
     "browser": { "status": "ok", "message": "browser pool running" },
