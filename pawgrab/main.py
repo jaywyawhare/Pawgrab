@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from pawgrab._version import __version__
-from pawgrab.api import batch, crawl, extract, health, map, parse, proxy, schedule, scrape, search, session
+from pawgrab.api import batch, crawl, extract, health, map, parse, proxy, reader, schedule, scrape, search, session
 from pawgrab.api import metrics as metrics_api
 from pawgrab.config import settings
 from pawgrab.dependencies import shutdown_browser_pool, shutdown_proxy_pool
@@ -222,6 +222,7 @@ def create_app() -> FastAPI:
     app.include_router(map.router, prefix="/v1")
     app.include_router(search.router, prefix="/v1")
     app.include_router(parse.router, prefix="/v1")
+    app.include_router(reader.router, prefix="/v1")
     app.include_router(proxy.router, prefix="/v1")
     app.include_router(session.router, prefix="/v1")
     app.include_router(metrics_api.router)
