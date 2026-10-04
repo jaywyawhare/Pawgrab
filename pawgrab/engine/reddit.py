@@ -19,6 +19,7 @@ _MAX_DEPTH = 6
 
 
 def is_reddit(url: str) -> bool:
+    """True when the URL is on reddit.com (any subdomain) or redd.it."""
     return host_matches(url, "reddit.com", "redd.it")
 
 
@@ -32,6 +33,7 @@ def _json_url(url: str) -> str:
 
 
 def _post(data: dict) -> dict:
+    """Project a Reddit post's ``data`` object into the fields the reader returns."""
     return {
         "id": data.get("id"),
         "title": data.get("title"),

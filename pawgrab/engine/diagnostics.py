@@ -20,6 +20,7 @@ _LLM_KEY_FIELDS = {
 
 
 def _cap(status: str, message: str, **detail) -> dict:
+    """Build one capability result; extra kwargs become its ``detail`` payload."""
     out = {"status": status, "message": message}
     if detail:
         out["detail"] = detail
@@ -37,6 +38,7 @@ def _llm_capability(provider: str) -> dict:
 
 
 def _llm() -> dict:
+    """Readiness of the active LLM provider, annotated with the fallback's status."""
     cap = _llm_capability(settings.llm_provider)
     fb = settings.llm_fallback_provider
     if fb and fb != settings.llm_provider:
@@ -45,6 +47,7 @@ def _llm() -> dict:
 
 
 def _captcha() -> dict:
+    """Readiness of the captcha solver: needs both a provider and an API key."""
     provider, key = settings.captcha_provider, settings.captcha_api_key
     if provider and key:
         return _cap("ok", f"{provider} solver configured", provider=provider)
@@ -54,6 +57,7 @@ def _captcha() -> dict:
 
 
 def _proxies() -> dict:
+    """Readiness of the proxy pool: off if none configured, ok only once health checks pass."""
     configured = bool(settings.proxy_url or settings.proxy_urls or settings.proxy_urls_premium)
     if not configured:
         return _cap("off", "no proxies configured (optional)")
@@ -69,6 +73,7 @@ def _proxies() -> dict:
 
 
 def _search() -> dict:
+    """Readiness of search: keyless engines are ok, the google provider needs a key and CX."""
     provider = settings.search_provider
     if provider == "google":
         if settings.google_search_api_key and settings.google_search_cx:
@@ -78,6 +83,7 @@ def _search() -> dict:
 
 
 def _storage() -> dict:
+    """Readiness of storage: local filesystem is ok, s3 needs a bucket and credentials."""
     backend = settings.storage_backend
     if backend == "s3":
         if settings.s3_bucket and settings.s3_access_key and settings.s3_secret_key:
@@ -87,6 +93,7 @@ def _storage() -> dict:
 
 
 def _browser() -> dict:
+    """Readiness of the browser: ok when a pool is running, warn when configured but unverified."""
     from pawgrab import dependencies
 
     pool = dependencies._browser_pool

@@ -50,6 +50,7 @@ async def health():
 
 @router.get("/status")
 async def status():
+    """Lightweight liveness probe: service name and version, always ok."""
     return {"status": "ok", "version": __version__, "service": "pawgrab"}
 
 

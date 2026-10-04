@@ -14,10 +14,12 @@ _FEED_SUFFIXES = (".rss", ".atom", ".xml")
 
 
 def _is_youtube_video(url: str) -> bool:
+    """True for a YouTube host that also carries a parseable video id."""
     return host_matches(url, *_YT_HOSTS) and extract_video_id(url) is not None
 
 
 def _is_feed(url: str) -> bool:
+    """True when the URL path looks like an RSS/Atom feed by suffix or hint segment."""
     path = urlparse(url).path.lower()
     return path.endswith(_FEED_SUFFIXES) or any(h in path for h in _FEED_HINTS)
 

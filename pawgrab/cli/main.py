@@ -25,6 +25,7 @@ def scrape(
     from pawgrab.models.common import OutputFormat
 
     async def _run():
+        """Fetch, clean, and convert the URL, tearing the browser pool down after."""
         from pawgrab.dependencies import get_browser_pool, shutdown_browser_pool
 
         pool = await get_browser_pool()
@@ -60,6 +61,7 @@ def extract(
     from pawgrab.ai.extractor import extract_from_url
 
     async def _run():
+        """Run the AI extraction for the given URL and prompt."""
         return await extract_from_url(url, prompt=prompt)
 
     try:

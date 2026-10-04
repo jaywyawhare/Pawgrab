@@ -14,6 +14,7 @@ _ATOM_NS = "{http://www.w3.org/2005/Atom}"
 
 
 def _text(node) -> str | None:
+    """Return an element's unescaped, stripped text, or None when empty/absent."""
     if node is None or node.text is None:
         return None
     return html.unescape(node.text).strip() or None
@@ -29,6 +30,7 @@ def _atom_link(entry) -> str | None:
 
 
 def _parse_atom(root, limit: int) -> dict:
+    """Shape an Atom ``<feed>`` root into feed metadata plus up to ``limit`` entries."""
     items = []
     for entry in root.findall(f"{_ATOM_NS}entry")[:limit]:
         author = entry.find(f"{_ATOM_NS}author/{_ATOM_NS}name")
@@ -52,6 +54,7 @@ def _parse_atom(root, limit: int) -> dict:
 
 
 def _parse_rss(root, limit: int) -> dict:
+    """Shape an RSS 2.0 ``<rss>`` root into feed metadata plus up to ``limit`` items."""
     channel = root.find("channel")
     if channel is None:
         raise ValueError("RSS feed has no <channel>")

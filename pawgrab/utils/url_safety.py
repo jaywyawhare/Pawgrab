@@ -98,6 +98,7 @@ def is_safe_url(url: str, *, allow_private: bool | None = None) -> bool:
 
 
 async def _resolve(hostname: str) -> list[str]:
+    """Resolve a hostname to its IP strings off the event loop."""
     infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None, proto=socket.IPPROTO_TCP)
     return [info[4][0] for info in infos]
 

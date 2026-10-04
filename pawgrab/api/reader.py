@@ -38,6 +38,7 @@ def _ssrf_guard(exc: Exception) -> None:
 
 
 async def _transcript(req: TranscriptRequest) -> TranscriptResponse:
+    """Run the transcript reader, soft-failing to ``success=False`` (SSRF still 400s)."""
     try:
         data = await fetch_transcript(req.url, languages=req.languages)
         return TranscriptResponse(success=True, **data)
@@ -48,6 +49,7 @@ async def _transcript(req: TranscriptRequest) -> TranscriptResponse:
 
 
 async def _feed(req: FeedRequest) -> FeedResponse:
+    """Run the feed reader, soft-failing to ``success=False`` (SSRF still 400s)."""
     try:
         data = await fetch_feed(req.url, limit=req.limit)
         return FeedResponse(success=True, **data)
@@ -58,6 +60,7 @@ async def _feed(req: FeedRequest) -> FeedResponse:
 
 
 async def _reddit(req: RedditRequest) -> RedditResponse:
+    """Run the Reddit reader, soft-failing to ``success=False`` (SSRF still 400s)."""
     try:
         data = await fetch_reddit(req.url, limit=req.limit)
         return RedditResponse(success=True, **data)
@@ -68,6 +71,7 @@ async def _reddit(req: RedditRequest) -> RedditResponse:
 
 
 async def _github(req: GithubRequest) -> GithubResponse:
+    """Run the GitHub reader, soft-failing to ``success=False`` (SSRF still 400s)."""
     try:
         data = await fetch_repo(req.url)
         return GithubResponse(success=True, **data)
