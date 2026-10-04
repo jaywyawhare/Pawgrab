@@ -2,6 +2,8 @@
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from pawgrab.engine.diagnostics import run_diagnostics
 from pawgrab.engine.feed import _parse_atom, _parse_rss
 from pawgrab.engine.github import parse_repo
@@ -61,6 +63,55 @@ def test_detect_platform():
     assert detect_platform("https://blog.example.com/feed") == "feed"
     assert detect_platform("https://example.com/atom.xml") == "feed"
     assert detect_platform("https://example.com/article") == "web"
+
+
+# --- reader_get redirect SSRF guard ---
+
+
+class _FakeResp:
+    def __init__(self, status, headers=None, text="ok"):
+        self.status_code = status
+        self.headers = headers or {}
+        self.text = text
+
+
+def _fake_session(responses):
+    """A fake curl_cffi AsyncSession yielding the queued responses in order."""
+    calls = iter(responses)
+
+    class _S:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, **k):
+            return next(calls)
+
+    return lambda *a, **k: _S()
+
+
+async def test_reader_get_revalidates_redirect_target():
+    from pawgrab.utils.url_safety import SSRFError
+
+    redirect = _FakeResp(302, {"location": "http://169.254.169.254/latest/meta-data/"})
+    with patch("pawgrab.engine.reader_http.AsyncSession", _fake_session([redirect])):
+        from pawgrab.engine.reader_http import reader_get
+
+        with pytest.raises(SSRFError):
+            await reader_get("https://feed.example.com/rss")
+
+
+async def test_reader_get_follows_public_redirect():
+    hop = _FakeResp(302, {"location": "https://cdn.example.com/final"})
+    final = _FakeResp(200, text="body")
+    with patch("pawgrab.engine.reader_http.AsyncSession", _fake_session([hop, final])):
+        from pawgrab.engine.reader_http import reader_get
+
+        resp = await reader_get("https://example.com/start")
+    assert resp.status_code == 200
+    assert resp.text == "body"
 
 
 # --- reddit ---
