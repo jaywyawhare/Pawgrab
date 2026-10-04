@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from pawgrab._version import __version__
-from pawgrab.api import batch, crawl, extract, health, map, parse, proxy, schedule, scrape, search, session
+from pawgrab.api import batch, crawl, extract, health, map, parse, proxy, reader, schedule, scrape, search, session
 from pawgrab.api import metrics as metrics_api
 from pawgrab.config import settings
 from pawgrab.dependencies import shutdown_browser_pool, shutdown_proxy_pool
@@ -52,6 +52,7 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Shut the proxy/browser pools, sessions, and Redis down cleanly on exit."""
     logger.info("pawgrab_starting", version=__version__)
     yield
     logger.info("pawgrab_shutting_down")
@@ -77,7 +78,7 @@ _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-
+        """Assign/validate a request id, bind logging context, and record per-request metrics."""
         client_id = request.headers.get("X-Request-ID", "")
         request_id = client_id if _REQUEST_ID_RE.match(client_id) else uuid.uuid4().hex[:12]
         request.state.request_id = request_id
@@ -116,6 +117,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     SKIP_PATHS = {"/health", "/status", "/docs", "/openapi.json", "/redoc"}
 
     async def dispatch(self, request: Request, call_next):
+        """Enforce the bearer API key, skipping health/docs paths and open deployments."""
         if not settings.api_key:
             return await call_next(request)
         if request.url.path in self.SKIP_PATHS:
@@ -134,10 +136,12 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
 
 def _request_id(request: Request) -> str | None:
+    """Return the current request's id, if the middleware has set one."""
     return getattr(request.state, "request_id", None)
 
 
 def create_app() -> FastAPI:
+    """Build the FastAPI app: middleware stack, error handlers, and routers."""
     app = FastAPI(
         title="Pawgrab",
         description=("Fast, stealth web scraping API with content extraction, crawling, structured data extraction, and search capabilities."),
@@ -147,6 +151,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(PawgrabError)
     async def pawgrab_error_handler(request: Request, exc: PawgrabError):
+        """Render a PawgrabError as the standard error envelope with its status code."""
         return JSONResponse(
             status_code=exc.status_code,
             content=ErrorResponse(
@@ -159,6 +164,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        """Map a Starlette HTTP exception to the standard error envelope."""
         code = _STATUS_TO_CODE.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
         return JSONResponse(
             status_code=exc.status_code,
@@ -171,6 +177,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
+        """Flatten request-validation failures into a single details string."""
         errors = exc.errors()
         fields = [f"{'.'.join(str(p) for p in e['loc'][1:])}: {e['msg']}" for e in errors if len(e["loc"]) > 1]
         return JSONResponse(
@@ -185,6 +192,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def unhandled_error_handler(request: Request, exc: Exception):
+        """Last-resort handler: log the fault and return a generic 500 envelope."""
         logger.error("unhandled_error", path=request.url.path, error=str(exc))
         return JSONResponse(
             status_code=500,
@@ -222,6 +230,7 @@ def create_app() -> FastAPI:
     app.include_router(map.router, prefix="/v1")
     app.include_router(search.router, prefix="/v1")
     app.include_router(parse.router, prefix="/v1")
+    app.include_router(reader.router, prefix="/v1")
     app.include_router(proxy.router, prefix="/v1")
     app.include_router(session.router, prefix="/v1")
     app.include_router(metrics_api.router)
@@ -231,6 +240,7 @@ def create_app() -> FastAPI:
 
         @app.get("/dashboard", include_in_schema=False)
         async def dashboard():
+            """Serve the bundled analytics dashboard's index page."""
             return FileResponse(dashboard_dir / "index.html")
 
     return app

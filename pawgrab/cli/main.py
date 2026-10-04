@@ -25,6 +25,7 @@ def scrape(
     from pawgrab.models.common import OutputFormat
 
     async def _run():
+        """Fetch, clean, and convert the URL, tearing the browser pool down after."""
         from pawgrab.dependencies import get_browser_pool, shutdown_browser_pool
 
         pool = await get_browser_pool()
@@ -60,6 +61,7 @@ def extract(
     from pawgrab.ai.extractor import extract_from_url
 
     async def _run():
+        """Run the AI extraction for the given URL and prompt."""
         return await extract_from_url(url, prompt=prompt)
 
     try:
@@ -71,6 +73,30 @@ def extract(
     except Exception as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
+
+
+@app.command()
+def doctor(
+    json_output: bool = typer.Option(False, "--json", help="Emit the raw diagnostics as JSON"),
+):
+    """Report which capabilities are usable with the current configuration."""
+    from pawgrab.engine.diagnostics import run_diagnostics
+
+    report = run_diagnostics()
+    if json_output:
+        console.print_json(orjson.dumps(report).decode())
+        return
+    from rich.table import Table
+
+    colors = {"ok": "green", "warn": "yellow", "off": "dim"}
+    table = Table(title=f"Pawgrab capabilities — {report['status']}")
+    table.add_column("Capability")
+    table.add_column("Status")
+    table.add_column("Detail")
+    for name, cap in report["capabilities"].items():
+        status = cap["status"]
+        table.add_row(name, f"[{colors.get(status, 'white')}]{status}[/]", cap["message"])
+    console.print(table)
 
 
 @app.command()

@@ -50,4 +50,13 @@ async def health():
 
 @router.get("/status")
 async def status():
+    """Lightweight liveness probe: service name and version, always ok."""
     return {"status": "ok", "version": __version__, "service": "pawgrab"}
+
+
+@router.get("/health/capabilities")
+async def capabilities():
+    """Per-capability readiness (llm, captcha, proxies, search, storage, browser, fetch)."""
+    from pawgrab.engine.diagnostics import run_diagnostics
+
+    return run_diagnostics()
