@@ -344,7 +344,6 @@ def test_context_kwargs_safari_no_client_hint_headers():
 def test_redact_endpoint_drops_path_and_query():
     from pawgrab.engine.browser import _redact_endpoint
 
-    # A token in the query must never reach the logs.
     assert _redact_endpoint("ws://cloak.host:9222/devtools/browser?token=secret") == "ws://cloak.host:9222"
     assert _redact_endpoint("not a url") == "<endpoint>"
 
@@ -379,13 +378,11 @@ def _fake_cdp_playwright(monkeypatch):
     ctx.add_init_script = AsyncMock()
     ctx.route = AsyncMock()
     ctx.grant_permissions = AsyncMock()
-    ctx.new_context = AsyncMock()
     browser = MagicMock()
     browser.new_context = AsyncMock(return_value=ctx)
     browser.close = AsyncMock()
     chromium = MagicMock()
     chromium.connect_over_cdp = AsyncMock(return_value=browser)
-    # launch_persistent_context must never be called on the CDP path.
     chromium.launch_persistent_context = AsyncMock(side_effect=AssertionError("should not launch"))
     chromium.launch = AsyncMock(side_effect=AssertionError("should not launch"))
     pw = MagicMock()
@@ -414,11 +411,11 @@ async def test_start_connects_over_cdp(monkeypatch):
     chromium.launch_persistent_context.assert_not_called()
     assert pool._browser is browser
     assert pool._persistent_ctx is ctx
-    assert pool._user_data_dir is None  # nothing to clean up on the remote
+    assert pool._user_data_dir is None
     assert pool._pages.qsize() == 2
 
     await pool.stop()
-    browser.close.assert_awaited_once()  # disconnect, not kill
+    browser.close.assert_awaited_once()
 
 
 async def test_cdp_ensure_proxy_browser_reuses_connection(monkeypatch):
@@ -431,7 +428,7 @@ async def test_cdp_ensure_proxy_browser_reuses_connection(monkeypatch):
     browser, _ctx, chromium = _fake_cdp_playwright(monkeypatch)
 
     pool = BrowserPool()
-    pool._playwright = MagicMock(chromium=chromium)  # _ensure_proxy_browser connects lazily
+    pool._playwright = MagicMock(chromium=chromium)
     got = await pool._ensure_proxy_browser()
     assert got is browser
-    assert pool._proxy_browser is None  # never spawns a second browser
+    assert pool._proxy_browser is None

@@ -1023,9 +1023,6 @@ class BrowserPool:
         if proxy_url:
             browser = await self._ensure_proxy_browser()
             if self._cdp:
-                # A CDP-connected browser's proxy is fixed at its own launch; a
-                # per-context proxy can't be applied. Egress is whatever the
-                # remote (CloakBrowser) is configured with.
                 logger.warning("browser_cdp_proxy_ignored", endpoint=_redact_endpoint(self._cdp_url))
                 ctx_kwargs = self._context_kwargs(geolocation=geolocation, profile=profile)
             else:
@@ -1109,9 +1106,6 @@ class BrowserPool:
         launcher = await self._get_browser_launcher()
         is_chromium = self._browser_type == "chromium"
         if self._cdp:
-            # External patched Chromium: connect, then run every request through a
-            # fresh context on it. No local user-data dir, args or headless flag —
-            # those belong to the remote browser's own launch.
             self._browser = await self._connect_cdp()
             profile = build_profile(settings.fingerprint_seed or None)
             ctx_kwargs = self._context_kwargs(profile=profile)
@@ -1338,8 +1332,6 @@ class BrowserPool:
                 ctx_kwargs = self._context_kwargs(profile=session_profile)
                 ctx_kwargs.pop("permissions", None)
                 if self._cdp:
-                    # Isolated context on the connected browser; per-session state
-                    # lives in-process (no persistent user-data dir on the remote).
                     browser = await self._ensure_proxy_browser()
                     ctx = await browser.new_context(**ctx_kwargs)
                 elif is_chromium:

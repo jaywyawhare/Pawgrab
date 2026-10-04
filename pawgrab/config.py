@@ -33,11 +33,10 @@ class Settings(BaseSettings):
 
     browser_max_sessions: int = Field(default=50, ge=1, le=500)
     browser_type: str = "chromium"
-    # Connect to an externally-run, fingerprint-patched Chromium (e.g. CloakBrowser)
-    # over CDP instead of launching Patchright locally. Empty = launch locally as
-    # before. When set, the remote browser owns its own flags/proxy/user-data; the
-    # per-context JS stealth, fingerprint seeding and routing still apply on top.
-    browser_cdp_url: str = ""
+    browser_cdp_url: str = Field(
+        default="",
+        description="CDP endpoint of an externally-run patched Chromium (e.g. CloakBrowser) to connect to instead of launching locally; empty = launch locally",
+    )
     browser_cdp_timeout_ms: int = Field(default=30000, ge=1000, le=120000)
     browser_standby_recycle: bool = True
     browser_session_profiles: bool = True
