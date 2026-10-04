@@ -89,11 +89,11 @@ def _storage() -> dict:
 def _browser() -> dict:
     from pawgrab import dependencies
 
-    if settings.browser_cdp_url:
-        return _cap("ok", "external Chromium over CDP")
     pool = dependencies._browser_pool
     if pool is not None and getattr(pool, "_started", False):
         return _cap("ok", "browser pool running", pool=pool.stats())
+    if settings.browser_cdp_url:
+        return _cap("warn", "external Chromium over CDP configured (not verified)")
     return _cap("warn", "browser pool not started (launches on first request)")
 
 
