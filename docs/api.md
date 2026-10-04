@@ -91,6 +91,26 @@ Status levels:
 { "status": "ok", "version": "0.1.0", "service": "pawgrab" }
 ```
 
+## GET /health/capabilities
+
+Per-capability readiness given the current configuration (distinct from `/health`, which checks infra liveness). Each capability reports `ok` (provably usable), `warn` (configured but unverifiable, or a selected backend is misconfigured), or `off` (optional and absent). Also available from the CLI: `pawgrab doctor [--json]`.
+
+```json
+{
+  "status": "ok",
+  "summary": { "ok": 4, "warn": 1, "off": 2 },
+  "capabilities": {
+    "fetch": { "status": "ok", "message": "HTTP fetch via curl_cffi TLS impersonation" },
+    "browser": { "status": "ok", "message": "browser pool running" },
+    "llm": { "status": "ok", "message": "openai key configured" },
+    "captcha": { "status": "off", "message": "no captcha solver configured (optional)" },
+    "proxies": { "status": "off", "message": "no proxies configured (optional)" },
+    "search": { "status": "ok", "message": "keyless meta-search (duckduckgo)" },
+    "storage": { "status": "ok", "message": "local filesystem (./pawgrab_data)" }
+  }
+}
+```
+
 ---
 
 ## POST /v1/scrape
@@ -291,6 +311,94 @@ curl -X POST http://localhost:8000/v1/parse \
 **Options:** `url` (source URL for metadata), `formats`, `css_selector`, `excluded_tags`, `excluded_selector`, `word_count_threshold`, `content_filter`, `content_filter_query`.
 
 Returns `success`, `markdown`/`html`/`text`/`json_data`/`csv_data`/`xml_data` (per requested format), `title`.
+
+---
+
+## POST /v1/transcript
+
+Extract a YouTube video's caption track as structured, timestamped segments — reads the published captions directly (no audio download or speech-to-text).
+
+```bash
+curl -X POST http://localhost:8000/v1/transcript \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://youtu.be/dQw4w9WgXcQ", "languages": ["en"]}'
+```
+
+**Required:** `url` (watch, shorts, embed, or youtu.be).
+
+**Options:** `languages` (preferred caption language codes in priority order).
+
+Returns `success`, `video_id`, `title`, `language`, `auto_generated`, `segments` (`[{start, duration, text}]`), `text` (joined). When the video has no captions, returns `success: false` with `error`.
+
+---
+
+## POST /v1/feed
+
+Parse an RSS 2.0 or Atom feed into structured items.
+
+```bash
+curl -X POST http://localhost:8000/v1/feed \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com/feed.xml", "limit": 50}'
+```
+
+**Required:** `url`.
+
+**Options:** `limit` (default 50, max 500).
+
+Returns `success`, `type` (`rss`/`atom`), `title`, `link`, `description`, `items` (`[{title, link, published, summary, id, author}]`), `count`.
+
+---
+
+## POST /v1/reddit
+
+Read a Reddit post (with a bounded comment tree) or a subreddit/listing's posts via the public `.json` endpoint — no login or API key.
+
+```bash
+curl -X POST http://localhost:8000/v1/reddit \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://www.reddit.com/r/python/comments/abc/some_title/"}'
+```
+
+**Required:** `url` (post, subreddit, or listing).
+
+**Options:** `limit` (posts for a listing URL, default 50, max 100).
+
+Returns `success`, `kind` (`post`/`listing`), and either `post` + `comments` (nested `[{author, body, score, created_utc, replies}]`) or `posts`.
+
+---
+
+## POST /v1/github
+
+Read GitHub repository metadata via the public REST API — no token (unauthenticated rate limit applies).
+
+```bash
+curl -X POST http://localhost:8000/v1/github \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://github.com/psf/requests"}'
+```
+
+**Required:** `url` (`github.com/owner/repo`).
+
+Returns `success`, `full_name`, `description`, `owner`, `stars`, `forks`, `watchers`, `open_issues`, `language`, `topics`, `license`, `default_branch`, `homepage`, `archived`, and `created_at`/`updated_at`/`pushed_at`.
+
+---
+
+## POST /v1/read
+
+Auto-detect the URL's platform and route to the best reader: YouTube videos → transcript, Reddit → post/listing, GitHub repos → metadata, RSS/Atom feeds → feed items, everything else → a web scrape.
+
+```bash
+curl -X POST http://localhost:8000/v1/read \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://youtu.be/dQw4w9WgXcQ"}'
+```
+
+**Required:** `url`.
+
+**Options:** `languages` (used when the URL is a video), `limit` (feed items), `formats` (used on the web-scrape fallback).
+
+Returns `success`, `kind` (`youtube`/`reddit`/`github`/`feed`/`web`), `url`, and whichever of `transcript`/`reddit`/`github`/`feed`/`scrape` applies.
 
 ---
 
