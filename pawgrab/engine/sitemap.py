@@ -2,36 +2,17 @@
 
 from __future__ import annotations
 
-import re
-import xml.etree.ElementTree as ElementTree
 from urllib.parse import urlparse
 
 import structlog
 from curl_cffi.requests import AsyncSession
 
 from pawgrab.config import settings
+from pawgrab.utils.xmlsafe import safe_fromstring as _safe_parse
 
 logger = structlog.get_logger()
 _SITEMAP_PATHS = ["/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml"]
 _MAX_SITEMAP_DEPTH = 3
-_DOCTYPE_RE = re.compile(r"<!DOCTYPE", re.IGNORECASE)
-
-
-def _safe_parse(xml_text: str):
-    """Parse sitemap XML, rejecting DTDs to prevent entity-expansion (billion-laughs) DoS.
-
-    Untrusted sitemap XML comes from arbitrary target sites. defusedxml is used
-    when available; otherwise we reject any document declaring a DOCTYPE (the
-    vector for internal-entity expansion) before handing it to the stdlib parser.
-    """
-    if _DOCTYPE_RE.search(xml_text[:4096]):
-        raise ValueError("sitemap declares a DOCTYPE; refusing to parse (XXE/billion-laughs)")
-    try:
-        import defusedxml.ElementTree as DefusedET
-
-        return DefusedET.fromstring(xml_text)
-    except ImportError:
-        return ElementTree.fromstring(xml_text)
 
 
 async def discover_urls(

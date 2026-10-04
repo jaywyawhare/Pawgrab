@@ -57,6 +57,12 @@ def redact_url_creds(url: str) -> str:
     return url
 
 
+def host_matches(url: str, *domains: str) -> bool:
+    """True when the URL's host equals, or is a subdomain of, any given domain."""
+    host = (urlparse(url).hostname or "").lower().rstrip(".")
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
 def _ip_blocked(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Whether an IP is in any non-public range we must never connect to."""
     return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_multicast or addr.is_unspecified
