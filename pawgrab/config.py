@@ -33,6 +33,14 @@ class Settings(BaseSettings):
 
     browser_max_sessions: int = Field(default=50, ge=1, le=500)
     browser_type: str = "chromium"
+    browser_channel: str = Field(
+        default="chromium",
+        description=(
+            "Chromium channel to launch. 'chromium' uses the full build with new "
+            "headless (far stealthier than the detectable headless-shell default); "
+            "'chrome' uses an installed Google Chrome; empty = Playwright default."
+        ),
+    )
     browser_cdp_url: str = Field(
         default="",
         description="CDP endpoint of an externally-run patched Chromium (e.g. CloakBrowser) to connect to instead of launching locally; empty = launch locally",
