@@ -106,10 +106,26 @@ CHECKS = [
 
 
 async def run(checks: list[dict] | None = None) -> list[dict]:
+    # A browser pool is required for the JS-rendered checks (e.g. sannysoft's
+    # result table is populated client-side); without it fetch_page never
+    # escalates past the plain-HTTP path even when wait_for_js is True.
+    browser_pool = None
+    try:
+        from pawgrab.dependencies import try_browser_pool
+
+        browser_pool = await try_browser_pool()
+    except Exception:
+        browser_pool = None
+
     results = []
     for check in checks or CHECKS:
         try:
-            result = await fetch_page(check["url"], timeout=45_000, wait_for_js=check.get("wait_for_js"))
+            result = await fetch_page(
+                check["url"],
+                timeout=45_000,
+                wait_for_js=check.get("wait_for_js"),
+                browser_pool=browser_pool,
+            )
             judgement: Judgement = check["judge"](result.html)
             blocked = result.status_code in (403, 429, 503)
             results.append(
@@ -167,8 +183,18 @@ def main() -> int:
     return 0 if passed == len(results) else 1
 
 
+async def _shutdown() -> None:
+    await close_sessions()
+    try:
+        from pawgrab.dependencies import shutdown_browser_pool
+
+        await shutdown_browser_pool()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     try:
         sys.exit(main())
     finally:
-        asyncio.run(close_sessions())
+        asyncio.run(_shutdown())
