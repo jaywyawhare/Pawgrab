@@ -31,6 +31,7 @@ class ExtractRequest(BaseModel):
     xpath_queries: dict[str, str] | None = Field(default=None, description="XPath queries for XPath strategy")
     patterns: dict[str, str] | str | None = Field(default=None, description="Regex patterns for regex strategy. Dict of {field: pattern} or a single pattern with named groups")
     auto_schema: bool = Field(default=False, description="Auto-generate a JSON schema from extraction results")
+    adaptive: bool = Field(default=False, description="Self-healing CSS: relocate a field via its stored signature when its selector stops matching (CSS strategy only)")
     chunk_strategy: ChunkStrategy | None = Field(default=None, description="Chunking strategy for long pages: fixed, sliding, or semantic")
     chunk_size: int = Field(default=4000, ge=100, le=100000, description="Target chunk size in tokens")
     chunk_overlap: int = Field(default=200, ge=0, le=10000, description="Token overlap between chunks")
@@ -42,4 +43,5 @@ class ExtractResponse(BaseModel):
     url: str
     data: dict[str, Any] | list[dict[str, Any]] | None = None
     auto_schema: dict[str, Any] | None = None
+    healed: list[str] | None = None
     error: str | None = None

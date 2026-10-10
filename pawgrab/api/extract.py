@@ -1,11 +1,14 @@
 """POST /v1/extract endpoint."""
 
+from urllib.parse import urlparse
+
 import structlog
 from fastapi import APIRouter
 
 from pawgrab.ai.extractor import extract_from_url
 from pawgrab.config import settings
 from pawgrab.dependencies import try_browser_pool
+from pawgrab.engine.adaptive import get_adaptive_store
 from pawgrab.engine.extractors import auto_generate_schema, get_extractor
 from pawgrab.engine.fetcher import fetch_page
 from pawgrab.engine.table_extractor import extract_tables
@@ -115,12 +118,22 @@ async def _extract_llm(req: ExtractRequest, url: str, pool) -> ExtractResponse:
 async def _extract_non_llm(req: ExtractRequest, url: str, pool) -> ExtractResponse:
     result = await _fetch_for_extraction(url, req, pool)
 
+    adaptive = req.adaptive and req.strategy == ExtractionStrategy.CSS
+    store = domain = signatures = None
+    if adaptive:
+        store = get_adaptive_store()
+        domain = urlparse(url).netloc
+        signatures = await store.load(domain)
+
     try:
         extractor = get_extractor(
             req.strategy.value,
             selectors=req.selectors,
             xpath_queries=req.xpath_queries,
             patterns=req.patterns,
+            adaptive=adaptive,
+            signatures=signatures,
+            min_score=settings.adaptive_min_score,
         )
         data = extractor.extract(result.html)
     except ValueError as exc:
@@ -136,4 +149,8 @@ async def _extract_non_llm(req: ExtractRequest, url: str, pool) -> ExtractRespon
     resp = ExtractResponse(success=True, url=url, data=data)
     if req.auto_schema:
         resp.auto_schema = auto_generate_schema(data)
+    if adaptive:
+        if getattr(extractor, "learned_signatures", None):
+            await store.save(domain, extractor.learned_signatures)
+        resp.healed = extractor.healed or None
     return resp
