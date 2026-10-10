@@ -970,6 +970,13 @@ class BrowserPool:
         if accept_language:
             headers["Accept-Language"] = accept_language
         extra = {k: v for k, v in headers.items() if k not in ("User-Agent", "Accept-Encoding")}
+        # Sec-Fetch-* and Upgrade-Insecure-Requests are navigation-scoped: the
+        # browser emits the correct per-request values itself. Forcing them at
+        # context level stamps "Sec-Fetch-Dest: document / Mode: navigate" onto
+        # every subresource (script/css/xhr) — a combination no real browser
+        # sends, which both fingerprints the client and can stop page scripts
+        # from loading. Let Chromium set them.
+        extra = {k: v for k, v in extra.items() if not k.lower().startswith("sec-fetch-") and k.lower() != "upgrade-insecure-requests"}
         if profile.platform == "Win32":
             # Chromium sends its real brand in sec-ch-ua even when the UA is
             # overridden; rewrite them to match.
@@ -1132,6 +1139,7 @@ class BrowserPool:
             self._persistent_ctx = await launcher.launch_persistent_context(
                 self._user_data_dir,
                 headless=True,
+                channel=settings.browser_channel or None,
                 args=list(_STEALTH_CHROMIUM_ARGS),
                 ignore_default_args=list(_HARMFUL_DEFAULT_ARGS),
                 **ctx_kwargs,
