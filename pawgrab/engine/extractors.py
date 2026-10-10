@@ -9,6 +9,7 @@ from typing import Any
 from bs4 import BeautifulSoup, Tag
 from lxml import etree
 
+from pawgrab.engine.adaptive import element_signature, find_by_signature
 from pawgrab.utils.text import make_soup
 
 try:
@@ -81,14 +82,30 @@ class CSSExtractor(BaseExtractor):
         }
     """
 
-    def __init__(self, selectors: dict[str, Any]):
+    def __init__(
+        self,
+        selectors: dict[str, Any],
+        *,
+        adaptive: bool = False,
+        signatures: dict[str, Any] | None = None,
+        min_score: float = 0.6,
+    ):
         self.selectors = selectors
+        self.adaptive = adaptive
+        self.signatures = signatures or {}
+        self.min_score = min_score
+        # Populated during extract() when adaptive is on.
+        self.healed: list[str] = []
+        self.learned_signatures: dict[str, Any] = {}
 
     def extract(self, html: str) -> list[dict[str, Any]]:
+        self.healed = []
+        self.learned_signatures = {}
         soup = make_soup(html)
         if "container" in self.selectors and "fields" in self.selectors:
+            # Repeated-element mode has no single element per field to heal.
             return self._extract_repeated(soup)
-        return [self._extract_fields(soup, self.selectors)]
+        return [self._extract_fields(soup, self.selectors, heal_root=soup)]
 
     def _extract_repeated(self, soup: BeautifulSoup) -> list[dict[str, Any]]:
         containers = soup.select(self.selectors["container"])
@@ -100,7 +117,14 @@ class CSSExtractor(BaseExtractor):
                 results.append(row)
         return results
 
-    def _extract_fields(self, element: BeautifulSoup | Tag, fields: dict[str, Any]) -> dict[str, Any]:
+    def _extract_fields(
+        self,
+        element: BeautifulSoup | Tag,
+        fields: dict[str, Any],
+        *,
+        heal_root: BeautifulSoup | None = None,
+    ) -> dict[str, Any]:
+        healing = heal_root is not None and self.adaptive
         result: dict[str, Any] = {}
         for name, selector in fields.items():
             if isinstance(selector, dict):
@@ -110,14 +134,39 @@ class CSSExtractor(BaseExtractor):
                 els = element.select(css)
                 if all_matches:
                     result[name] = [self._get_value(el, attr) for el in els]
+                    if els and healing:
+                        self.learned_signatures[name] = element_signature(els[0])
                 elif els:
                     result[name] = self._get_value(els[0], attr)
+                    if healing:
+                        self.learned_signatures[name] = element_signature(els[0])
                 else:
-                    result[name] = None
+                    result[name] = self._heal(name, attr, heal_root) if healing else None
             else:
                 els = element.select(selector)
-                result[name] = els[0].get_text(strip=True) if els else None
+                if els:
+                    result[name] = els[0].get_text(strip=True)
+                    if healing:
+                        self.learned_signatures[name] = element_signature(els[0])
+                else:
+                    result[name] = self._heal(name, None, heal_root) if healing else None
         return result
+
+    def _heal(self, name: str, attr: str | None, root: BeautifulSoup) -> str | None:
+        """Relocate a drifted field via its stored signature."""
+        sig = self.signatures.get(name)
+        if not sig:
+            return None
+        el = find_by_signature(root, sig, min_score=self.min_score)
+        if el is None:
+            return None
+        value = self._get_value(el, attr)
+        if value is None:
+            # Relocated element lacks the requested attribute — not a real recovery.
+            return None
+        self.healed.append(name)
+        self.learned_signatures[name] = element_signature(el)
+        return value
 
     @staticmethod
     def _get_value(el: Tag, attribute: str | None = None) -> str | None:
@@ -284,13 +333,16 @@ def get_extractor(
     selectors: dict[str, Any] | None = None,
     xpath_queries: dict[str, str] | None = None,
     patterns: dict[str, str] | str | None = None,
+    adaptive: bool = False,
+    signatures: dict[str, Any] | None = None,
+    min_score: float = 0.6,
 ) -> BaseExtractor:
     """Create an extractor instance by strategy name."""
     match strategy:
         case "css":
             if not selectors:
                 raise ValueError("CSS strategy requires 'selectors' config")
-            return CSSExtractor(selectors)
+            return CSSExtractor(selectors, adaptive=adaptive, signatures=signatures, min_score=min_score)
         case "xpath":
             if not xpath_queries:
                 raise ValueError("XPath strategy requires 'xpath_queries' config")

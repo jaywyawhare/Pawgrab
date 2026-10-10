@@ -13,6 +13,7 @@
 - Single URL scraping with multiple output formats
 - Async site crawling (BFS, depth/page limits, Redis job queue)
 - Structured extraction via OpenAI, CSS selectors, XPath, or regex
+- Self-healing CSS selectors — relocate a field by its stored signature when a site changes its markup (`"adaptive": true`)
 
 **Browser**
 - Auto JS detection - curl_cffi first, Patchright fallback for JS-heavy pages

@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     max_timeout: int = Field(default=120000, ge=1000)
     plugins: str = ""
     trusted_proxy_ips: str = ""
+    adaptive_store_backend: Literal["auto", "redis", "disk"] = "auto"
+    adaptive_min_score: float = Field(default=0.6, ge=0.0, le=1.0)
+    adaptive_ttl: int = Field(default=2592000, ge=0)
     storage_backend: str = ""
     storage_path: str = "./pawgrab_data"
     s3_bucket: str = ""
