@@ -160,9 +160,13 @@ class CSSExtractor(BaseExtractor):
         el = find_by_signature(root, sig, min_score=self.min_score)
         if el is None:
             return None
+        value = self._get_value(el, attr)
+        if value is None:
+            # Relocated element lacks the requested attribute — not a real recovery.
+            return None
         self.healed.append(name)
         self.learned_signatures[name] = element_signature(el)
-        return self._get_value(el, attr)
+        return value
 
     @staticmethod
     def _get_value(el: Tag, attribute: str | None = None) -> str | None:

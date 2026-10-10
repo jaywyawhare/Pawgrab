@@ -110,11 +110,43 @@ def test_heal_returns_none_below_threshold():
     assert heal.healed == []
 
 
-async def test_store_in_memory_lru_round_trip():
-    store = RedisSignatureStore()  # redis unavailable in tests → falls back to cache only
+async def test_store_in_memory_lru_round_trip(monkeypatch):
+    # Keep the test off any real Redis: force the backend calls to no-op so the
+    # in-memory LRU is exercised deterministically.
+    monkeypatch.setattr(RedisSignatureStore, "_load", lambda self, domain: _async_return({}))
+    monkeypatch.setattr(RedisSignatureStore, "_save", lambda self, domain, sigs: _async_return(None))
+    store = RedisSignatureStore()
     sigs = {"title": {"tag": "h1", "text": "x"}}
     await store.save("example.com", sigs)
     assert await store.load("example.com") == sigs
+
+
+async def _async_return(value):
+    return value
+
+
+def test_attribute_field_not_healed_when_attribute_missing():
+    selectors = {"link": {"selector": "a#buy", "attribute": "href"}}
+    learn = CSSExtractor(selectors, adaptive=True)
+    learn.extract('<html><body><a id="buy" href="/x">Buy</a></body></html>')
+    assert learn.learned_signatures.get("link")
+
+    # v2: same id and text (so the signature still matches) but no href attribute.
+    heal = CSSExtractor(selectors, adaptive=True, signatures=learn.learned_signatures, min_score=0.6)
+    data = heal.extract('<html><body><a id="buy">Buy</a></body></html>')
+    assert data[0]["link"] is None
+    assert heal.healed == []
+
+
+def test_signature_key_scopes_by_host_and_selectors():
+    from pawgrab.api.extract import _signature_key
+
+    k1 = _signature_key("https://example.com/a", {"title": "h1"})
+    k2 = _signature_key("https://example.com/b", {"title": "h1"})
+    k3 = _signature_key("https://example.com/a", {"title": "h2"})
+    assert k1 == k2  # same host + same selectors → shared
+    assert k1 != k3  # different selectors → distinct
+    assert k1.startswith("example.com:")
 
 
 def test_get_adaptive_store_selects_backend(monkeypatch):

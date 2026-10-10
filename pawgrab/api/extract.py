@@ -1,7 +1,9 @@
 """POST /v1/extract endpoint."""
 
+import hashlib
 from urllib.parse import urlparse
 
+import orjson
 import structlog
 from fastapi import APIRouter
 
@@ -119,11 +121,11 @@ async def _extract_non_llm(req: ExtractRequest, url: str, pool) -> ExtractRespon
     result = await _fetch_for_extraction(url, req, pool)
 
     adaptive = req.adaptive and req.strategy == ExtractionStrategy.CSS
-    store = domain = signatures = None
+    store = sig_key = signatures = None
     if adaptive:
         store = get_adaptive_store()
-        domain = urlparse(url).netloc
-        signatures = await store.load(domain)
+        sig_key = _signature_key(url, req.selectors)
+        signatures = await store.load(sig_key)
 
     try:
         extractor = get_extractor(
@@ -150,7 +152,19 @@ async def _extract_non_llm(req: ExtractRequest, url: str, pool) -> ExtractRespon
     if req.auto_schema:
         resp.auto_schema = auto_generate_schema(data)
     if adaptive:
-        if getattr(extractor, "learned_signatures", None):
-            await store.save(domain, extractor.learned_signatures)
+        learned = getattr(extractor, "learned_signatures", None)
+        if learned:
+            # Merge so fields not matched/healed this request keep their prior
+            # signatures rather than being dropped.
+            await store.save(sig_key, {**(signatures or {}), **learned})
         resp.healed = extractor.healed or None
     return resp
+
+
+def _signature_key(url: str, selectors: dict | None) -> str:
+    """Scope stored signatures to a host *and* the selector set in use, so
+    unrelated extraction targets on the same host do not share or clobber
+    each other's field signatures."""
+    netloc = urlparse(url).netloc
+    sel_hash = hashlib.sha256(orjson.dumps(selectors or {}, option=orjson.OPT_SORT_KEYS)).hexdigest()[:12]
+    return f"{netloc}:{sel_hash}"
