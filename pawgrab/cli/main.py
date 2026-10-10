@@ -123,5 +123,26 @@ def serve(
     uvicorn.run("pawgrab.main:app", host=host, port=port, reload=reload)
 
 
+@app.command()
+def mcp(
+    api_url: str = typer.Option(None, "--api-url", help="Running Pawgrab API to call (default: PAWGRAB_MCP_API_URL)"),
+):
+    """Run the MCP server (stdio) exposing Pawgrab tools to AI agents.
+
+    Talks to a running Pawgrab API over HTTP — start one with `pawgrab serve`.
+    Requires the mcp extra: pip install "pawgrab[mcp]".
+    """
+    from pawgrab.config import settings
+
+    if api_url:
+        settings.mcp_api_url = api_url
+    try:
+        from pawgrab.mcp.server import run
+    except RuntimeError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    run()
+
+
 if __name__ == "__main__":
     app()

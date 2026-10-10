@@ -28,6 +28,9 @@
 - Request ID correlation and response timing headers
 - Docker Compose deployment (API + worker + Redis)
 
+**AI / agents**
+- MCP server (`pawgrab mcp`) exposing scrape, crawl, extract, search, map, and parse as tools — see [docs/mcp.md](docs/mcp.md)
+
 ## Benchmarks
 
 End-to-end scraping, median of 5 runs, [books.toscrape.com](https://books.toscrape.com/), lower is better.

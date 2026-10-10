@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     sse_max_duration: int = Field(default=3600, ge=60, le=86400)
     cache_ttl: int = Field(default=0, ge=0)
     max_timeout: int = Field(default=120000, ge=1000)
+    mcp_api_url: str = "http://localhost:8000"
     plugins: str = ""
     trusted_proxy_ips: str = ""
     storage_backend: str = ""
