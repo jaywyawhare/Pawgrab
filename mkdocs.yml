@@ -50,6 +50,7 @@ nav:
     - Crawling: crawling.md
     - Extraction: extraction.md
   - API Reference: api.md
+  - MCP Server: mcp.md
   - CLI: cli.md
   - Configuration: configuration.md
   - Architecture: architecture.md
