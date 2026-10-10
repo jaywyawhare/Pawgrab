@@ -94,7 +94,10 @@ _STEALTH_CHROMIUM_ARGS = (
     "--disable-search-engine-choice-screen",
     "--suppress-message-center-popups",
     "--noerrdialogs",
-    "--disable-notifications",
+    # NOTE: do not add "--disable-notifications" — it makes the Notification
+    # API behave unlike a real browser, which bot-detection scripts probe (and
+    # it can halt their remaining checks). Notification permission is handled
+    # via grant_permissions instead.
     "--disable-logging",
     "--log-level=3",
     "--enable-async-dns",
