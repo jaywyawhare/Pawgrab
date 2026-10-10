@@ -16,7 +16,7 @@
 
 **Browser**
 - Auto JS detection - curl_cffi first, Patchright fallback for JS-heavy pages
-- Anti-bot evasion - TLS fingerprint impersonation, stealth browser profiles
+- Anti-bot evasion - TLS fingerprint impersonation, stealth browser profiles ([reproducible benchmark](docs/anti-bot.md))
 - Proxy rotation with health checking
 
 **Production**

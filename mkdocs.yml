@@ -49,6 +49,7 @@ nav:
     - Scraping: scraping.md
     - Crawling: crawling.md
     - Extraction: extraction.md
+    - Anti-bot: anti-bot.md
   - API Reference: api.md
   - CLI: cli.md
   - Configuration: configuration.md
