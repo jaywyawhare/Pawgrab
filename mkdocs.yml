@@ -49,6 +49,7 @@ nav:
     - Scraping: scraping.md
     - Crawling: crawling.md
     - Extraction: extraction.md
+    - Anti-bot: anti-bot.md
   - API Reference: api.md
   - MCP Server: mcp.md
   - CLI: cli.md
