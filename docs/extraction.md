@@ -1,13 +1,13 @@
 # Extraction Guide
 
-The `/v1/extract` endpoint extracts structured data from web pages using AI (OpenAI) or deterministic strategies (CSS selectors, XPath, regex).
+The `/extract` endpoint extracts structured data from web pages using AI (OpenAI) or deterministic strategies (CSS selectors, XPath, regex).
 
 ## LLM Extraction
 
 Extract structured data using natural language prompts:
 
 ```bash
-curl -X POST http://localhost:8000/v1/extract \
+curl -X POST http://localhost:8000/extract \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://example.com/products",

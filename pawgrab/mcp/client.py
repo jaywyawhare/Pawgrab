@@ -55,7 +55,7 @@ async def scrape(
         payload["formats"] = formats
     if wait_for_js is not None:
         payload["wait_for_js"] = wait_for_js
-    return await _request("POST", "/v1/scrape", json=payload)
+    return await _request("POST", "/scrape", json=payload)
 
 
 async def parse(
@@ -69,23 +69,27 @@ async def parse(
         payload["formats"] = formats
     if css_selector:
         payload["css_selector"] = css_selector
-    return await _request("POST", "/v1/parse", json=payload)
+    return await _request("POST", "/parse", json=payload)
 
 
-async def extract(
-    url: str,
-    prompt: str | None = None,
-    strategy: str = "llm",
-    selectors: dict[str, Any] | None = None,
-    adaptive: bool = False,
+async def agent(
+    prompt: str,
+    urls: list[str] | None = None,
+    schema: dict[str, Any] | None = None,
+    effort: str = "medium",
 ) -> dict[str, Any]:
-    """Extract structured data via LLM, CSS, XPath, or regex."""
-    payload: dict[str, Any] = {"url": url, "strategy": strategy, "adaptive": adaptive}
-    if prompt:
-        payload["prompt"] = prompt
-    if selectors:
-        payload["selectors"] = selectors
-    return await _request("POST", "/v1/extract", json=payload)
+    """Run the agentic extractor: navigate pages to satisfy a prompt/schema."""
+    payload: dict[str, Any] = {"prompt": prompt, "effort": effort}
+    if urls:
+        payload["urls"] = urls
+    if schema:
+        payload["schema"] = schema
+    return await _request("POST", "/agent", json=payload)
+
+
+async def index_search(query: str, k: int = 10) -> dict[str, Any]:
+    """Search the local content index of already-scraped pages (no live fetch)."""
+    return await _request("POST", "/index/search", json={"query": query, "k": k})
 
 
 async def search(
@@ -97,23 +101,26 @@ async def search(
     payload: dict[str, Any] = {"query": query, "num_results": num_results}
     if exclude_domains:
         payload["exclude_domains"] = exclude_domains
-    return await _request("POST", "/v1/search", json=payload)
+    return await _request("POST", "/search", json=payload)
 
 
-async def map_site(url: str, limit: int = 100) -> dict[str, Any]:
-    """Discover URLs for a site via its sitemap or a shallow crawl."""
-    return await _request("POST", "/v1/map", json={"url": url, "limit": limit})
+async def map_site(url: str, limit: int = 100, search: str | None = None) -> dict[str, Any]:
+    """Discover URLs for a site via its sitemap or a shallow crawl, optionally ranked by relevance."""
+    payload: dict[str, Any] = {"url": url, "limit": limit}
+    if search:
+        payload["search"] = search
+    return await _request("POST", "/map", json=payload)
 
 
 async def crawl(url: str, max_pages: int = 10, max_depth: int = 2) -> dict[str, Any]:
     """Start an async crawl job. Returns a job id to poll with crawl_status."""
     return await _request(
         "POST",
-        "/v1/crawl",
+        "/crawl",
         json={"url": url, "max_pages": max_pages, "max_depth": max_depth},
     )
 
 
 async def crawl_status(job_id: str) -> dict[str, Any]:
     """Get the status and results of a crawl job."""
-    return await _request("GET", f"/v1/crawl/{job_id}")
+    return await _request("GET", f"/crawl/{job_id}")

@@ -51,15 +51,19 @@ def build_server():
         return await client.parse(html, formats=formats, css_selector=css_selector)
 
     @server.tool()
-    async def extract(
-        url: str,
-        prompt: str | None = None,
-        strategy: str = "llm",
-        selectors: dict[str, Any] | None = None,
-        adaptive: bool = False,
+    async def agent(
+        prompt: str,
+        urls: list[str] | None = None,
+        schema: dict[str, Any] | None = None,
+        effort: str = "medium",
     ) -> dict[str, Any]:
-        """Extract structured data from a URL via LLM, CSS, XPath, or regex."""
-        return await client.extract(url, prompt=prompt, strategy=strategy, selectors=selectors, adaptive=adaptive)
+        """Run the agentic extractor: navigate pages to satisfy a prompt and optional JSON schema."""
+        return await client.agent(prompt, urls=urls, schema=schema, effort=effort)
+
+    @server.tool()
+    async def index_search(query: str, k: int = 10) -> dict[str, Any]:
+        """Search the local index of already-scraped pages without a live fetch."""
+        return await client.index_search(query, k=k)
 
     @server.tool()
     async def search(
@@ -71,9 +75,9 @@ def build_server():
         return await client.search(query, num_results=num_results, exclude_domains=exclude_domains)
 
     @server.tool()
-    async def map_site(url: str, limit: int = 100) -> dict[str, Any]:
-        """Discover URLs for a site via its sitemap or a shallow crawl."""
-        return await client.map_site(url, limit=limit)
+    async def map_site(url: str, limit: int = 100, search: str | None = None) -> dict[str, Any]:
+        """Discover URLs for a site via its sitemap or a shallow crawl, optionally ranked by a query."""
+        return await client.map_site(url, limit=limit, search=search)
 
     @server.tool()
     async def crawl(url: str, max_pages: int = 10, max_depth: int = 2) -> dict[str, Any]:

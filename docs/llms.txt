@@ -16,13 +16,15 @@
 
 ## Endpoints
 
-- POST /v1/scrape: Scrape one URL; formats markdown/html/text/json/csv/xml; options for actions, screenshots, sessions, LLM summary/question/highlights
-- POST /v1/parse: Convert raw HTML through the same extraction pipeline without fetching
-- POST /v1/crawl: Async site crawl (202 + job polling at GET /v1/crawl/{job_id})
-- POST /v1/search: Web search + parallel scraping of results; include_domains/exclude_domains scoping
-- POST /v1/extract: LLM extraction with prompt, JSON Schema validation, or auto-schema
-- POST /v1/map: Discover URLs of a site
-- POST /v1/batch: Batch scrape job
+- POST /scrape: Scrape one URL; formats markdown/html/text/json/csv/xml; options for actions, screenshots, sessions, LLM summary/question/highlights
+- POST /scrape/live + /scrape/{id}/interact: Keep a page alive and drive it with code actions or an AI prompt; /scrape/{id}/live.png is the live view
+- POST /parse: Convert raw HTML through the same extraction pipeline without fetching
+- POST /crawl: Async site crawl (202 + job polling at GET /crawl/{job_id})
+- POST /agent: Agentic multi-step extraction; prompt + optional seed urls + JSON schema + effort (low/medium/high)
+- POST /search: Web search + parallel scraping of results; include_domains/exclude_domains scoping; prefer_index to answer from cache
+- POST /map: Discover URLs of a site; search ranks them by relevance
+- POST /index/search: Search the content index of already-scraped pages (no live fetch)
+- POST /batch: Batch scrape job
 - GET /health: Component health (ok/degraded/unhealthy)
 
 ## Optional

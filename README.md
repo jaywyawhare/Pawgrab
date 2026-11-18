@@ -1,10 +1,23 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jaywyawhare/Pawgrab/master/pawgrab.png" alt="Pawgrab" width="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/pawgrab-banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/brand/pawgrab-banner-light.svg">
+    <img alt="Pawgrab — Web scraping API. Returns clean Markdown, HTML, text, or structured JSON from any URL." src="assets/brand/pawgrab-banner-light.svg" width="100%">
+  </picture>
 </p>
 
 <h1 align="center">Pawgrab</h1>
 
 <p align="center">Web scraping API. Returns clean Markdown, HTML, text, or structured JSON from any URL.</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/pawgrab/"><img alt="PyPI" src="https://img.shields.io/pypi/v/pawgrab?color=d9824a&labelColor=705462"></a>
+  <a href="https://pypi.org/project/pawgrab/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-d9824a?labelColor=705462"></a>
+  <a href="https://github.com/jaywyawhare/Pawgrab/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/jaywyawhare/Pawgrab/ci.yml?branch=master&label=CI&color=d9824a&labelColor=705462"></a>
+  <a href="docs/mcp.md"><img alt="MCP" src="https://img.shields.io/badge/MCP-ready-d9824a?labelColor=705462"></a>
+  <a href="https://github.com/astral-sh/ruff"><img alt="Ruff" src="https://img.shields.io/badge/lint-ruff-d9824a?labelColor=705462"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-DBaJ--GPL-705462"></a>
+</p>
 
 
 ## Features
@@ -12,8 +25,10 @@
 **Scraping**
 - Single URL scraping with multiple output formats
 - Async site crawling (BFS, depth/page limits, Redis job queue)
-- Structured extraction via OpenAI, CSS selectors, XPath, or regex
-- Self-healing CSS selectors — relocate a field by its stored signature when a site changes its markup (`"adaptive": true`)
+- Agentic extraction (`/agent`) — a bounded, multi-step agent that navigates and searches to satisfy a prompt + JSON schema, with `effort` budgets
+- Live interactive sessions (`/scrape/{id}/interact`) — keep a page alive and drive it with code actions or an AI prompt, with a live view
+- Content index — write-through cache of scraped pages, searchable and ranked without a live fetch (`/index/search`)
+- Relevance-ranked site map — `/map` ranks discovered URLs against a `search` query
 
 **Browser**
 - Auto JS detection - curl_cffi first, Patchright fallback for JS-heavy pages
@@ -30,7 +45,10 @@
 - Docker Compose deployment (API + worker + Redis)
 
 **AI / agents**
-- MCP server (`pawgrab mcp`) exposing scrape, crawl, extract, search, map, and parse as tools — see [docs/mcp.md](docs/mcp.md)
+- MCP server (`pawgrab mcp`) exposing scrape, crawl, agent, search, map, index, and parse as tools — see [docs/mcp.md](docs/mcp.md)
+- One-command setup (`pawgrab init`) that scaffolds `.env` and prints an MCP client config
+- Skills catalog ([skills/](skills/)) and n8n/Zapier integrations ([integrations/](integrations/))
+- 9 SDKs generated from one OpenAPI schema ([sdk/](sdk/))
 
 ## Benchmarks
 
@@ -84,12 +102,12 @@ docker compose up
 
 ## API
 
-All endpoints under `/v1`.
+All endpoints are at the API root (`/scrape`, `/agent`, …).
 
-### POST /v1/scrape
+### POST /scrape
 
 ```bash
-curl -X POST http://localhost:8000/v1/scrape \
+curl -X POST http://localhost:8000/scrape \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://example.com"}'
 ```
@@ -101,44 +119,61 @@ curl -X POST http://localhost:8000/v1/scrape \
 | `wait_for_js` | bool/null | `null` | Force JS (`true`), skip (`false`), auto (`null`) |
 | `timeout` | int | `30000` | Timeout in ms |
 
-### POST /v1/crawl
+### POST /crawl
 
-Returns job ID (HTTP 202). Poll with `GET /v1/crawl/{job_id}`.
+Returns job ID (HTTP 202). Poll with `GET /crawl/{job_id}`.
 
 ```bash
-curl -X POST http://localhost:8000/v1/crawl \
+curl -X POST http://localhost:8000/crawl \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://example.com", "max_pages": 5}'
 ```
 
 Supports `Idempotency-Key` header for safe retries.
 
-### POST /v1/extract
+### POST /agent
 
-Requires `PAWGRAB_OPENAI_API_KEY`.
+Agentic, multi-step extraction (replaces `/extract`). Requires an LLM provider
+(`PAWGRAB_OPENAI_API_KEY` or another). See [docs/agent.md](docs/agent.md).
 
 ```bash
-curl -X POST http://localhost:8000/v1/extract \
+curl -X POST http://localhost:8000/agent \
   -H 'Content-Type: application/json' \
-  -d '{"url": "https://example.com", "prompt": "Extract the main heading"}'
+  -d '{"prompt": "Extract the pricing tiers and monthly cost", "urls": ["https://example.com/pricing"], "effort": "medium"}'
 ```
 
-### POST /v1/parse
+### POST /scrape/live + /scrape/{id}/interact
+
+Keep a page alive and drive it with code actions or an AI prompt; `live_view_url`
+returns a live screenshot. See [docs/interact.md](docs/interact.md).
+
+### POST /index/search
+
+Search the content index of already-scraped pages — ranked, no live fetch. See
+[docs/index-search.md](docs/index-search.md).
+
+```bash
+curl -X POST http://localhost:8000/index/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "authentication api key", "k": 5}'
+```
+
+### POST /parse
 
 Run raw HTML through the same extraction pipeline without fetching.
 
 ```bash
-curl -X POST http://localhost:8000/v1/parse \
+curl -X POST http://localhost:8000/parse \
   -H 'Content-Type: application/json' \
   -d '{"html": "<html><body><article><h1>Title</h1></article></body></html>"}'
 ```
 
-### POST /v1/search
+### POST /search
 
 Searches the web and scrapes each result in parallel.
 
 ```bash
-curl -X POST http://localhost:8000/v1/search \
+curl -X POST http://localhost:8000/search \
   -H 'Content-Type: application/json' \
   -d '{"query": "python web scraping", "exclude_domains": ["pinterest.com"]}'
 ```
@@ -165,7 +200,7 @@ All errors return a consistent JSON shape:
 }
 ```
 
-Error codes: `validation_error`, `invalid_api_key`, `rate_limited`, `robots_blocked`, `resource_not_found`, `timeout`, `fetch_failed`, `browser_unavailable`, `queue_unavailable`, `llm_unavailable`, `extraction_failed`, `search_failed`, `internal_error`.
+Error codes: `validation_error`, `invalid_api_key`, `rate_limited`, `robots_blocked`, `resource_not_found`, `timeout`, `fetch_failed`, `browser_unavailable`, `queue_unavailable`, `llm_unavailable`, `extraction_failed`, `search_failed`, `agent_failed`, `index_unavailable`, `session_expired`, `internal_error`.
 
 ### Response Headers
 
@@ -184,7 +219,9 @@ Every response includes:
 ```bash
 pawgrab scrape https://example.com
 pawgrab scrape https://example.com --format text
-pawgrab extract https://example.com --prompt "Extract the main heading"
+pawgrab agent "Extract the main heading" --url https://example.com
+pawgrab init --browser          # scaffold .env + print MCP config
+pawgrab openapi -o sdk/openapi.json
 pawgrab serve --port 8000 --reload
 ```
 

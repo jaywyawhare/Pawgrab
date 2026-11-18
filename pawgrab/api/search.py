@@ -1,4 +1,4 @@
-"""POST /v1/search — search and scrape endpoint."""
+"""POST /search — search and scrape endpoint."""
 
 import asyncio
 from urllib.parse import urlparse
@@ -92,6 +92,22 @@ async def search(req: SearchRequest):
 
     async def _scrape_one(url: str):
         async with sem:
+            if req.prefer_index:
+                try:
+                    from pawgrab.engine import index as _index
+                    from pawgrab.models.scrape import PageMetadata, ScrapeResponse
+
+                    cached = await _index.get(url)
+                    if cached and cached.get("markdown"):
+                        from pawgrab.engine.metrics import metrics
+
+                        metrics.index_hits.inc()
+                        meta = PageMetadata(title=cached.get("title") or None) if req.include_metadata else None
+                        resp = ScrapeResponse(success=True, url=url, markdown=cached["markdown"], metadata=meta)
+                        resp.warnings.append("served from content index (no live fetch)")
+                        return url, resp, None
+                except Exception as exc:
+                    logger.debug("index_lookup_failed", url=url, error=str(exc))
             try:
                 response = await scrape_url(
                     url,

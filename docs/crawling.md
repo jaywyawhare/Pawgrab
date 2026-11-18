@@ -5,7 +5,7 @@ Pawgrab supports async site crawling with multiple strategies, Redis-backed job 
 ## Starting a Crawl
 
 ```bash
-curl -X POST http://localhost:8000/v1/crawl \
+curl -X POST http://localhost:8000/crawl \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://docs.example.com",
@@ -22,8 +22,8 @@ Response (HTTP 202):
   "success": true,
   "job_id": "crawl_a1b2c3d4",
   "status": "running",
-  "poll_url": "/v1/crawl/crawl_a1b2c3d4",
-  "stream_url": "/v1/crawl/crawl_a1b2c3d4/stream"
+  "poll_url": "/crawl/crawl_a1b2c3d4",
+  "stream_url": "/crawl/crawl_a1b2c3d4/stream"
 }
 ```
 
@@ -80,7 +80,7 @@ Control which URLs get crawled:
 ## Polling for Results
 
 ```bash
-curl "http://localhost:8000/v1/crawl/crawl_a1b2c3d4?page=1&limit=50"
+curl "http://localhost:8000/crawl/crawl_a1b2c3d4?page=1&limit=50"
 ```
 
 Response:
@@ -109,7 +109,7 @@ Status progression: `queued` → `in_progress` → `completed` | `failed`
 Stream results in real-time:
 
 ```bash
-curl -N "http://localhost:8000/v1/crawl/crawl_a1b2c3d4/stream"
+curl -N "http://localhost:8000/crawl/crawl_a1b2c3d4/stream"
 ```
 
 Events are emitted for each crawled page. Heartbeat comments (`: heartbeat`) are sent every ~15 seconds to keep the connection alive through reverse proxies.
@@ -119,7 +119,7 @@ Events are emitted for each crawled page. Heartbeat comments (`: heartbeat`) are
 Safely retry crawl requests with an idempotency key:
 
 ```bash
-curl -X POST http://localhost:8000/v1/crawl \
+curl -X POST http://localhost:8000/crawl \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: my-unique-crawl-key' \
   -d '{"url": "https://example.com", "max_pages": 20}'
@@ -155,7 +155,7 @@ Crawl state is checkpointed to Redis every 10 pages. Use `resume_job_id` to cont
 Scrape multiple URLs in parallel:
 
 ```bash
-curl -X POST http://localhost:8000/v1/batch/scrape \
+curl -X POST http://localhost:8000/batch/scrape \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: my-batch-key' \
   -d '{

@@ -58,7 +58,7 @@ async def test_scrape_posts_to_v1_scrape():
     out = await client.scrape("https://example.com", formats=["markdown"], wait_for_js=True)
     call = _FakeClient.calls[-1]
     assert call["method"] == "POST"
-    assert call["url"] == "http://localhost:8000/v1/scrape"
+    assert call["url"] == "http://localhost:8000/scrape"
     assert call["json"] == {"url": "https://example.com", "timeout": 30000, "formats": ["markdown"], "wait_for_js": True}
     assert out["markdown"] == "# Hi"
 
@@ -66,23 +66,29 @@ async def test_scrape_posts_to_v1_scrape():
 async def test_crawl_and_status_paths():
     _FakeClient.response = _FakeResponse(202, {"job_id": "abc"})
     await client.crawl("https://example.com", max_pages=5)
-    assert _FakeClient.calls[-1]["url"] == "http://localhost:8000/v1/crawl"
+    assert _FakeClient.calls[-1]["url"] == "http://localhost:8000/crawl"
     assert _FakeClient.calls[-1]["json"] == {"url": "https://example.com", "max_pages": 5, "max_depth": 2}
 
     _FakeClient.response = _FakeResponse(200, {"status": "completed"})
     await client.crawl_status("abc")
     assert _FakeClient.calls[-1]["method"] == "GET"
-    assert _FakeClient.calls[-1]["url"] == "http://localhost:8000/v1/crawl/abc"
+    assert _FakeClient.calls[-1]["url"] == "http://localhost:8000/crawl/abc"
 
 
-async def test_extract_forwards_adaptive_and_selectors():
-    await client.extract("https://e.com", strategy="css", selectors={"t": "h1"}, adaptive=True)
+async def test_agent_forwards_prompt_schema_effort():
+    await client.agent("find pricing", urls=["https://e.com"], schema={"type": "object"}, effort="high")
     assert _FakeClient.calls[-1]["json"] == {
-        "url": "https://e.com",
-        "strategy": "css",
-        "adaptive": True,
-        "selectors": {"t": "h1"},
+        "prompt": "find pricing",
+        "effort": "high",
+        "urls": ["https://e.com"],
+        "schema": {"type": "object"},
     }
+
+
+async def test_index_search_posts_to_v1_index_search():
+    await client.index_search("docs", k=3)
+    assert _FakeClient.calls[-1]["url"].endswith("/index/search")
+    assert _FakeClient.calls[-1]["json"] == {"query": "docs", "k": 3}
 
 
 async def test_auth_header_sent_when_api_key_set(monkeypatch):
@@ -118,7 +124,7 @@ async def test_non_json_response_is_handled():
 async def test_base_url_trailing_slash_normalized(monkeypatch):
     monkeypatch.setattr(settings, "mcp_api_url", "http://localhost:8000/")
     await client.map_site("https://example.com")
-    assert _FakeClient.calls[-1]["url"] == "http://localhost:8000/v1/map"
+    assert _FakeClient.calls[-1]["url"] == "http://localhost:8000/map"
 
 
 async def test_server_registers_all_tools():
@@ -130,7 +136,8 @@ async def test_server_registers_all_tools():
     assert {t.name for t in tools} == {
         "scrape",
         "parse",
-        "extract",
+        "agent",
+        "index_search",
         "search",
         "map_site",
         "crawl",

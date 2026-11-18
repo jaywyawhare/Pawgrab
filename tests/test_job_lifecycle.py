@@ -108,6 +108,6 @@ async def test_cancel_endpoint():
     fake.hashes["pawgrab:crawl:eeee11112222"] = {"status": "in_progress"}
     with patch("pawgrab.queue.manager.get_redis", new_callable=AsyncMock, return_value=fake):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-            resp = await c.delete("/v1/crawl/eeee11112222")
+            resp = await c.delete("/crawl/eeee11112222")
     assert resp.status_code == 200
     assert resp.json()["status"] == "cancelling"

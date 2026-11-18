@@ -93,7 +93,7 @@ patchright install chromium
 === "curl"
 
     ```bash
-    curl -X POST http://localhost:8000/v1/scrape \
+    curl -X POST http://localhost:8000/scrape \
       -H 'Content-Type: application/json' \
       -d '{"url": "https://example.com"}'
     ```
@@ -104,16 +104,16 @@ patchright install chromium
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/v1/scrape` | POST | Scrape a single URL |
-| `/v1/crawl` | POST | Async site crawl (returns job ID) |
-| `/v1/crawl/{job_id}` | GET | Poll crawl status with pagination |
-| `/v1/crawl/{job_id}/stream` | GET | Real-time SSE stream with heartbeats |
-| `/v1/extract` | POST | Structured data extraction |
-| `/v1/batch/scrape` | POST | Batch scrape multiple URLs |
-| `/v1/batch/{job_id}` | GET | Poll batch status with pagination |
-| `/v1/search` | POST | Search the web and scrape results (parallel) |
-| `/v1/map` | POST | Discover URLs from sitemap |
-| `/v1/proxy/pool` | POST/GET | Manage proxy pool |
+| `/scrape` | POST | Scrape a single URL |
+| `/crawl` | POST | Async site crawl (returns job ID) |
+| `/crawl/{job_id}` | GET | Poll crawl status with pagination |
+| `/crawl/{job_id}/stream` | GET | Real-time SSE stream with heartbeats |
+| `/extract` | POST | Structured data extraction |
+| `/batch/scrape` | POST | Batch scrape multiple URLs |
+| `/batch/{job_id}` | GET | Poll batch status with pagination |
+| `/search` | POST | Search the web and scrape results (parallel) |
+| `/map` | POST | Discover URLs from sitemap |
+| `/proxy/pool` | POST/GET | Manage proxy pool |
 | `/health` | GET | Health check (API, Redis, browser pool, memory) |
 | `/status` | GET | Service info and version |
 

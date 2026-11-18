@@ -68,7 +68,7 @@ pawgrab serve
 Once the server is running, make your first API call:
 
 ```bash
-curl -X POST http://localhost:8000/v1/scrape \
+curl -X POST http://localhost:8000/scrape \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://news.ycombinator.com",
@@ -81,7 +81,7 @@ Or with Python:
 ```python
 import requests
 
-response = requests.post("http://localhost:8000/v1/scrape", json={"url": "https://news.ycombinator.com", "formats": ["markdown", "text"], "wait_for_js": True})
+response = requests.post("http://localhost:8000/scrape", json={"url": "https://news.ycombinator.com", "formats": ["markdown", "text"], "wait_for_js": True})
 
 data = response.json()
 print(data["markdown"])
@@ -93,7 +93,7 @@ Crawl an entire site asynchronously:
 
 ```bash
 # Start a crawl job
-curl -X POST http://localhost:8000/v1/crawl \
+curl -X POST http://localhost:8000/crawl \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://docs.example.com",
@@ -105,7 +105,7 @@ curl -X POST http://localhost:8000/v1/crawl \
 # Response: {"job_id": "crawl_abc123", "status": "running", ...}
 
 # Poll for results
-curl http://localhost:8000/v1/crawl/crawl_abc123
+curl http://localhost:8000/crawl/crawl_abc123
 ```
 
 ## Your First Extraction
@@ -113,7 +113,7 @@ curl http://localhost:8000/v1/crawl/crawl_abc123
 Extract structured data using AI:
 
 ```bash
-curl -X POST http://localhost:8000/v1/extract \
+curl -X POST http://localhost:8000/extract \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://example.com/products",

@@ -1,0 +1,27 @@
+{
+  "node": "n8n-nodes-pawgrab.pawgrab",
+  "nodeVersion": "1.0",
+  "codexVersion": "1.0",
+  "categories": ["Data & Storage", "AI"],
+  "resources": {
+    "credentialDocumentation": [{ "url": "https://pawgrab.dev/docs/n8n" }]
+  },
+  "description": "Scrape, crawl, map, search, agent-extract and index the web with Pawgrab.",
+  "credentials": [
+    {
+      "name": "pawgrabApi",
+      "properties": {
+        "baseUrl": { "type": "string", "default": "http://localhost:8000" },
+        "apiKey": { "type": "string", "typeOptions": { "password": true } }
+      }
+    }
+  ],
+  "operations": [
+    { "resource": "scrape", "method": "POST", "path": "/scrape" },
+    { "resource": "crawl", "method": "POST", "path": "/crawl" },
+    { "resource": "map", "method": "POST", "path": "/map" },
+    { "resource": "search", "method": "POST", "path": "/search" },
+    { "resource": "agent", "method": "POST", "path": "/agent" },
+    { "resource": "indexSearch", "method": "POST", "path": "/index/search" }
+  ]
+}

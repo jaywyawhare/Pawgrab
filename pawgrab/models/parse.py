@@ -1,4 +1,4 @@
-"""Models for the /v1/parse endpoint."""
+"""Models for the /parse endpoint."""
 
 from typing import Literal
 

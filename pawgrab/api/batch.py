@@ -1,4 +1,4 @@
-"""POST /v1/batch/scrape and GET /v1/batch/{job_id}."""
+"""POST /batch/scrape and GET /batch/{job_id}."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ router = APIRouter(tags=["Batch"])
 async def start_batch_scrape(req: BatchScrapeRequest):
     """Start an async batch scrape job for multiple URLs.
 
-    Returns a job ID immediately. Poll GET /v1/batch/{job_id} for results.
+    Returns a job ID immediately. Poll GET /batch/{job_id} for results.
     """
     urls = [str(u) for u in req.urls]
     formats = [f.value for f in req.formats]

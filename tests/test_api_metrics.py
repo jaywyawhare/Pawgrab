@@ -10,7 +10,7 @@ async def test_prometheus_metrics(client):
 
 
 async def test_json_metrics(client):
-    resp = await client.get("/v1/metrics")
+    resp = await client.get("/metrics.json")
     assert resp.status_code == 200
     data = resp.json()
     assert "scrape" in data
@@ -26,13 +26,13 @@ async def test_json_metrics(client):
 
 async def test_browser_pool_metrics_unavailable(client):
     with patch("pawgrab.dependencies.try_browser_pool", new_callable=AsyncMock, return_value=None):
-        resp = await client.get("/v1/metrics/browser-pool")
+        resp = await client.get("/metrics/browser-pool")
     assert resp.status_code == 200
     assert resp.json()["status"] == "unavailable"
 
 
 async def test_usage_summary(client):
-    resp = await client.get("/v1/usage")
+    resp = await client.get("/usage")
     assert resp.status_code == 200
     data = resp.json()
     assert "total_requests" in data
@@ -42,8 +42,8 @@ async def test_usage_summary(client):
 async def test_client_usage(client):
     from pawgrab.engine.analytics import usage_tracker
 
-    usage_tracker.record_request("anonymous", "/v1/scrape", response_size=512)
-    resp = await client.get("/v1/usage/anonymous")
+    usage_tracker.record_request("anonymous", "/scrape", response_size=512)
+    resp = await client.get("/usage/anonymous")
     assert resp.status_code == 200
     data = resp.json()
     assert data["client"] == "anonymous"
@@ -52,11 +52,11 @@ async def test_client_usage(client):
 
 async def test_client_usage_other_key_forbidden(client):
     """A caller cannot read another client's usage analytics."""
-    resp = await client.get("/v1/usage/some_other_client")
+    resp = await client.get("/usage/some_other_client")
     assert resp.status_code == 403
 
 
 async def test_unknown_client_usage(client):
 
-    resp = await client.get("/v1/usage/nonexistent_client_xyz")
+    resp = await client.get("/usage/nonexistent_client_xyz")
     assert resp.status_code == 403

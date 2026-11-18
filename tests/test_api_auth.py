@@ -45,7 +45,7 @@ async def test_status_exempt_from_auth(client):
 async def test_scrape_without_auth_key_passes(client):
     """When no API key is configured, requests should pass through."""
 
-    resp = await client.post("/v1/scrape", json={"url": "not-valid"})
+    resp = await client.post("/scrape", json={"url": "not-valid"})
 
     assert resp.status_code == 422
 

@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from pawgrab._version import __version__
-from pawgrab.api import batch, crawl, extract, health, map, parse, proxy, reader, schedule, scrape, search, session
+from pawgrab.api import agent, batch, crawl, health, index, interact, map, parse, proxy, reader, schedule, scrape, search, session
 from pawgrab.api import metrics as metrics_api
 from pawgrab.config import settings
 from pawgrab.dependencies import shutdown_browser_pool, shutdown_proxy_pool
@@ -56,6 +56,9 @@ async def lifespan(app: FastAPI):
     logger.info("pawgrab_starting", version=__version__)
     yield
     logger.info("pawgrab_shutting_down")
+    from pawgrab.engine.live_session import close_all as close_live_sessions
+
+    await close_live_sessions()
     await shutdown_proxy_pool()
     await shutdown_browser_pool()
     await close_sessions()
@@ -100,7 +103,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         response.headers["X-Request-ID"] = request_id
         response.headers["X-API-Version"] = __version__
         response.headers["X-Response-Time"] = f"{duration_ms}ms"
-        if request.url.path.startswith("/v1/"):
+        if request.url.path not in APIKeyMiddleware.SKIP_PATHS and request.url.path != "/dashboard":
             response.headers["Cache-Control"] = "no-store"
             response.headers["Vary"] = "Authorization"
         logger.info(
@@ -223,18 +226,20 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
-    app.include_router(scrape.router, prefix="/v1")
-    app.include_router(crawl.router, prefix="/v1")
-    app.include_router(extract.router, prefix="/v1")
-    app.include_router(batch.router, prefix="/v1")
-    app.include_router(map.router, prefix="/v1")
-    app.include_router(search.router, prefix="/v1")
-    app.include_router(parse.router, prefix="/v1")
-    app.include_router(reader.router, prefix="/v1")
-    app.include_router(proxy.router, prefix="/v1")
-    app.include_router(session.router, prefix="/v1")
+    app.include_router(scrape.router)
+    app.include_router(interact.router)
+    app.include_router(crawl.router)
+    app.include_router(agent.router)
+    app.include_router(index.router)
+    app.include_router(batch.router)
+    app.include_router(map.router)
+    app.include_router(search.router)
+    app.include_router(parse.router)
+    app.include_router(reader.router)
+    app.include_router(proxy.router)
+    app.include_router(session.router)
     app.include_router(metrics_api.router)
-    app.include_router(schedule.router, prefix="/v1")
+    app.include_router(schedule.router)
     dashboard_dir = Path(__file__).resolve().parent.parent / "dashboard"
     if dashboard_dir.is_dir():
 

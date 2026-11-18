@@ -1,0 +1,56 @@
+name: SDKs
+
+on:
+  push:
+    paths:
+      - "pawgrab/api/**"
+      - "pawgrab/models/**"
+      - "pawgrab/openapi.py"
+      - "sdk/**"
+  pull_request:
+    paths:
+      - "pawgrab/api/**"
+      - "pawgrab/models/**"
+      - "pawgrab/openapi.py"
+      - "sdk/**"
+  workflow_dispatch:
+
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Dump OpenAPI schema
+        run: python -m pawgrab.openapi > sdk/openapi.json
+      - name: Fail if committed schema is stale
+        run: git diff --exit-code sdk/openapi.json || (echo "sdk/openapi.json is out of date — run sdk/generate.sh" && exit 1)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: sdk/openapi.json
+
+  smoke:
+    needs: schema
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Boot the API
+        run: |
+          nohup pawgrab serve --host 127.0.0.1 --port 8000 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/health && break || sleep 1; done
+      - name: Smoke the Python SDK
+        run: python -c "import pawgrab; print('python sdk import ok')"
+      # Other language SDKs run their own `scrape example.com` + `crawl` poll here
+      # once openapi-generator output is committed under sdk/<lang>/generated.

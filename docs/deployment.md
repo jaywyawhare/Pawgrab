@@ -125,7 +125,7 @@ server {
     }
 
     # SSE streaming support
-    location ~ ^/v1/crawl/.*/stream$ {
+    location ~ ^/crawl/.*/stream$ {
         proxy_pass http://pawgrab;
         proxy_set_header Host $host;
         proxy_set_header Connection '';

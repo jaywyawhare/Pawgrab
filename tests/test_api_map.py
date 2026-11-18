@@ -1,4 +1,4 @@
-"""Tests for the /v1/map endpoint."""
+"""Tests for the /map endpoint."""
 
 from unittest.mock import AsyncMock, patch
 
@@ -6,7 +6,7 @@ from pawgrab.engine.sitemap import _parse_sitemap_xml
 
 
 async def test_map_missing_url(client):
-    resp = await client.post("/v1/map", json={})
+    resp = await client.post("/map", json={})
     assert resp.status_code == 422
 
 
@@ -16,7 +16,7 @@ async def test_map_success(client):
             ["https://example.com/page1", "https://example.com/page2"],
             "sitemap",
         )
-        resp = await client.post("/v1/map", json={"url": "https://example.com"})
+        resp = await client.post("/map", json={"url": "https://example.com"})
 
     assert resp.status_code == 200
     data = resp.json()
@@ -29,7 +29,7 @@ async def test_map_success(client):
 async def test_map_crawl_fallback(client):
     with patch("pawgrab.api.map.discover_urls", new_callable=AsyncMock) as mock_discover:
         mock_discover.return_value = (["https://example.com/about"], "crawl")
-        resp = await client.post("/v1/map", json={"url": "https://example.com"})
+        resp = await client.post("/map", json={"url": "https://example.com"})
 
     data = resp.json()
     assert data["source"] == "crawl"
@@ -74,5 +74,5 @@ def test_parse_sitemap_xml_limit():
 async def test_map_error_handling(client):
     with patch("pawgrab.api.map.discover_urls", new_callable=AsyncMock) as mock_discover:
         mock_discover.side_effect = Exception("connection failed")
-        resp = await client.post("/v1/map", json={"url": "https://example.com"})
+        resp = await client.post("/map", json={"url": "https://example.com"})
     assert resp.status_code == 502

@@ -2,7 +2,7 @@
 
 ## Scrape Pipeline
 
-`scrape_service.py` runs the full pipeline. Both `/v1/scrape` and the crawl worker use it.
+`scrape_service.py` runs the full pipeline. Both `/scrape` and the crawl worker use it.
 
 1. robots.txt check (1h cache, 5min on failure)
 2. Per-domain rate limit
@@ -47,7 +47,7 @@ Middleware executes from outermost to innermost on request, and innermost to out
 1. **RequestIDMiddleware** (outermost) — assigns `request_id`, measures response time, logs `request_completed` events, sets `X-Request-ID`, `X-API-Version`, `X-Response-Time` headers
 2. **APIKeyMiddleware** — validates `Authorization: Bearer <key>` when `PAWGRAB_API_KEY` is set
 3. **APIRateLimitMiddleware** — per-client rate limiting (by API key or IP), returns 429 with `Retry-After` header, sets `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers
-4. **IdempotencyMiddleware** (innermost) — caches responses for `POST /v1/crawl` and `POST /v1/batch/scrape` when `Idempotency-Key` header is present (24h TTL in Redis)
+4. **IdempotencyMiddleware** (innermost) — caches responses for `POST /crawl` and `POST /batch/scrape` when `Idempotency-Key` header is present (24h TTL in Redis)
 
 ## Crawl
 
@@ -65,15 +65,15 @@ Max 5 concurrent jobs, 600s timeout each.
 
 ### SSE Streaming
 
-The SSE endpoint (`GET /v1/crawl/{job_id}/stream`) uses Redis pub/sub with a polling loop instead of blocking `listen()`. When no real events arrive for 15 seconds, a heartbeat comment (`: heartbeat\n\n`) is emitted. This keeps connections alive through reverse proxies (nginx default timeout: 60s, CloudFront: 30s).
+The SSE endpoint (`GET /crawl/{job_id}/stream`) uses Redis pub/sub with a polling loop instead of blocking `listen()`. When no real events arrive for 15 seconds, a heartbeat comment (`: heartbeat\n\n`) is emitted. This keeps connections alive through reverse proxies (nginx default timeout: 60s, CloudFront: 30s).
 
 ### Job Pagination
 
-`GET /v1/crawl/{job_id}` and `GET /v1/batch/{job_id}` support `page` and `limit` query parameters. Responses include `total_results` (via Redis `LLEN`, O(1)) and `has_next` to indicate whether more pages are available.
+`GET /crawl/{job_id}` and `GET /batch/{job_id}` support `page` and `limit` query parameters. Responses include `total_results` (via Redis `LLEN`, O(1)) and `has_next` to indicate whether more pages are available.
 
 ## Search
 
-The `/v1/search` endpoint scrapes search results in parallel using `asyncio.gather` with a `Semaphore(5)` to limit concurrency. This is significantly faster than sequential scraping - a 5-result search takes ~1x single scrape time instead of ~5x.
+The `/search` endpoint scrapes search results in parallel using `asyncio.gather` with a `Semaphore(5)` to limit concurrency. This is significantly faster than sequential scraping - a 5-result search takes ~1x single scrape time instead of ~5x.
 
 ## Extract
 
@@ -85,7 +85,7 @@ Chunking strategies: fixed-length (sentence boundaries), sliding window (overlap
 
 ## Proxy Pool
 
-Configured via env vars or the `/v1/proxy` API at runtime. Rotation policies: round-robin, random, least-used. Health checks run at configurable intervals. Proxies are soft-evicted after N failures with backoff cooldown. Per-proxy metrics track success rate, EMA speed, and failure counts.
+Configured via env vars or the `/proxy` API at runtime. Rotation policies: round-robin, random, least-used. Health checks run at configurable intervals. Proxies are soft-evicted after N failures with backoff cooldown. Per-proxy metrics track success rate, EMA speed, and failure counts.
 
 ## Dependencies
 

@@ -139,11 +139,11 @@ def test_attribute_field_not_healed_when_attribute_missing():
 
 
 def test_signature_key_scopes_by_host_and_selectors():
-    from pawgrab.api.extract import _signature_key
+    from pawgrab.engine.adaptive import signature_key
 
-    k1 = _signature_key("https://example.com/a", {"title": "h1"})
-    k2 = _signature_key("https://example.com/b", {"title": "h1"})
-    k3 = _signature_key("https://example.com/a", {"title": "h2"})
+    k1 = signature_key("https://example.com/a", {"title": "h1"})
+    k2 = signature_key("https://example.com/b", {"title": "h1"})
+    k3 = signature_key("https://example.com/a", {"title": "h2"})
     assert k1 == k2  # same host + same selectors → shared
     assert k1 != k3  # different selectors → distinct
     assert k1.startswith("example.com:")

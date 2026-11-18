@@ -660,7 +660,7 @@ pages.scrape = function() {
     if (excl) body.excluded_tags = excl.split(',').map(s => s.trim()).filter(Boolean);
 
     try {
-      const data = await api('POST', '/v1/scrape', body);
+      const data = await api('POST', '/scrape', body);
       btn.disabled = false; btn.textContent = 'Scrape';
 
       if (data.error && !data.success) {
@@ -767,7 +767,7 @@ pages.crawl = function() {
     if (exc) body.exclude_path_patterns = exc.split(',').map(s => s.trim()).filter(Boolean);
 
     try {
-      const data = await api('POST', '/v1/crawl', body);
+      const data = await api('POST', '/crawl', body);
       btn.disabled = false; btn.textContent = 'Start Crawl';
 
       if (!data.job_id) {
@@ -795,7 +795,7 @@ pages.crawl = function() {
 
       const { url: apiUrl } = getSettings();
       try {
-        const res = await fetch(apiUrl + '/v1/crawl/' + data.job_id + '/stream', { headers: apiHeaders() });
+        const res = await fetch(apiUrl + '/crawl/' + data.job_id + '/stream', { headers: apiHeaders() });
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
@@ -838,7 +838,7 @@ pages.crawl = function() {
         const area = document.getElementById('cm-results-area');
         area.innerHTML = '<div class="spinner"></div>';
         try {
-          const res = await api('GET', '/v1/crawl/' + data.job_id + '?page=1&limit=50');
+          const res = await api('GET', '/crawl/' + data.job_id + '?page=1&limit=50');
           let html = `<h2 class="section-title">Results (${res.total_results || (res.results || []).length} pages)</h2>`;
           if (res.results && res.results.length) {
             html += '<div class="table-wrap"><table><thead><tr><th>URL</th><th>Status</th><th>Words</th></tr></thead><tbody>';
@@ -904,7 +904,7 @@ pages.jobs = function() {
     const area = document.getElementById('jobs-detail');
     area.innerHTML = '<div class="spinner"></div>';
     try {
-      const path = type === 'batch' ? '/v1/batch/' : '/v1/crawl/';
+      const path = type === 'batch' ? '/batch/' : '/crawl/';
       const data = await api('GET', path + id + '?page=1&limit=20');
       area.innerHTML = `<div class="section"><h2 class="section-title">Job: ${escHtml(id)}</h2>${jsonBlock(data)}</div>`;
     } catch(e) {
@@ -929,7 +929,7 @@ pages.jobs = function() {
     let jobs = JSON.parse(localStorage.getItem('pawgrab_tracked_jobs') || '[]');
     for (const j of jobs) {
       try {
-        const path = j.type === 'batch' ? '/v1/batch/' : '/v1/crawl/';
+        const path = j.type === 'batch' ? '/batch/' : '/crawl/';
         const data = await api('GET', path + j.id + '?page=1&limit=1');
         j._status = data.status || 'unknown';
       } catch { j._status = 'error'; }
@@ -949,8 +949,8 @@ pages.proxies = async function() {
   let proxies, stats;
   try {
     [proxies, stats] = await Promise.all([
-      api('GET', '/v1/proxy/pool').catch(() => null),
-      api('GET', '/v1/proxy/pool/stats').catch(() => null)
+      api('GET', '/proxy/pool').catch(() => null),
+      api('GET', '/proxy/pool/stats').catch(() => null)
     ]);
   } catch(e) {
     $.innerHTML += `<div class="error-box">${escHtml(e.message)}</div>`;

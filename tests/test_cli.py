@@ -47,22 +47,40 @@ class TestScrapeCommand:
         assert result.exit_code == 1
 
 
-class TestExtractCommand:
+class TestAgentCommand:
     def test_success(self):
-        with patch("pawgrab.ai.extractor.extract_from_url", new_callable=AsyncMock, return_value={"title": "Test"}):
-            result = runner.invoke(app, ["extract", "https://example.com", "--prompt", "extract title"])
+        from pawgrab.models.agent import AgentResponse
+
+        resp = AgentResponse(success=True, data={"title": "Test"}, sources=["https://example.com"])
+        with patch("pawgrab.ai.agent.run_agent", new_callable=AsyncMock, return_value=resp):
+            result = runner.invoke(app, ["agent", "find the title", "--url", "https://example.com"])
 
         assert result.exit_code == 0
         assert "title" in result.output
 
     def test_missing_prompt_fails(self):
-        assert runner.invoke(app, ["extract", "https://example.com"]).exit_code != 0
+        assert runner.invoke(app, ["agent"]).exit_code != 0
 
     def test_error_exits_1(self):
-        with patch("pawgrab.ai.extractor.extract_from_url", new_callable=AsyncMock, side_effect=Exception("LLM failed")):
-            result = runner.invoke(app, ["extract", "https://example.com", "--prompt", "test"])
+        with patch("pawgrab.ai.agent.run_agent", new_callable=AsyncMock, side_effect=Exception("LLM failed")):
+            result = runner.invoke(app, ["agent", "goal"])
 
         assert result.exit_code == 1
+
+
+class TestInitCommand:
+    def test_dry_run_emits_mcp_config(self):
+        result = runner.invoke(app, ["init", "--dry-run"])
+        assert result.exit_code == 0
+        assert "pawgrab" in result.output
+        assert "mcpServers" in result.output
+
+
+class TestOpenAPICommand:
+    def test_dumps_schema(self):
+        result = runner.invoke(app, ["openapi"])
+        assert result.exit_code == 0
+        assert "openapi" in result.output
 
 
 class TestServeCommand:
@@ -116,7 +134,7 @@ class TestHelpOutput:
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
         assert "scrape" in result.output
-        assert "extract" in result.output
+        assert "agent" in result.output
         assert "serve" in result.output
 
     def test_scrape_help(self):
@@ -124,7 +142,7 @@ class TestHelpOutput:
         assert result.exit_code == 0
         assert "URL" in result.output
 
-    def test_extract_help(self):
-        result = runner.invoke(app, ["extract", "--help"])
+    def test_agent_help(self):
+        result = runner.invoke(app, ["agent", "--help"])
         assert result.exit_code == 0
         assert "prompt" in result.output.lower()

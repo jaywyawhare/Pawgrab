@@ -132,7 +132,7 @@ async def test_browser_unavailable_returns_503(client):
     """Screenshot request without browser pool should return 503."""
     with patch("pawgrab.dependencies.get_browser_pool", side_effect=Exception("no browser")):
         resp = await client.post(
-            "/v1/scrape",
+            "/scrape",
             json={
                 "url": "https://example.com",
                 "screenshot": True,

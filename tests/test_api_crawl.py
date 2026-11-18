@@ -2,12 +2,12 @@ from unittest.mock import AsyncMock, patch
 
 
 async def test_crawl_missing_url(client):
-    resp = await client.post("/v1/crawl", json={})
+    resp = await client.post("/crawl", json={})
     assert resp.status_code == 422
 
 
 async def test_crawl_invalid_url(client):
-    resp = await client.post("/v1/crawl", json={"url": "not-a-url"})
+    resp = await client.post("/crawl", json={"url": "not-a-url"})
     assert resp.status_code == 422
 
 
@@ -19,7 +19,7 @@ async def test_crawl_creates_job(client):
         pool = AsyncMock()
         pool.enqueue_job = AsyncMock()
         mock_pool.return_value = pool
-        resp = await client.post("/v1/crawl", json={"url": "https://example.com"})
+        resp = await client.post("/crawl", json={"url": "https://example.com"})
 
     assert resp.status_code == 202
     data = resp.json()
@@ -37,7 +37,7 @@ async def test_crawl_with_options(client):
         pool.enqueue_job = AsyncMock()
         mock_pool.return_value = pool
         resp = await client.post(
-            "/v1/crawl",
+            "/crawl",
             json={"url": "https://example.com", "max_pages": 50, "max_depth": 5, "strategy": "dfs"},
         )
 
@@ -49,20 +49,20 @@ async def test_crawl_queue_unavailable(client):
         patch("pawgrab.api.crawl.create_job", new_callable=AsyncMock, return_value="abcdef123456"),
         patch("pawgrab.api.crawl.get_arq_pool", new_callable=AsyncMock, side_effect=Exception("Redis down")),
     ):
-        resp = await client.post("/v1/crawl", json={"url": "https://example.com"})
+        resp = await client.post("/crawl", json={"url": "https://example.com"})
 
     assert resp.status_code == 503
     assert resp.json()["code"] == "queue_unavailable"
 
 
 async def test_crawl_status_invalid_job_id(client):
-    resp = await client.get("/v1/crawl/not-valid!")
+    resp = await client.get("/crawl/not-valid!")
     assert resp.status_code == 400
 
 
 async def test_crawl_status_not_found(client):
     with patch("pawgrab.api.crawl.get_job", new_callable=AsyncMock, return_value=None):
-        resp = await client.get("/v1/crawl/abcdef123456")
+        resp = await client.get("/crawl/abcdef123456")
 
     assert resp.status_code == 404
     assert resp.json()["code"] == "resource_not_found"
@@ -78,7 +78,7 @@ async def test_crawl_status_found(client):
         pages_scraped=5,
     )
     with patch("pawgrab.api.crawl.get_job", new_callable=AsyncMock, return_value=job):
-        resp = await client.get("/v1/crawl/abcdef123456")
+        resp = await client.get("/crawl/abcdef123456")
 
     assert resp.status_code == 200
     data = resp.json()
@@ -95,7 +95,7 @@ async def test_crawl_with_domain_filters(client):
         pool.enqueue_job = AsyncMock()
         mock_pool.return_value = pool
         resp = await client.post(
-            "/v1/crawl",
+            "/crawl",
             json={
                 "url": "https://example.com",
                 "allowed_domains": ["example.com"],

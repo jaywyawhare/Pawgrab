@@ -6,8 +6,8 @@ site_description: Web scraping API - clean Markdown, HTML, text, or structured J
 
 theme:
   name: material
-  logo: assets/logo.png
-  favicon: assets/logo.png
+  logo: assets/pawgrab-icon.svg
+  favicon: assets/pawgrab-icon.svg
   icon:
     repo: fontawesome/brands/github
   palette:
@@ -49,7 +49,11 @@ nav:
     - Scraping: scraping.md
     - Crawling: crawling.md
     - Extraction: extraction.md
+    - Agent: agent.md
+    - Live interact: interact.md
+    - Content index: index-search.md
     - Anti-bot: anti-bot.md
+    - Reliability: reliability.md
   - API Reference: api.md
   - MCP Server: mcp.md
   - CLI: cli.md

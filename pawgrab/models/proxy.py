@@ -1,4 +1,4 @@
-"""Models for the /v1/proxy endpoints."""
+"""Models for the /proxy endpoints."""
 
 from pydantic import BaseModel, Field
 

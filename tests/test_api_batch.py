@@ -1,26 +1,26 @@
-"""Tests for the /v1/batch/scrape endpoint."""
+"""Tests for the /batch/scrape endpoint."""
 
 from unittest.mock import AsyncMock, patch
 
 
 async def test_batch_scrape_missing_urls(client):
-    resp = await client.post("/v1/batch/scrape", json={})
+    resp = await client.post("/batch/scrape", json={})
     assert resp.status_code == 422
 
 
 async def test_batch_scrape_empty_urls(client):
-    resp = await client.post("/v1/batch/scrape", json={"urls": []})
+    resp = await client.post("/batch/scrape", json={"urls": []})
     assert resp.status_code == 422
 
 
 async def test_batch_scrape_too_many_urls(client):
     urls = [f"https://example.com/{i}" for i in range(101)]
-    resp = await client.post("/v1/batch/scrape", json={"urls": urls})
+    resp = await client.post("/batch/scrape", json={"urls": urls})
     assert resp.status_code == 422
 
 
 async def test_batch_scrape_invalid_url(client):
-    resp = await client.post("/v1/batch/scrape", json={"urls": ["not-a-url"]})
+    resp = await client.post("/batch/scrape", json={"urls": ["not-a-url"]})
     assert resp.status_code == 422
 
 
@@ -36,7 +36,7 @@ async def test_batch_scrape_creation(client):
         mock_pool.return_value = pool
 
         resp = await client.post(
-            "/v1/batch/scrape",
+            "/batch/scrape",
             json={
                 "urls": ["https://example.com", "https://example.org"],
             },
@@ -50,14 +50,14 @@ async def test_batch_scrape_creation(client):
 
 
 async def test_batch_status_invalid_job_id(client):
-    resp = await client.get("/v1/batch/invalid!")
+    resp = await client.get("/batch/invalid!")
     assert resp.status_code == 400
 
 
 async def test_batch_status_not_found(client):
     with patch("pawgrab.api.batch.get_batch_job", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = None
-        resp = await client.get("/v1/batch/abcdef123456")
+        resp = await client.get("/batch/abcdef123456")
     assert resp.status_code == 404
 
 
@@ -71,7 +71,7 @@ async def test_batch_status_found(client):
             "results": [],
             "error": None,
         }
-        resp = await client.get("/v1/batch/abcdef123456")
+        resp = await client.get("/batch/abcdef123456")
 
     assert resp.status_code == 200
     data = resp.json()
@@ -89,7 +89,7 @@ async def test_batch_queue_unavailable(client):
         mock_pool.side_effect = Exception("Redis down")
 
         resp = await client.post(
-            "/v1/batch/scrape",
+            "/batch/scrape",
             json={
                 "urls": ["https://example.com"],
             },

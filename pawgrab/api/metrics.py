@@ -23,13 +23,13 @@ async def prometheus_metrics():
     return metrics.to_prometheus()
 
 
-@router.get("/v1/metrics")
+@router.get("/metrics.json")
 async def json_metrics():
     """JSON metrics for dashboards and monitoring."""
     return metrics.to_dict()
 
 
-@router.get("/v1/metrics/browser-pool")
+@router.get("/metrics/browser-pool")
 async def browser_pool_metrics():
     from pawgrab.dependencies import try_browser_pool
 
@@ -39,7 +39,7 @@ async def browser_pool_metrics():
     return pool.stats()
 
 
-@router.get("/v1/dead-letters")
+@router.get("/dead-letters")
 async def dead_letters(limit: int = 100):
     """List terminally-failed jobs captured in the dead-letter queue."""
     from pawgrab.queue.manager import get_dead_letters
@@ -49,13 +49,13 @@ async def dead_letters(limit: int = 100):
     return {"dead_letters": entries, "count": len(entries)}
 
 
-@router.get("/v1/usage")
+@router.get("/usage")
 async def usage_summary():
     """Get aggregate usage analytics."""
     return usage_tracker.get_summary()
 
 
-@router.get("/v1/usage/{client_key}")
+@router.get("/usage/{client_key}")
 async def client_usage(client_key: str, request: Request):
     """Get usage analytics for the calling client.
 

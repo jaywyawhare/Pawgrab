@@ -15,7 +15,7 @@ Env vars with `PAWGRAB_` prefix. See `.env.example`.
 
 ## OpenAI
 
-- `PAWGRAB_OPENAI_API_KEY` - needed for `/v1/extract` with LLM strategy
+- `PAWGRAB_OPENAI_API_KEY` - needed for `/extract` with LLM strategy
 - `PAWGRAB_OPENAI_MODEL` - default `gpt-4o-mini`
 
 ## Browser

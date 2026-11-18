@@ -53,20 +53,29 @@ def scrape(
 
 
 @app.command()
-def extract(
-    url: str = typer.Argument(..., help="URL to extract data from"),
-    prompt: str = typer.Option(..., "--prompt", "-p", help="Extraction prompt"),
+def agent(
+    prompt: str = typer.Argument(..., help="Natural-language research goal"),
+    url: list[str] = typer.Option(None, "--url", "-u", help="Seed URL(s); repeatable"),
+    effort: str = typer.Option("medium", "--effort", "-e", help="low | medium | high"),
 ):
-    """Extract structured data from a URL using AI."""
-    from pawgrab.ai.extractor import extract_from_url
+    """Run the agentic extractor locally (navigates pages to satisfy the goal)."""
+    from pawgrab.ai.agent import run_agent
+    from pawgrab.models.agent import Effort
 
     async def _run():
-        """Run the AI extraction for the given URL and prompt."""
-        return await extract_from_url(url, prompt=prompt)
+        return await run_agent(
+            prompt=prompt,
+            urls=list(url or []),
+            json_schema=None,
+            effort=Effort(effort),
+            max_steps=None,
+            allowed_domains=[],
+            timeout=30_000,
+        )
 
     try:
-        data = asyncio.run(_run())
-        console.print_json(orjson.dumps(data, option=orjson.OPT_INDENT_2).decode())
+        result = asyncio.run(_run())
+        console.print_json(orjson.dumps(result.model_dump(), option=orjson.OPT_INDENT_2).decode())
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted[/dim]")
         raise typer.Exit(1) from None
@@ -142,6 +151,70 @@ def mcp(
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
     run()
+
+
+@app.command()
+def init(
+    install_browser: bool = typer.Option(False, "--browser", help="Also run `patchright install chromium`"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print what would be written without touching disk"),
+):
+    """Scaffold a .env and print an MCP client config to get agents running fast."""
+    import shutil
+    from pathlib import Path
+
+    env_path = Path(".env")
+    example = Path(".env.example")
+    env_body = example.read_text() if example.exists() else "PAWGRAB_API_KEY=\nPAWGRAB_OPENAI_API_KEY=\n"
+
+    if dry_run:
+        console.print("[cyan]Would write[/cyan] .env with the following keys:")
+        for line in env_body.splitlines():
+            if line and not line.startswith("#") and "=" in line:
+                console.print(f"  {line.split('=', 1)[0]}")
+    elif env_path.exists():
+        console.print("[yellow].env already exists — leaving it untouched.[/yellow]")
+    else:
+        if example.exists():
+            shutil.copy(example, env_path)
+        else:
+            env_path.write_text(env_body)
+        console.print("[green]Wrote .env[/green] — set PAWGRAB_OPENAI_API_KEY to enable /agent.")
+
+    mcp_config = {
+        "mcpServers": {
+            "pawgrab": {
+                "command": "pawgrab",
+                "args": ["mcp"],
+                "env": {"PAWGRAB_MCP_API_URL": "http://localhost:8000"},
+            }
+        }
+    }
+    console.print("\n[bold]MCP client config[/bold] (Claude Desktop / Cursor):")
+    console.print_json(orjson.dumps(mcp_config, option=orjson.OPT_INDENT_2).decode())
+    console.print("\nNext: [cyan]pawgrab serve[/cyan] in one terminal, then point your agent at the config above.")
+
+    if install_browser and not dry_run:
+        import subprocess
+
+        console.print("\n[dim]Installing Chromium via patchright…[/dim]")
+        subprocess.run(["patchright", "install", "chromium"], check=False)
+
+
+@app.command()
+def openapi(
+    out: str = typer.Option("-", "--out", "-o", help="Output path, or '-' for stdout"),
+):
+    """Dump the OpenAPI schema (the source of truth for all SDKs)."""
+    from pawgrab.openapi import generate
+
+    schema = orjson.dumps(generate(), option=orjson.OPT_INDENT_2)
+    if out == "-":
+        console.print_json(schema.decode())
+    else:
+        from pathlib import Path
+
+        Path(out).write_bytes(schema + b"\n")
+        console.print(f"[green]Wrote[/green] {out}")
 
 
 if __name__ == "__main__":

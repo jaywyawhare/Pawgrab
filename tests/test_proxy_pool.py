@@ -260,29 +260,29 @@ async def test_proxy_api_add_list_remove_stats():
         mock_settings.proxy_backoff_seconds = 60
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            r = await client.post("/v1/proxy/pool", json={"url": "http://proxy1:8080"})
+            r = await client.post("/proxy/pool", json={"url": "http://proxy1:8080"})
             assert r.status_code == 200
             assert r.json()["success"] is True
 
-            r = await client.post("/v1/proxy/pool", json={"url": "http://proxy1:8080"})
+            r = await client.post("/proxy/pool", json={"url": "http://proxy1:8080"})
             assert r.json()["success"] is False
 
-            r = await client.get("/v1/proxy/pool")
+            r = await client.get("/proxy/pool")
             assert r.status_code == 200
             proxies = r.json()["proxies"]
             assert len(proxies) == 1
             assert proxies[0]["url"] == "http://proxy1:8080"
 
-            r = await client.get("/v1/proxy/pool/stats")
+            r = await client.get("/proxy/pool/stats")
             assert r.status_code == 200
             stats = r.json()
             assert stats["total"] == 1
             assert stats["active"] == 1
 
-            r = await client.delete("/v1/proxy/pool/http://proxy1:8080")
+            r = await client.delete("/proxy/pool/http://proxy1:8080")
             assert r.status_code == 200
 
-            r = await client.delete("/v1/proxy/pool/http://nope:1234")
+            r = await client.delete("/proxy/pool/http://nope:1234")
             assert r.status_code == 404
 
     await deps.shutdown_proxy_pool()
