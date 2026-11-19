@@ -1,4 +1,4 @@
-"""Models for the /v1/scrape endpoint."""
+"""Models for the /scrape endpoint."""
 
 from enum import StrEnum
 from typing import Any, Literal

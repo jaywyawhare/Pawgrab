@@ -1,4 +1,4 @@
-"""POST /v1/crawl and GET /v1/crawl/{job_id}."""
+"""POST /crawl and GET /crawl/{job_id}."""
 
 from __future__ import annotations
 

@@ -236,7 +236,7 @@ async def test_transcript_endpoint_success(client):
         "text": "hello",
     }
     with patch("pawgrab.api.reader.fetch_transcript", new_callable=AsyncMock, return_value=fake):
-        resp = await client.post("/v1/transcript", json={"url": "https://youtu.be/abc123DEF_X"})
+        resp = await client.post("/transcript", json={"url": "https://youtu.be/abc123DEF_X"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
@@ -245,7 +245,7 @@ async def test_transcript_endpoint_success(client):
 
 async def test_transcript_endpoint_soft_fails_without_captions(client):
     with patch("pawgrab.api.reader.fetch_transcript", new_callable=AsyncMock, side_effect=ValueError("no captions available for this video")):
-        resp = await client.post("/v1/transcript", json={"url": "https://youtu.be/abc123DEF_X"})
+        resp = await client.post("/transcript", json={"url": "https://youtu.be/abc123DEF_X"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is False
@@ -255,7 +255,7 @@ async def test_transcript_endpoint_soft_fails_without_captions(client):
 async def test_feed_endpoint_success(client):
     fake = {"type": "rss", "title": "T", "link": "http://x", "description": "D", "items": [{"title": "I1", "link": "http://x/1"}], "count": 1}
     with patch("pawgrab.api.reader.fetch_feed", new_callable=AsyncMock, return_value=fake):
-        resp = await client.post("/v1/feed", json={"url": "https://x/feed"})
+        resp = await client.post("/feed", json={"url": "https://x/feed"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
@@ -265,7 +265,7 @@ async def test_feed_endpoint_success(client):
 async def test_read_routes_youtube_to_transcript(client):
     fake = {"video_id": "abc123DEF_X", "title": "D", "language": "en", "auto_generated": False, "segments": [{"start": 0.0, "duration": 1.0, "text": "hi"}], "text": "hi"}
     with patch("pawgrab.api.reader.fetch_transcript", new_callable=AsyncMock, return_value=fake):
-        resp = await client.post("/v1/read", json={"url": "https://youtu.be/abc123DEF_X"})
+        resp = await client.post("/read", json={"url": "https://youtu.be/abc123DEF_X"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["kind"] == "youtube"
@@ -276,7 +276,7 @@ async def test_read_routes_youtube_to_transcript(client):
 async def test_read_routes_feed(client):
     fake = {"type": "atom", "title": "T", "link": "http://x", "description": None, "items": [], "count": 0}
     with patch("pawgrab.api.reader.fetch_feed", new_callable=AsyncMock, return_value=fake):
-        resp = await client.post("/v1/read", json={"url": "https://x/atom.xml"})
+        resp = await client.post("/read", json={"url": "https://x/atom.xml"})
     assert resp.status_code == 200
     assert resp.json()["kind"] == "feed"
 
@@ -284,7 +284,7 @@ async def test_read_routes_feed(client):
 async def test_reddit_endpoint_success(client):
     fake = {"kind": "post", "post": {"title": "Hello", "author": "u"}, "comments": [{"author": "c", "body": "hi", "replies": []}]}
     with patch("pawgrab.api.reader.fetch_reddit", new_callable=AsyncMock, return_value=fake):
-        resp = await client.post("/v1/reddit", json={"url": "https://www.reddit.com/r/python/comments/abc/t/"})
+        resp = await client.post("/reddit", json={"url": "https://www.reddit.com/r/python/comments/abc/t/"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
@@ -295,7 +295,7 @@ async def test_reddit_endpoint_success(client):
 async def test_github_endpoint_success(client):
     fake = {"full_name": "psf/requests", "stars": 52000, "language": "Python", "topics": ["http"]}
     with patch("pawgrab.api.reader.fetch_repo", new_callable=AsyncMock, return_value=fake):
-        resp = await client.post("/v1/github", json={"url": "https://github.com/psf/requests"})
+        resp = await client.post("/github", json={"url": "https://github.com/psf/requests"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
@@ -305,7 +305,7 @@ async def test_github_endpoint_success(client):
 
 async def test_github_endpoint_soft_fails_on_non_repo(client):
     with patch("pawgrab.api.reader.fetch_repo", new_callable=AsyncMock, side_effect=ValueError("not a GitHub repository URL")):
-        resp = await client.post("/v1/github", json={"url": "https://github.com/"})
+        resp = await client.post("/github", json={"url": "https://github.com/"})
     assert resp.status_code == 200
     assert resp.json()["success"] is False
 
@@ -313,7 +313,7 @@ async def test_github_endpoint_soft_fails_on_non_repo(client):
 async def test_read_routes_reddit(client):
     fake = {"kind": "listing", "posts": [{"title": "P1"}]}
     with patch("pawgrab.api.reader.fetch_reddit", new_callable=AsyncMock, return_value=fake):
-        resp = await client.post("/v1/read", json={"url": "https://www.reddit.com/r/python/"})
+        resp = await client.post("/read", json={"url": "https://www.reddit.com/r/python/"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["kind"] == "reddit"
@@ -323,7 +323,7 @@ async def test_read_routes_reddit(client):
 async def test_read_routes_github(client):
     fake = {"full_name": "psf/requests", "stars": 1}
     with patch("pawgrab.api.reader.fetch_repo", new_callable=AsyncMock, return_value=fake):
-        resp = await client.post("/v1/read", json={"url": "https://github.com/psf/requests"})
+        resp = await client.post("/read", json={"url": "https://github.com/psf/requests"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["kind"] == "github"

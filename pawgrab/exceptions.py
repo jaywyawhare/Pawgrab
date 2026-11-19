@@ -18,6 +18,9 @@ class ErrorCode(StrEnum):
     LLM_UNAVAILABLE = "llm_unavailable"
     EXTRACTION_FAILED = "extraction_failed"
     SEARCH_FAILED = "search_failed"
+    AGENT_FAILED = "agent_failed"
+    INDEX_UNAVAILABLE = "index_unavailable"
+    SESSION_EXPIRED = "session_expired"
     INTERNAL_ERROR = "internal_error"
 
 

@@ -1,4 +1,4 @@
-"""Models for the structured readers: /v1/transcript, /v1/feed, and the /v1/read router."""
+"""Models for the structured readers: /transcript, /feed, and the /read router."""
 
 from pydantic import BaseModel, Field
 

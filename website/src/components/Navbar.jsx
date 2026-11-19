@@ -21,7 +21,7 @@ export default function Navbar() {
     <nav className={`navbar ${scrolled ? 'navbar--scrolled' : ''}`}>
       <div className="navbar__inner">
         <Link to="/" className="navbar__logo">
-          <img src={`${import.meta.env.BASE_URL}pawgrab-logo.png`} alt="Pawgrab" className="navbar__logo-img" />
+          <img src={`${import.meta.env.BASE_URL}pawgrab-logo.svg`} alt="Pawgrab" className="navbar__logo-img" />
           <span className="navbar__logo-text">Pawgrab</span>
           <span className="navbar__version">v0.1</span>
         </Link>

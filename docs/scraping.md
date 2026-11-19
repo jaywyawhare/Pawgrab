@@ -1,11 +1,11 @@
 # Scraping Guide
 
-The `/v1/scrape` endpoint is Pawgrab's core — extract clean content from any URL.
+The `/scrape` endpoint is Pawgrab's core — extract clean content from any URL.
 
 ## Basic Scraping
 
 ```bash
-curl -X POST http://localhost:8000/v1/scrape \
+curl -X POST http://localhost:8000/scrape \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://example.com"}'
 ```

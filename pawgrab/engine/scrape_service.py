@@ -281,6 +281,16 @@ async def scrape_url(
         from pawgrab.engine.cache import set_cached
 
         await set_cached(url, cache_params, response.model_dump(), ttl=effective_cache_ttl)
+
+    # Write-through content index (F4) — best-effort, never blocks the scrape.
+    if response.success and status < 400 and response.markdown:
+        try:
+            from pawgrab.engine import index as _index
+
+            title = response.metadata.title if response.metadata else ""
+            await _index.upsert(url, response.markdown, title or "")
+        except Exception:
+            pass
     return response
 
 

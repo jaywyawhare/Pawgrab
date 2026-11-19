@@ -1,4 +1,4 @@
-"""Models for the /v1/crawl endpoint."""
+"""Models for the /crawl endpoint."""
 
 from enum import StrEnum
 

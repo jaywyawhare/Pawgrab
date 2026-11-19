@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = structlog.get_logger()
-_IDEMPOTENT_PATHS = {"/v1/crawl", "/v1/batch/scrape"}
+_IDEMPOTENT_PATHS = {"/crawl", "/batch/scrape"}
 _CACHE_TTL = 86400
 _INFLIGHT_TTL = 300
 

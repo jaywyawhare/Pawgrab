@@ -1,4 +1,4 @@
-"""POST /v1/map — sitemap discovery endpoint."""
+"""POST /map — sitemap discovery endpoint."""
 
 import structlog
 from fastapi import APIRouter
@@ -33,10 +33,18 @@ async def map_site(req: MapRequest):
             include_subdomains=req.include_subdomains,
             limit=req.limit,
         )
+        scores: list[float] | None = None
+        if req.search:
+            from pawgrab.engine.ranking import rank_urls
+
+            ranked = rank_urls(req.search, urls)[: req.limit]
+            urls = [u for u, _ in ranked]
+            scores = [round(s, 4) for _, s in ranked]
         return MapResponse(
             success=True,
             url=url,
             urls=urls,
+            scores=scores,
             total=len(urls),
             source=source,
         )

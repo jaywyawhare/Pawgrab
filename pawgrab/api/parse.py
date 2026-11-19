@@ -1,4 +1,4 @@
-"""POST /v1/parse — run raw HTML through the extraction pipeline without fetching."""
+"""POST /parse — run raw HTML through the extraction pipeline without fetching."""
 
 import orjson
 import structlog
@@ -20,7 +20,7 @@ router = APIRouter(tags=["Parse"])
 )
 async def parse(req: ParseRequest):
     """Convert raw HTML to clean output formats using the same extraction
-    pipeline as /v1/scrape — content cleaning, selector scoping, conversion."""
+    pipeline as /scrape — content cleaning, selector scoping, conversion."""
     try:
         cleaned = extract_content(
             req.html,

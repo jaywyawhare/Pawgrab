@@ -1,6 +1,6 @@
 # API Reference
 
-All endpoints are under `/v1` except `/health` and `/status`.
+All endpoints are at the API root; `/health` and `/status` are unversioned.
 
 Set `PAWGRAB_API_KEY` to require Bearer token auth. Health and status endpoints skip auth.
 
@@ -113,10 +113,10 @@ Per-capability readiness given the current configuration (distinct from `/health
 
 ---
 
-## POST /v1/scrape
+## POST /scrape
 
 ```bash
-curl -X POST http://localhost:8000/v1/scrape \
+curl -X POST http://localhost:8000/scrape \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://example.com", "formats": ["markdown", "text"]}'
 ```
@@ -169,10 +169,10 @@ Only requested formats/captures are populated. Also includes `json_data`, `csv_d
 
 ---
 
-## POST /v1/extract
+## POST /extract
 
 ```bash
-curl -X POST http://localhost:8000/v1/extract \
+curl -X POST http://localhost:8000/extract \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://example.com", "prompt": "Extract the main heading"}'
 ```
@@ -195,12 +195,12 @@ curl -X POST http://localhost:8000/v1/extract \
 
 ---
 
-## POST /v1/crawl
+## POST /crawl
 
 Async - returns 202 with a job ID.
 
 ```bash
-curl -X POST http://localhost:8000/v1/crawl \
+curl -X POST http://localhost:8000/crawl \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: my-unique-key' \
   -d '{"url": "https://example.com", "max_pages": 20}'
@@ -214,7 +214,7 @@ curl -X POST http://localhost:8000/v1/crawl \
 
 **Errors:** 400 `validation_error`, 404 `resource_not_found` (resume job), 503 `queue_unavailable`.
 
-### GET /v1/crawl/{job_id}
+### GET /crawl/{job_id}
 
 Poll status. Query params: `page` (default 1), `limit` (default 50, max 200).
 
@@ -239,7 +239,7 @@ Status: `queued` -> `in_progress` -> `completed` | `failed`.
 
 **Errors:** 400 `validation_error` (invalid job ID), 404 `resource_not_found`.
 
-### GET /v1/crawl/{job_id}/stream
+### GET /crawl/{job_id}/stream
 
 SSE stream. Events: `queued`, `in_progress`, `completed`, `failed`.
 
@@ -249,12 +249,12 @@ The stream emits SSE heartbeat comments (`: heartbeat`) every ~15 seconds when n
 
 ---
 
-## POST /v1/batch/scrape
+## POST /batch/scrape
 
 Async - returns 202 with a job ID.
 
 ```bash
-curl -X POST http://localhost:8000/v1/batch/scrape \
+curl -X POST http://localhost:8000/batch/scrape \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: my-batch-key' \
   -d '{"urls": ["https://a.com", "https://b.com"]}'
@@ -264,11 +264,11 @@ curl -X POST http://localhost:8000/v1/batch/scrape \
 
 **Options:** `formats`, `include_metadata`, `wait_for_js`, `webhook_url`.
 
-**Idempotency:** Same as `/v1/crawl` - send `Idempotency-Key` header for safe retries.
+**Idempotency:** Same as `/crawl` - send `Idempotency-Key` header for safe retries.
 
 **Errors:** 503 `queue_unavailable`.
 
-### GET /v1/batch/{job_id}
+### GET /batch/{job_id}
 
 Same pagination as crawl (`page`, `limit`, `total_results`, `has_next`). Returns `urls_scraped`, `total_urls`, `results`.
 
@@ -276,12 +276,12 @@ Same pagination as crawl (`page`, `limit`, `total_results`, `has_next`). Returns
 
 ---
 
-## POST /v1/search
+## POST /search
 
 Search the web, scrape each result in parallel (up to 5 concurrent).
 
 ```bash
-curl -X POST http://localhost:8000/v1/search \
+curl -X POST http://localhost:8000/search \
   -H 'Content-Type: application/json' \
   -d '{"query": "python web scraping", "num_results": 5}'
 ```
@@ -296,12 +296,12 @@ Returns `results` (array of scrape responses), `total`, `failed_urls`.
 
 ---
 
-## POST /v1/parse
+## POST /parse
 
-Run raw HTML through the extraction pipeline without fetching — content cleaning, selector scoping, and format conversion, identical to `/v1/scrape` post-processing.
+Run raw HTML through the extraction pipeline without fetching — content cleaning, selector scoping, and format conversion, identical to `/scrape` post-processing.
 
 ```bash
-curl -X POST http://localhost:8000/v1/parse \
+curl -X POST http://localhost:8000/parse \
   -H 'Content-Type: application/json' \
   -d '{"html": "<html><body><article><h1>Title</h1></article></body></html>", "formats": ["markdown"]}'
 ```
@@ -314,12 +314,12 @@ Returns `success`, `markdown`/`html`/`text`/`json_data`/`csv_data`/`xml_data` (p
 
 ---
 
-## POST /v1/transcript
+## POST /transcript
 
 Extract a YouTube video's caption track as structured, timestamped segments — reads the published captions directly (no audio download or speech-to-text).
 
 ```bash
-curl -X POST http://localhost:8000/v1/transcript \
+curl -X POST http://localhost:8000/transcript \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://youtu.be/dQw4w9WgXcQ", "languages": ["en"]}'
 ```
@@ -332,12 +332,12 @@ Returns `success`, `video_id`, `title`, `language`, `auto_generated`, `segments`
 
 ---
 
-## POST /v1/feed
+## POST /feed
 
 Parse an RSS 2.0 or Atom feed into structured items.
 
 ```bash
-curl -X POST http://localhost:8000/v1/feed \
+curl -X POST http://localhost:8000/feed \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://example.com/feed.xml", "limit": 50}'
 ```
@@ -350,12 +350,12 @@ Returns `success`, `type` (`rss`/`atom`), `title`, `link`, `description`, `items
 
 ---
 
-## POST /v1/reddit
+## POST /reddit
 
 Read a Reddit post (with a bounded comment tree) or a subreddit/listing's posts via the public `.json` endpoint — no login or API key.
 
 ```bash
-curl -X POST http://localhost:8000/v1/reddit \
+curl -X POST http://localhost:8000/reddit \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://www.reddit.com/r/python/comments/abc/some_title/"}'
 ```
@@ -368,12 +368,12 @@ Returns `success`, `kind` (`post`/`listing`), and either `post` + `comments` (ne
 
 ---
 
-## POST /v1/github
+## POST /github
 
 Read GitHub repository metadata via the public REST API — no token (unauthenticated rate limit applies).
 
 ```bash
-curl -X POST http://localhost:8000/v1/github \
+curl -X POST http://localhost:8000/github \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://github.com/psf/requests"}'
 ```
@@ -384,12 +384,12 @@ Returns `success`, `full_name`, `description`, `owner`, `stars`, `forks`, `watch
 
 ---
 
-## POST /v1/read
+## POST /read
 
 Auto-detect the URL's platform and route to the best reader: YouTube videos → transcript, Reddit → post/listing, GitHub repos → metadata, RSS/Atom feeds → feed items, everything else → a web scrape.
 
 ```bash
-curl -X POST http://localhost:8000/v1/read \
+curl -X POST http://localhost:8000/read \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://youtu.be/dQw4w9WgXcQ"}'
 ```
@@ -402,7 +402,7 @@ Returns `success`, `kind` (`youtube`/`reddit`/`github`/`feed`/`web`), `url`, and
 
 ---
 
-## POST /v1/map
+## POST /map
 
 Discover URLs from sitemap, falls back to homepage links.
 
@@ -418,7 +418,7 @@ Returns `urls`, `total`, `source` (`"sitemap"` or `"crawl"`).
 
 ## Proxy Pool
 
-- **POST /v1/proxy/pool** - Add proxy. Body: `{"url": "http://user:pass@host:port"}`.
-- **DELETE /v1/proxy/pool/{proxy_url}** - Remove (URL-encode the path). Errors: 404 `resource_not_found`.
-- **GET /v1/proxy/pool** - List all.
-- **GET /v1/proxy/pool/stats** - Pool stats.
+- **POST /proxy/pool** - Add proxy. Body: `{"url": "http://user:pass@host:port"}`.
+- **DELETE /proxy/pool/{proxy_url}** - Remove (URL-encode the path). Errors: 404 `resource_not_found`.
+- **GET /proxy/pool** - List all.
+- **GET /proxy/pool/stats** - Pool stats.

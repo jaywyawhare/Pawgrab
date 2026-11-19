@@ -1,4 +1,4 @@
-"""Models for the /v1/search endpoint."""
+"""Models for the /search endpoint."""
 
 from typing import Literal
 
@@ -22,6 +22,7 @@ class SearchRequest(BaseModel):
     include_domains: list[str] | None = Field(default=None, max_length=50, description="Only keep results from these domains (e.g. ['example.com'] includes subdomains)")
     exclude_domains: list[str] | None = Field(default=None, max_length=50, description="Drop results from these domains (e.g. ['pinterest.com'])")
     scrape: bool = Field(default=True, description="Scrape each result; if false, return SERP metadata only")
+    prefer_index: bool = Field(default=False, description="Answer scraped content from the local content index when a result URL is already cached, avoiding a live fetch")
 
 
 class SearchResponse(BaseModel):

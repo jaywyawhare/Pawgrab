@@ -15,8 +15,10 @@ next.
 from __future__ import annotations
 
 import difflib
+import hashlib
 from collections import OrderedDict
 from typing import Any
+from urllib.parse import urlparse
 
 import orjson
 import structlog
@@ -25,6 +27,16 @@ from bs4 import BeautifulSoup, Tag
 from pawgrab.config import settings
 
 logger = structlog.get_logger()
+
+
+def signature_key(url: str, selectors: dict | None) -> str:
+    """Scope stored signatures to a host *and* the selector set in use, so
+    unrelated extraction targets on the same host do not share or clobber
+    each other's field signatures."""
+    netloc = urlparse(url).netloc
+    sel_hash = hashlib.sha256(orjson.dumps(selectors or {}, option=orjson.OPT_SORT_KEYS)).hexdigest()[:12]
+    return f"{netloc}:{sel_hash}"
+
 
 # Attributes that tend to stay stable across redesigns, weighted highest.
 _STABLE_ATTRS = ("id", "name", "role", "type", "aria-label", "itemprop", "href", "src", "alt", "placeholder")

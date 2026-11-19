@@ -77,6 +77,12 @@ class Metrics:
         self.captcha_detected = _Counter()
         self.captcha_solved = _Counter()
         self.browser_sessions = _Counter()
+        # Fetch-escalation ladder tiers (F7): curl_cffi -> stealth browser -> proxy browser.
+        self.fetch_tier_curl = _Counter()
+        self.fetch_tier_browser = _Counter()
+        self.fetch_tier_proxy = _Counter()
+        self.agent_total = _Counter()
+        self.index_hits = _Counter()
         self.request_duration = _Histogram()
         self.scrape_duration = _Histogram()
         self._domain_success: dict[str, int] = defaultdict(int)
@@ -134,6 +140,11 @@ class Metrics:
         _counter("pawgrab_captcha_detected", "CAPTCHAs detected", self.captcha_detected.value)
         _counter("pawgrab_captcha_solved", "CAPTCHAs solved", self.captcha_solved.value)
         _counter("pawgrab_browser_sessions", "Browser sessions opened", self.browser_sessions.value)
+        _counter("pawgrab_fetch_tier_curl", "Fetches served by the curl_cffi tier", self.fetch_tier_curl.value)
+        _counter("pawgrab_fetch_tier_browser", "Fetches escalated to the stealth browser tier", self.fetch_tier_browser.value)
+        _counter("pawgrab_fetch_tier_proxy", "Fetches escalated to the proxy browser tier", self.fetch_tier_proxy.value)
+        _counter("pawgrab_agent_total", "Total agent runs", self.agent_total.value)
+        _counter("pawgrab_index_hits", "Content-index cache hits served instead of a live fetch", self.index_hits.value)
         _histogram("pawgrab_request_duration_seconds", "HTTP request duration", self.request_duration)
         _histogram("pawgrab_scrape_duration_seconds", "Scrape pipeline duration", self.scrape_duration)
         return "\n".join(lines) + "\n"
@@ -157,6 +168,13 @@ class Metrics:
             "search": {"total": self.search_total.value},
             "captcha": {"detected": self.captcha_detected.value, "solved": self.captcha_solved.value},
             "browser_sessions": self.browser_sessions.value,
+            "fetch_tiers": {
+                "curl": self.fetch_tier_curl.value,
+                "browser": self.fetch_tier_browser.value,
+                "proxy": self.fetch_tier_proxy.value,
+            },
+            "agent": {"total": self.agent_total.value},
+            "index": {"hits": self.index_hits.value},
             "request_duration": self.request_duration.snapshot(),
             "scrape_duration": self.scrape_duration.snapshot(),
             "domains": self.domain_stats(),

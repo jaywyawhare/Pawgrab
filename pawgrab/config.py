@@ -138,5 +138,23 @@ class Settings(BaseSettings):
     s3_access_key: str = ""
     s3_secret_key: str = ""
 
+    # Agent (F1): bounded ReAct extraction budgets.
+    agent_steps_low: int = Field(default=3, ge=1, le=50)
+    agent_steps_medium: int = Field(default=8, ge=1, le=100)
+    agent_steps_high: int = Field(default=20, ge=1, le=200)
+    agent_token_cap: int = Field(default=120_000, ge=1_000)
+    agent_default_effort: Literal["low", "medium", "high"] = "medium"
+
+    # Live interactive sessions (F3).
+    live_session_ttl: int = Field(default=300, ge=10, le=3600)
+    live_session_max: int = Field(default=20, ge=1, le=200)
+
+    # Content index / "Alexandria-lite" (F4).
+    index_enabled: bool = True
+    index_ttl: int = Field(default=604_800, ge=0)
+    index_max_entries: int = Field(default=100_000, ge=100)
+    index_store: Literal["redis", "sqlite"] = "redis"
+    embeddings_enabled: bool = False
+
 
 settings = Settings()

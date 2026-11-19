@@ -6,13 +6,14 @@ dependency); ``server`` wires them onto a FastMCP server.
 """
 
 from pawgrab.mcp.client import (
+    agent,
     crawl,
     crawl_status,
-    extract,
+    index_search,
     map_site,
     parse,
     scrape,
     search,
 )
 
-__all__ = ["scrape", "parse", "extract", "search", "map_site", "crawl", "crawl_status"]
+__all__ = ["scrape", "parse", "agent", "index_search", "search", "map_site", "crawl", "crawl_status"]

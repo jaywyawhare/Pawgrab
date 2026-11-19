@@ -57,13 +57,13 @@ Register Pawgrab with an MCP client (example shape):
 
 | Tool | Description | API endpoint |
 |------|-------------|--------------|
-| `scrape` | Scrape a URL to markdown/html/text/json | `POST /v1/scrape` |
-| `parse` | Clean raw HTML without fetching | `POST /v1/parse` |
-| `extract` | Structured extraction (LLM/CSS/XPath/regex, with `adaptive`) | `POST /v1/extract` |
-| `search` | Web search + scrape each result | `POST /v1/search` |
-| `map_site` | Discover URLs via sitemap or shallow crawl | `POST /v1/map` |
-| `crawl` | Start an async crawl job (returns a job id) | `POST /v1/crawl` |
-| `crawl_status` | Poll a crawl job's status and results | `GET /v1/crawl/{job_id}` |
+| `scrape` | Scrape a URL to markdown/html/text/json | `POST /scrape` |
+| `parse` | Clean raw HTML without fetching | `POST /parse` |
+| `extract` | Structured extraction (LLM/CSS/XPath/regex, with `adaptive`) | `POST /extract` |
+| `search` | Web search + scrape each result | `POST /search` |
+| `map_site` | Discover URLs via sitemap or shallow crawl | `POST /map` |
+| `crawl` | Start an async crawl job (returns a job id) | `POST /crawl` |
+| `crawl_status` | Poll a crawl job's status and results | `GET /crawl/{job_id}` |
 
 Each tool returns the API's JSON envelope. Transport and HTTP errors are mapped to
 a structured `{"error": ..., "code": ...}` object so the agent always receives a

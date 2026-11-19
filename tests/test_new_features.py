@@ -1,4 +1,4 @@
-"""Tests for /v1/parse, search domain scoping, LLM enrichment, and selector healing."""
+"""Tests for /parse, search domain scoping, LLM enrichment, and selector healing."""
 
 import asyncio
 from unittest.mock import AsyncMock, patch
@@ -11,7 +11,7 @@ from pawgrab.models.scrape import ScrapeResponse
 
 async def test_parse_markdown(client):
     resp = await client.post(
-        "/v1/parse",
+        "/parse",
         json={"html": "<html><body><article><h1>Title</h1><p>Some body text.</p></article></body></html>"},
     )
     assert resp.status_code == 200
@@ -22,7 +22,7 @@ async def test_parse_markdown(client):
 
 async def test_parse_text_format_and_selector(client):
     html = '<html><body><nav>menu</nav><div class="main"><p>Hello world content here.</p></div></body></html>'
-    resp = await client.post("/v1/parse", json={"html": html, "formats": ["text"], "css_selector": ".main"})
+    resp = await client.post("/parse", json={"html": html, "formats": ["text"], "css_selector": ".main"})
     assert resp.status_code == 200
     data = resp.json()
     assert "Hello world" in (data["text"] or "")
@@ -30,12 +30,12 @@ async def test_parse_text_format_and_selector(client):
 
 
 async def test_parse_empty_html_rejected(client):
-    resp = await client.post("/v1/parse", json={"html": ""})
+    resp = await client.post("/parse", json={"html": ""})
     assert resp.status_code == 422
 
 
 async def test_parse_garbage_returns_error_payload(client):
-    resp = await client.post("/v1/parse", json={"html": "\x00\x01\x02"})
+    resp = await client.post("/parse", json={"html": "\x00\x01\x02"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] in (True, False)
@@ -68,7 +68,7 @@ async def test_search_domain_scoping_applied(client):
 
     with patch("pawgrab.api.search.run_search", new_callable=AsyncMock) as mock_search, patch("pawgrab.api.search.scrape_url", new=AsyncMock(side_effect=fake_scrape)):
         mock_search.return_value = _envelope(["https://good.example.com/a", "https://bad.com/b"])
-        resp = await client.post("/v1/search", json={"query": "q", "include_domains": ["example.com"]})
+        resp = await client.post("/search", json={"query": "q", "include_domains": ["example.com"]})
 
     assert resp.status_code == 200
     data = resp.json()

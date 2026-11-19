@@ -98,7 +98,7 @@ async def test_rate_limit_exceeded_returns_429():
     scope = {
         "type": "http",
         "method": "GET",
-        "path": "/v1/scrape",
+        "path": "/scrape",
         "query_string": b"",
         "headers": [],
         "app": app,

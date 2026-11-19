@@ -1,4 +1,4 @@
-"""Tests for the /v1/scrape endpoint."""
+"""Tests for the /scrape endpoint."""
 
 from pawgrab import __version__
 
@@ -20,10 +20,10 @@ async def test_status(client):
 
 
 async def test_scrape_missing_url(client):
-    resp = await client.post("/v1/scrape", json={})
+    resp = await client.post("/scrape", json={})
     assert resp.status_code == 422
 
 
 async def test_scrape_invalid_url(client):
-    resp = await client.post("/v1/scrape", json={"url": "not-a-url"})
+    resp = await client.post("/scrape", json={"url": "not-a-url"})
     assert resp.status_code == 422

@@ -1,0 +1,33 @@
+{
+  "version": "1.0.0",
+  "platformVersion": "15.0.0",
+  "title": "Pawgrab",
+  "description": "Scrape, crawl, search, and agent-extract the web as clean Markdown or structured JSON.",
+  "authentication": {
+    "type": "custom",
+    "fields": [
+      { "key": "base_url", "type": "string", "default": "http://localhost:8000", "required": true },
+      { "key": "api_key", "type": "string", "required": false }
+    ],
+    "test": { "url": "{{bundle.authData.base_url}}/health" }
+  },
+  "creates": {
+    "scrape": {
+      "noun": "Scrape",
+      "display": { "label": "Scrape URL", "description": "Scrape a URL to Markdown/HTML/JSON." },
+      "operation": { "perform": { "url": "{{bundle.authData.base_url}}/scrape", "method": "POST" } }
+    },
+    "agent": {
+      "noun": "Agent",
+      "display": { "label": "Agent Extract", "description": "Run the agent to satisfy a prompt/schema across pages." },
+      "operation": { "perform": { "url": "{{bundle.authData.base_url}}/agent", "method": "POST" } }
+    }
+  },
+  "searches": {
+    "web_search": {
+      "noun": "Search",
+      "display": { "label": "Search the web", "description": "Search and scrape results." },
+      "operation": { "perform": { "url": "{{bundle.authData.base_url}}/search", "method": "POST" } }
+    }
+  }
+}

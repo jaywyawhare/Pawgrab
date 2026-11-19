@@ -1,0 +1,27 @@
+{
+  "$schema": "https://pawgrab.dev/schemas/skills-catalog.json",
+  "version": "1",
+  "skills": [
+    {
+      "id": "scrape-extract",
+      "title": "Scrape then agent-extract",
+      "description": "Scrape a page to clean markdown, then run the agent to pull a structured schema from it.",
+      "file": "scrape-extract.md",
+      "endpoints": ["/scrape", "/agent"]
+    },
+    {
+      "id": "crawl-index",
+      "title": "Crawl a site into the content index",
+      "description": "Crawl a site; every page is written through to the content index for fast ranked retrieval later.",
+      "file": "crawl-index.md",
+      "endpoints": ["/crawl", "/index/search"]
+    },
+    {
+      "id": "monitor-webhook",
+      "title": "Monitor a page and webhook on change",
+      "description": "Scrape with change-tracking on a schedule and POST a webhook when the content diff is non-empty.",
+      "file": "monitor-webhook.md",
+      "endpoints": ["/scrape", "/schedule"]
+    }
+  ]
+}

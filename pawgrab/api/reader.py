@@ -1,4 +1,4 @@
-"""Structured readers: /v1/transcript (YouTube), /v1/feed (RSS/Atom), /v1/read (auto-route)."""
+"""Structured readers: /transcript (YouTube), /feed (RSS/Atom), /read (auto-route)."""
 
 import structlog
 from fastapi import APIRouter

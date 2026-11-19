@@ -1,4 +1,4 @@
-"""Models for the /v1/batch/scrape endpoint."""
+"""Models for the /batch/scrape endpoint."""
 
 from pydantic import BaseModel, Field, HttpUrl
 

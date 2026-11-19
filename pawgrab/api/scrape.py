@@ -1,4 +1,4 @@
-"""POST /v1/scrape endpoint."""
+"""POST /scrape endpoint."""
 
 import structlog
 from fastapi import APIRouter
